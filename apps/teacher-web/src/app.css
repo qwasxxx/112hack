@@ -1,0 +1,22 @@
+.shell {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.eyebrow {
+  color: var(--accent);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.lead {
+  color: var(--muted);
+}
+
+.status {
+  display: flex;
+  gap: 24px;
+  margin: 24px 0;
+}

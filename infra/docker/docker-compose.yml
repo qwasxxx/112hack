@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: sys112-postgres
+    environment:
+      POSTGRES_USER: sys112
+      POSTGRES_PASSWORD: sys112
+      POSTGRES_DB: sys112
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ../database/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sys112 -d sys112"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

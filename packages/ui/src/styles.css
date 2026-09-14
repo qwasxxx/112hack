@@ -1,0 +1,29 @@
+:root {
+  color-scheme: light;
+  --bg: #0f1419;
+  --surface: #1b222c;
+  --text: #e8eef5;
+  --muted: #93a1b3;
+  --ok: #3dcc8a;
+  --warn: #e0b341;
+  --bad: #e35d6a;
+  --accent: #4c8dff;
+  font-family: Inter, Segoe UI, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  line-height: 1.45;
+}

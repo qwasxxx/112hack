@@ -1,0 +1,124 @@
+{
+  "id": "00000000-0000-4000-8000-000000000001",
+  "slug": "apartment-fire",
+  "title": "Пожар в квартире",
+  "description": "Заявитель звонит из соседней квартиры, видит дым.",
+  "version": 1,
+  "difficulty": "standard",
+  "locale": "ru",
+  "services": ["fire", "ambulance"],
+  "caller": {
+    "displayName": "Анна",
+    "age": 34,
+    "voiceProfileId": "female-ru-anxious",
+    "speakingStyle": "короткие фразы, сбивчиво",
+    "language": "ru"
+  },
+  "systemInstructions": "Ты заявитель. Не раскрывай скрытые факты, пока оператор не спросит.",
+  "initialEmotionalState": {
+    "primary": "anxious",
+    "intensity": 0.7,
+    "stability": 0.4
+  },
+  "initialStateId": "opening",
+  "facts": [
+    {
+      "id": "address",
+      "label": "Адрес",
+      "value": "ул. Ленина, 12, кв. 45",
+      "category": "location",
+      "visibility": "caller_knows",
+      "revealOn": [],
+      "neverVolunteer": false
+    },
+    {
+      "id": "people_inside",
+      "label": "Люди внутри",
+      "value": "двое взрослых",
+      "category": "people",
+      "visibility": "discoverable",
+      "revealOn": ["ask_people"],
+      "neverVolunteer": true
+    }
+  ],
+  "states": [
+    {
+      "id": "opening",
+      "label": "Начало звонка",
+      "callerBehavior": "Паникует, просит приехать пожарных",
+      "availableFactIds": ["address"],
+      "terminal": false
+    },
+    {
+      "id": "stable",
+      "label": "Диалог стабилизирован",
+      "callerBehavior": "Отвечает на вопросы, всё ещё встревожена",
+      "availableFactIds": ["address", "people_inside"],
+      "terminal": false
+    }
+  ],
+  "transitions": [
+    {
+      "id": "to-stable",
+      "from": "opening",
+      "to": "stable",
+      "trigger": "student_action",
+      "predicate": { "actionId": "identify_self" }
+    }
+  ],
+  "expectedActions": [
+    { "id": "identify_self", "label": "Представиться", "required": true, "orderGroup": 1, "weight": 1 },
+    { "id": "ask_address", "label": "Уточнить адрес", "required": true, "orderGroup": 2, "weight": 2 }
+  ],
+  "forbiddenActions": [
+    { "id": "argue", "label": "Спорить с заявителем", "severity": "major" }
+  ],
+  "evaluationCriteria": [
+    {
+      "id": "required_questions",
+      "label": "Обязательные вопросы",
+      "category": "required_questions",
+      "maxScore": 20,
+      "weight": 1
+    }
+  ],
+  "evaluationRulesVersion": "eval-1",
+  "incidentCardSchema": {
+    "schemaVersion": "card-1",
+    "title": "Карточка происшествия",
+    "fields": [
+      {
+        "key": "address",
+        "label": "Адрес",
+        "type": "address",
+        "required": true,
+        "section": "location",
+        "evaluation": { "weight": 2, "match": "against_fact", "factId": "address" }
+      },
+      {
+        "key": "what_happened",
+        "label": "Что случилось",
+        "type": "text",
+        "required": true,
+        "section": "incident"
+      }
+    ]
+  },
+  "allowedInterventions": ["set_emotional_state", "add_circumstance", "reveal_fact", "end_call"],
+  "completion": {
+    "success": ["ask_address"],
+    "failure": [],
+    "maxDurationSec": 600
+  },
+  "turnPolicy": {
+    "allowBargeIn": true,
+    "maxSilenceSec": 8,
+    "maxCallerTurnLength": 80
+  },
+  "ragPolicy": {
+    "enabled": false,
+    "documentIds": [],
+    "maxChunks": 6
+  },
+  "safetyNotes": "Не генерировать инструкции по причинению вреда."
+}

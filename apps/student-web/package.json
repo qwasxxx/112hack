@@ -1,0 +1,27 @@
+{
+  "name": "@sys112/student-web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"lint: student-web skipped\""
+  },
+  "dependencies": {
+    "@sys112/api-client": "workspace:*",
+    "@sys112/shared-types": "workspace:*",
+    "@sys112/ui": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.5"
+  }
+}
