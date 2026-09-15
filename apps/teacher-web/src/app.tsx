@@ -1,35 +1,54 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ApiClient, RealtimeClient } from '@sys112/api-client';
-import { StatusDot } from '@sys112/ui';
+import { useEffect, useState } from 'react';
 
-const api = new ApiClient('');
-const realtime = new RealtimeClient(window.location.origin);
+const tones = { ok: '#3dcc8a', warn: '#e0b341', bad: '#e35d6a' } as const;
+
+function Dot(props: { tone: keyof typeof tones; label: string }) {
+  return (
+    <span className="dot">
+      <span style={{ background: tones[props.tone] }} />
+      {props.label}
+    </span>
+  );
+}
 
 export function App() {
   const [apiStatus, setApiStatus] = useState<'ok' | 'bad' | 'pending'>('pending');
   const [realtimeStatus, setRealtimeStatus] = useState<'ok' | 'bad' | 'pending'>('pending');
 
-  const apiTone = useMemo(() => (apiStatus === 'ok' ? 'ok' : apiStatus === 'pending' ? 'warn' : 'bad'), [apiStatus]);
-  const rtTone = useMemo(
-    () => (realtimeStatus === 'ok' ? 'ok' : realtimeStatus === 'pending' ? 'warn' : 'bad'),
-    [realtimeStatus],
-  );
-
   useEffect(() => {
-    void api
-      .health()
-      .then(() => setApiStatus('ok'))
+    void fetch('/api/v1/health')
+      .then((response) => setApiStatus(response.ok ? 'ok' : 'bad'))
       .catch(() => setApiStatus('bad'));
 
-    realtime.connect();
-    const off = realtime.onEvent((event) => {
-      if (event.type === 'ConnectionEstablished') {
-        setRealtimeStatus('ok');
-      }
-    });
+    let cancelled = false;
+    let disconnect: (() => void) | undefined;
+
+    void import('@sys112/api-client')
+      .then(({ RealtimeClient }) => {
+        if (cancelled) {
+          return;
+        }
+        const realtime = new RealtimeClient(window.location.origin);
+        realtime.connect();
+        const off = realtime.onEvent((event) => {
+          if (event.type === 'ConnectionEstablished') {
+            setRealtimeStatus('ok');
+          }
+        });
+        disconnect = () => {
+          off();
+          realtime.disconnect();
+        };
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRealtimeStatus('bad');
+        }
+      });
+
     return () => {
-      off();
-      realtime.disconnect();
+      cancelled = true;
+      disconnect?.();
     };
   }, []);
 
@@ -41,8 +60,11 @@ export function App() {
         Отдельное приложение преподавателя. Intervention уходит доменной командой, не в параметры модели.
       </p>
       <div className="status">
-        <StatusDot tone={apiTone} label={`API ${apiStatus}`} />
-        <StatusDot tone={rtTone} label={`Realtime ${realtimeStatus}`} />
+        <Dot tone={apiStatus === 'ok' ? 'ok' : apiStatus === 'pending' ? 'warn' : 'bad'} label={`API ${apiStatus}`} />
+        <Dot
+          tone={realtimeStatus === 'ok' ? 'ok' : realtimeStatus === 'pending' ? 'warn' : 'bad'}
+          label={`Realtime ${realtimeStatus}`}
+        />
       </div>
     </main>
   );
