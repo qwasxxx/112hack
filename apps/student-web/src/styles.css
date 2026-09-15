@@ -247,6 +247,17 @@ h2 {
   text-transform: uppercase;
 }
 
+.call-live-on::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--112);
+  vertical-align: middle;
+}
+
 .call-meta {
   display: flex;
   align-items: center;
@@ -291,6 +302,10 @@ h2 {
 .line-operator p {
   background: #eef4ea;
   border-left-color: #3d7a4a;
+}
+
+.line-partial p {
+  opacity: 0.78;
 }
 
 .composer {

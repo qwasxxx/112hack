@@ -14,6 +14,8 @@ export default defineConfig({
     proxy: {
       '/api': 'http://127.0.0.1:3000',
       '/socket.io': { target: 'http://127.0.0.1:3000', ws: true },
+      '/ws/stt': { target: 'http://127.0.0.1:8090', ws: true },
+      '/stt-health': { target: 'http://127.0.0.1:8090', rewrite: (path) => path.replace('/stt-health', '/health') },
     },
   },
 });

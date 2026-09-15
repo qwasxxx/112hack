@@ -1,0 +1,4 @@
+name: sys112
+
+include:
+  - path: ./infra/docker/docker-compose.yml

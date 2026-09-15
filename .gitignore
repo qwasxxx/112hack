@@ -16,3 +16,8 @@ Thumbs.db
 infra/docker/data
 postgres-data
 .drizzle
+models/
+apps/stt/.venv
+apps/stt/.pytest_cache
+apps/stt/**/__pycache__
+*.onnx

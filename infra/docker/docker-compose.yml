@@ -1,4 +1,30 @@
 services:
+  stt:
+    build:
+      context: ../..
+      dockerfile: apps/stt/Dockerfile
+    container_name: sys112-stt
+    ports:
+      - "8090:8090"
+    environment:
+      STT_MODE: local
+      STT_MODEL_PATH: /models/sherpa-onnx-streaming-t-one-russian-2025-09-08
+      STT_SAMPLE_RATE: "8000"
+      STT_NUM_THREADS: "4"
+      STT_DECODING_METHOD: greedy_search
+      STT_ONNX_PROVIDER: cpu
+    volumes:
+      - ../../models:/models
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: sys112-postgres

@@ -9,7 +9,7 @@
 ```bash
 cp .env.example .env
 pnpm install
-docker compose -f infra/docker/docker-compose.yml up -d
+docker compose up --build -d
 pnpm dev
 ```
 
@@ -19,7 +19,10 @@ pnpm dev
 pnpm dev:api        # http://localhost:3000
 pnpm dev:student    # http://localhost:5173
 pnpm dev:teacher    # http://localhost:5174
+pnpm dev:stt        # http://127.0.0.1:8090  (T-one realtime STT)
 ```
+
+Учебный звонок с микрофоном и realtime-расшифровкой: `docs/stt.md`.
 
 Проверка:
 
