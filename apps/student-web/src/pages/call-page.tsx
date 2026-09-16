@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { TrainingScenario } from '../data/scenarios';
+import type { LessonSection, TrainingScenario } from '../data/scenarios';
+import { SECTION_AI_ROLE } from '../data/scenarios';
 import { createLlmStream } from '../lib/llm-stream';
 import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
@@ -12,15 +13,16 @@ type Line = {
   source?: 'stt' | 'llm' | 'typed';
 };
 
-type CallState = 'idle' | 'connecting' | 'listening' | 'error' | 'ended';
+type CallState = 'idle' | 'connecting' | 'listening' | 'analyzing' | 'error' | 'ended';
 
 type Props = {
   scenario: TrainingScenario;
+  section: LessonSection;
   onLeave: () => void;
 };
 
 export function CallPage(props: Props) {
-  const conversationRole = props.scenario.conversationRole ?? 'victim';
+  const conversationRole = SECTION_AI_ROLE[props.section];
   const userRole: Line['role'] = conversationRole === 'victim' ? 'operator' : 'caller';
   const aiRole: Line['role'] = conversationRole === 'victim' ? 'caller' : 'operator';
   const [seconds, setSeconds] = useState(0);
@@ -30,6 +32,7 @@ export function CallPage(props: Props) {
   const [recording, setRecording] = useState(false);
   const [callState, setCallState] = useState<CallState>('idle');
   const [micError, setMicError] = useState<string | undefined>();
+  const [analysis, setAnalysis] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<ReturnType<typeof createSttStream> | undefined>(undefined);
   const llmRef = useRef<ReturnType<typeof createLlmStream> | undefined>(undefined);
@@ -40,6 +43,11 @@ export function CallPage(props: Props) {
   const utterancePartsRef = useRef<string[]>([]);
   const liveSttRef = useRef('');
   const flushTimerRef = useRef<number | undefined>(undefined);
+  const analysisDoneRef = useRef<(() => void) | undefined>(undefined);
+  const wantsAnalysis = props.section === 'training' || props.section === 'exam';
+  const showCard = props.section !== 'theory';
+  const sectionLabel = props.section === 'theory' ? 'Теория' : props.section === 'exam' ? 'Экзамен' : 'Тренировка';
+  const youAre = conversationRole === 'victim' ? 'Вы — оператор' : 'Вы — заявитель';
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -80,13 +88,13 @@ export function CallPage(props: Props) {
       flushTimerRef.current = undefined;
     }
     setLines([]);
+    setAnalysis('');
     setMicError(undefined);
     setCallState('connecting');
     const callId = crypto.randomUUID();
     const llm = createLlmStream({
       callId,
       conversationRole,
-      systemPrompt: props.scenario.systemPrompt,
       lessonId: props.scenario.id,
       onEvent: (event) => {
         if (event.type === 'assistant_partial' && event.text.trim()) {
@@ -95,9 +103,17 @@ export function CallPage(props: Props) {
         if (event.type === 'assistant_final' && event.text.trim()) {
           setLines((current) => commitLive(current, aiRole, event.text, 'llm'));
         }
+        if (event.type === 'analysis_partial' && event.text.trim()) {
+          setAnalysis(event.text);
+        }
+        if (event.type === 'analysis_final' && event.text.trim()) {
+          setAnalysis(event.text);
+          analysisDoneRef.current?.();
+        }
       },
       onError: (message) => {
         setMicError(message);
+        analysisDoneRef.current?.();
       },
     });
     llmRef.current = llm;
@@ -169,10 +185,10 @@ export function CallPage(props: Props) {
     });
     streamRef.current = stream;
     try {
-      await llm.start().catch((error: unknown) => {
-        const text = error instanceof Error ? error.message : 'Сервис диалога недоступен.';
-        setMicError(text);
-      });
+      await llm.start();
+      if (conversationRole === 'victim') {
+        llm.kickoff();
+      }
       if (leavingRef.current) {
         await stream.stop();
         await llm.stop();
@@ -244,18 +260,40 @@ export function CallPage(props: Props) {
     utterancePartsRef.current = [];
     liveSttRef.current = '';
     if (leftover.trim()) {
-      llmRef.current?.sendUserFinal(crypto.randomUUID(), leftover);
+      setLines((current) => commitLive(current, userRole, leftover, 'stt'));
     }
     const complete = await streamRef.current?.stop();
-    await llmRef.current?.stop();
     streamRef.current = undefined;
-    llmRef.current = undefined;
     if (complete) {
       finalsRef.current = { ...finalsRef.current, completeText: complete, partial: '' };
     }
-    setLines((current) => current.filter((line) => !line.live));
     setRecording(false);
+    setLines((current) => current.filter((line) => !line.live));
+    if (wantsAnalysis && llmRef.current) {
+      setCallState('analyzing');
+      await waitForAnalysis(leftover);
+    } else if (leftover.trim()) {
+      llmRef.current?.sendUserFinal(crypto.randomUUID(), leftover);
+    }
+    await llmRef.current?.stop();
+    llmRef.current = undefined;
     setCallState('ended');
+  }
+
+  async function waitForAnalysis(leftover: string) {
+    const llm = llmRef.current;
+    if (!llm) {
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      const timer = window.setTimeout(resolve, 50000);
+      analysisDoneRef.current = () => {
+        window.clearTimeout(timer);
+        resolve();
+      };
+      llm.analyze(leftover);
+    });
+    analysisDoneRef.current = undefined;
   }
 
   function setField(key: string, value: string) {
@@ -268,11 +306,13 @@ export function CallPage(props: Props) {
       ? 'Подключение…'
       : callState === 'listening'
         ? 'Идёт звонок'
-        : callState === 'ended'
-          ? 'Вызов завершён'
-          : callState === 'error'
-            ? 'Ошибка звонка'
-            : 'Учебный вызов';
+        : callState === 'analyzing'
+          ? 'Разбор разговора…'
+          : callState === 'ended'
+            ? 'Вызов завершён'
+            : callState === 'error'
+              ? 'Ошибка звонка'
+              : 'Учебный вызов';
   const micLabel =
     callState === 'connecting'
       ? 'Подключение…'
@@ -288,25 +328,40 @@ export function CallPage(props: Props) {
         <div>
           <p className={`call-live${callState === 'listening' ? ' call-live-on' : ''}`}>{liveLabel}</p>
           <h1>{props.scenario.title}</h1>
+          <p className="hint">
+            {sectionLabel} · {youAre}
+          </p>
         </div>
         <div className="call-meta">
           <span className="mono">{clock}</span>
           {callState === 'ended' ? (
             <button type="button" className="btn" onClick={props.onLeave}>
-              К сценариям
+              К уроку
             </button>
           ) : (
-            <button type="button" className="btn btn-danger" onClick={() => void hangup()} disabled={callState === 'connecting'}>
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={() => void hangup()}
+              disabled={callState === 'connecting' || callState === 'analyzing'}
+            >
               Завершить
             </button>
           )}
         </div>
       </header>
 
-      <div className="call-body">
+      <div className={`call-body${showCard || wantsAnalysis ? '' : ' call-body-solo'}`}>
         <section className="panel call-log" aria-label="Разговор">
           <h2>Разговор</h2>
           <div className="log" ref={logRef}>
+            {lines.length === 0 ? (
+              <p className="hint">
+                {conversationRole === 'victim'
+                  ? 'После соединения заявитель начнёт разговор. Отвечайте как оператор 112.'
+                  : 'Вы заявитель. Задайте оператору вопросы по ситуации — в ответ будут эталонные формулировки.'}
+              </p>
+            ) : null}
             {lines.map((line) => (
               <article key={line.id} className={`line line-${line.role}${line.live ? ' line-partial' : ''}`}>
                 <span>{line.role === 'caller' ? 'Заявитель' : 'Оператор'}</span>
@@ -315,8 +370,10 @@ export function CallPage(props: Props) {
             ))}
           </div>
 
-          {callState === 'ended' ? (
-            <p className="hint">Расшифровка сохранена в этом вызове.</p>
+          {callState === 'ended' || callState === 'analyzing' ? (
+            <p className="hint">
+              {callState === 'analyzing' ? 'Идёт разбор разговора…' : 'Расшифровка сохранена в этом вызове.'}
+            </p>
           ) : (
             <form
               className="composer"
@@ -355,44 +412,56 @@ export function CallPage(props: Props) {
           )}
         </section>
 
-        <section className="panel" aria-label="Карточка происшествия">
-          <h2>Карточка происшествия</h2>
-          <form className="card-form" onSubmit={(event) => event.preventDefault()}>
-            {props.scenario.cardFields.map((field) => (
-              <label key={field.key} className="field">
-                <span>
-                  {field.label}
-                  {field.required ? ' *' : ''}
-                </span>
-                {field.type === 'text' ? (
-                  <textarea
-                    rows={3}
-                    value={card[field.key] ?? ''}
-                    onChange={(event) => setField(field.key, event.target.value)}
-                  />
-                ) : field.type === 'enum' ? (
-                  <select
-                    value={card[field.key] ?? ''}
-                    onChange={(event) => setField(field.key, event.target.value)}
-                  >
-                    <option value="">Выберите</option>
-                    {field.options?.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type={field.type === 'phone' ? 'tel' : 'text'}
-                    value={card[field.key] ?? ''}
-                    onChange={(event) => setField(field.key, event.target.value)}
-                  />
-                )}
-              </label>
-            ))}
-          </form>
-        </section>
+        {showCard || wantsAnalysis ? (
+          <div className="call-side">
+            {showCard ? (
+              <section className="panel" aria-label="Карточка происшествия">
+                <h2>Карточка происшествия</h2>
+                <form className="card-form" onSubmit={(event) => event.preventDefault()}>
+                  {props.scenario.cardFields.map((field) => (
+                    <label key={field.key} className="field">
+                      <span>
+                        {field.label}
+                        {field.required ? ' *' : ''}
+                      </span>
+                      {field.type === 'text' ? (
+                        <textarea
+                          rows={3}
+                          value={card[field.key] ?? ''}
+                          onChange={(event) => setField(field.key, event.target.value)}
+                        />
+                      ) : field.type === 'enum' ? (
+                        <select
+                          value={card[field.key] ?? ''}
+                          onChange={(event) => setField(field.key, event.target.value)}
+                        >
+                          <option value="">Выберите</option>
+                          {field.options?.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={field.type === 'phone' ? 'tel' : 'text'}
+                          value={card[field.key] ?? ''}
+                          onChange={(event) => setField(field.key, event.target.value)}
+                        />
+                      )}
+                    </label>
+                  ))}
+                </form>
+              </section>
+            ) : null}
+            {wantsAnalysis && (callState === 'analyzing' || analysis) ? (
+              <section className="panel" aria-label="Разбор разговора">
+                <h2>Разбор разговора</h2>
+                <p className="analysis">{analysis || 'Готовим разбор…'}</p>
+              </section>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

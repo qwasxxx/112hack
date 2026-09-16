@@ -24,7 +24,7 @@ export function CatalogPage(props: Props) {
       <section className="panel">
         <div className="panel-head">
           <h1>Учебные сценарии</h1>
-          <p>Выберите случай, прочитайте краткую теорию и выйдите на учебный вызов.</p>
+          <p>Выберите случай. Дальше — теория, тренировка или экзамен.</p>
         </div>
         <table className="grid">
           <thead>

@@ -2,7 +2,9 @@ import { parseLlmEvent, type LlmEvent } from './llm-protocol';
 
 export type LlmStream = {
   start(): Promise<void>;
+  kickoff(): void;
   sendUserFinal(id: string, text: string): void;
+  analyze(text?: string): void;
   stop(): Promise<void>;
 };
 
@@ -108,15 +110,33 @@ export function createLlmStream(options: {
     });
   }
 
-  function sendUserFinal(id: string, text: string) {
+  function sendJson(payload: Record<string, unknown>) {
     if (!socket || socket.readyState !== WebSocket.OPEN || stopped) {
       return;
     }
+    socket.send(JSON.stringify(payload));
+  }
+
+  function sendUserFinal(id: string, text: string) {
     const trimmed = text.trim();
     if (!trimmed) {
       return;
     }
-    socket.send(JSON.stringify({ type: 'user_final', id, text: trimmed }));
+    sendJson({ type: 'user_final', id, text: trimmed });
+  }
+
+  function kickoff() {
+    sendJson({ type: 'kickoff' });
+  }
+
+  function analyze(text?: string) {
+    const payload: Record<string, unknown> = { type: 'analyze' };
+    const trimmed = text?.trim();
+    if (trimmed) {
+      payload.id = crypto.randomUUID();
+      payload.text = trimmed;
+    }
+    sendJson(payload);
   }
 
   async function stop(): Promise<void> {
@@ -147,5 +167,5 @@ export function createLlmStream(options: {
     socket = undefined;
   }
 
-  return { start, sendUserFinal, stop };
+  return { start, kickoff, sendUserFinal, analyze, stop };
 }

@@ -65,3 +65,43 @@ body {
   height: 8px;
   border-radius: 99px;
 }
+
+.exam {
+  margin-top: 32px;
+  padding: 20px;
+  background: var(--surface);
+  border-radius: 12px;
+}
+
+.exam h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.exam-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.exam-btn {
+  display: grid;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid #2a3340;
+  border-radius: 8px;
+  background: #151b23;
+  color: var(--text);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.exam-btn span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.exam-btn strong {
+  font-weight: 650;
+}

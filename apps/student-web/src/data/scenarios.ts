@@ -19,10 +19,46 @@ export type TrainingScenario = {
   theory: string[];
   checklist: string[];
   callerOpening: string;
-  conversationRole?: 'victim' | 'operator';
-  systemPrompt?: string;
   cardFields: CardField[];
 };
+
+export type LessonSection = 'theory' | 'training' | 'exam';
+
+export const SECTION_AI_ROLE: Record<LessonSection, 'victim' | 'operator'> = {
+  theory: 'operator',
+  training: 'victim',
+  exam: 'victim',
+};
+
+export const LESSON_SECTIONS: Array<{
+  id: LessonSection;
+  title: string;
+  lead: string;
+  youAre: string;
+  enabled: boolean;
+}> = [
+  {
+    id: 'theory',
+    title: 'Теория',
+    lead: 'Вы заявитель. ИИ отвечает как оператор 112 — можно услышать, как звучит правильный приём обращения.',
+    youAre: 'Вы — заявитель',
+    enabled: true,
+  },
+  {
+    id: 'training',
+    title: 'Тренировка',
+    lead: 'Вы оператор. ИИ звонит как заявитель. После звонка будет разбор разговора.',
+    youAre: 'Вы — оператор',
+    enabled: true,
+  },
+  {
+    id: 'exam',
+    title: 'Экзамен',
+    lead: 'Тот же формат, что тренировка, но преподаватель сможет вмешиваться в разговор. Пока недоступно.',
+    youAre: 'Вы — оператор',
+    enabled: false,
+  },
+];
 
 export const SERVICE_LABEL: Record<ServiceKind, string> = {
   fire: 'Пожарные',
@@ -52,7 +88,6 @@ export const SCENARIOS: TrainingScenario[] = [
       'Заполнить карточку происшествия',
     ],
     callerOpening: 'Алло, у нас пожар, из окна дым валит, скорее приезжайте!',
-    conversationRole: 'operator',
     cardFields: [
       { key: 'address', label: 'Адрес', type: 'string', required: true },
       { key: 'what_happened', label: 'Что произошло', type: 'text', required: true },
@@ -85,7 +120,6 @@ export const SCENARIOS: TrainingScenario[] = [
       'Уточнить, перекрыта ли дорога',
     ],
     callerOpening: 'Мы столкнулись на перекрёстке, тут человек в машине, он не выходит!',
-    conversationRole: 'operator',
     cardFields: [
       { key: 'address', label: 'Место', type: 'string', required: true },
       { key: 'what_happened', label: 'Что произошло', type: 'text', required: true },
@@ -117,7 +151,6 @@ export const SCENARIOS: TrainingScenario[] = [
       'Где видели последний раз',
     ],
     callerOpening: 'Я сына потеряла, ему семь лет, он был во дворе и пропал!',
-    conversationRole: 'operator',
     cardFields: [
       { key: 'address', label: 'Адрес / район', type: 'string', required: true },
       { key: 'who', label: 'Кого ищут', type: 'string', required: true },

@@ -10,17 +10,28 @@ from sys112_llm.config import REPO_ROOT
 Role = Literal["system", "user", "assistant"]
 ConversationRole = Literal["victim", "operator"]
 
+KICKOFF_ID = "_kickoff"
+KICKOFF_TEXT = "Оператор снял трубку."
+
+ANALYSIS_PROMPT = (
+    "/no_think\n"
+    "По стенограмме учебного звонка в 112 кратко разбери работу оператора. "
+    "Пиши по-русски кириллицей, без markdown, иероглифов и латиницы. "
+    "Что получилось, чего не хватило, что уточнить в следующий раз. "
+    "Не выдумывай фактов, которых не было в разговоре."
+)
+
 DEFAULT_PROMPTS: dict[ConversationRole, str] = {
     "victim": (
         "/no_think\n"
         "Ты участник телефонного разговора: звонишь в 112. "
-        "Говори по-русски, как в живом звонке. "
+        "Говори только по-русски кириллицей, как в живом звонке. Без иероглифов и других языков. "
         "Смотри на все предыдущие реплики этого разговора и не повторяйся."
     ),
     "operator": (
         "/no_think\n"
         "Ты участник телефонного разговора: тебе звонят в 112. "
-        "Говори по-русски, как в живом звонке. "
+        "Говори только по-русски кириллицей, как в живом звонке. Без иероглифов и других языков. "
         "Смотри на все предыдущие реплики этого разговора и не повторяйся."
     ),
 }
@@ -100,6 +111,32 @@ class ConversationManager:
         if not cleaned:
             return
         session.messages.append(ChatMessage(role="assistant", content=cleaned))
+
+
+def format_transcript(session: CallSession) -> str:
+    if session.conversation_role == "victim":
+        names = {"user": "Оператор", "assistant": "Заявитель"}
+    else:
+        names = {"user": "Заявитель", "assistant": "Оператор"}
+    lines: list[str] = []
+    for item in session.messages:
+        if item.role == "system":
+            continue
+        if item.content == KICKOFF_TEXT:
+            continue
+        label = names.get(item.role)
+        if not label:
+            continue
+        lines.append(f"{label}: {item.content}")
+    return "\n".join(lines)
+
+
+def analysis_messages(session: CallSession) -> list[dict[str, str]]:
+    body = format_transcript(session).strip() or "Разговор почти не состоялся."
+    return [
+        {"role": "system", "content": ANALYSIS_PROMPT},
+        {"role": "user", "content": body},
+    ]
 
 
 def _save_transcript(session: CallSession) -> None:

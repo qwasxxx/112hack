@@ -85,6 +85,29 @@ test('microphone permission error is user-facing', () => {
   assert.match(message, /микрофон/i);
 });
 
+test('lesson sections map ai roles', () => {
+  const SECTION_AI_ROLE = { theory: 'operator', training: 'victim', exam: 'victim' };
+  assert.equal(SECTION_AI_ROLE.theory, 'operator');
+  assert.equal(SECTION_AI_ROLE.training, 'victim');
+  assert.equal(SECTION_AI_ROLE.exam, 'victim');
+});
+
+test('training hangup waits for analysis events', () => {
+  const label = (state) =>
+    state === 'analyzing' ? 'Разбор разговора…' : state === 'ended' ? 'Вызов завершён' : 'Учебный вызов';
+  assert.equal(label('analyzing'), 'Разбор разговора…');
+  const events = [];
+  function onEvent(event) {
+    if (event.type === 'analysis_partial' || event.type === 'analysis_final') {
+      events.push(event.text);
+    }
+  }
+  onEvent({ type: 'assistant_final', text: 'Помогите' });
+  onEvent({ type: 'analysis_partial', text: 'Адрес назван.' });
+  onEvent({ type: 'analysis_final', text: 'Адрес назван. Дальше стоит уточнить, есть ли пострадавшие.' });
+  assert.equal(events.at(-1).includes('Адрес назван'), true);
+});
+
 test('llm is only called on final transcripts', () => {
   const sent = [];
   const seen = new Set();

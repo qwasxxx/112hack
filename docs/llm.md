@@ -20,13 +20,29 @@ Health: `GET http://127.0.0.1:8091/api/llm/health`
 
 WebSocket: `ws://127.0.0.1:8091/ws/llm` (Vite proxies `/ws/llm`).
 
+## Lesson sections
+
+Each scenario has three sections. Roles come from the section, not from a per-lesson system prompt.
+
+| Section | Student | AI | After the call |
+| --- | --- | --- | --- |
+| Theory | caller | operator | hang up |
+| Training | operator | caller (speaks first) | local LLM debriefs the transcript |
+| Exam | operator | caller | same as training; teacher intervention later |
+
+Training/exam kickoff: after `start`, the client sends `kickoff`. The manager inserts a silent user turn `Оператор снял трубку.` so the model speaks first as the caller.
+
+Hangup in training/exam: `analyze` (optional last operator line, no extra AI reply) → stream `analysis_partial` / `analysis_final` → `stop`.
+
+Exam teacher inject: WS `intervention` currently returns `intervention_ack` with `code=not_implemented`.
+
 ## Roles
 
-`conversation_role=operator` — Qwen is the 112 operator, the student is the caller.
+`conversation_role=operator` — Qwen is the 112 operator, the student is the caller (theory).
 
-`conversation_role=victim` — Qwen is the caller, the student is the operator.
+`conversation_role=victim` — Qwen is the caller, the student is the operator (training/exam).
 
-One model instance serves both. The system prompt comes from the lesson config.
+One model instance serves both. Prompts stay generic; no per-lesson fine-tune.
 
 ## Files
 

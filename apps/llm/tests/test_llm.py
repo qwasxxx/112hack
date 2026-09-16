@@ -1,6 +1,6 @@
 from sys112_llm.conversation import ConversationManager
 from sys112_llm.think import ThinkFilter
-from sys112_llm.client import strip_reasoning
+from sys112_llm.client import sanitize_speech, strip_reasoning
 
 
 def test_history_keeps_two_user_turns():
@@ -69,6 +69,12 @@ def test_think_filter_and_strip():
     filt = ThinkFilter()
     assert filt.feed("<think>тайна</think>Назовите адрес") == "Назовите адрес"
     assert strip_reasoning("  Назовите   адрес. ") == "Назовите адрес."
+    leaked = sanitize_speech("У меня случилась авария. Я в车道e, машина задействована.")
+    assert "车" not in leaked
+    assert "e," not in leaked
+    assert "авария" in leaked
+    session = ConversationManager().create("ru-only", "victim")
+    assert "иероглиф" in session.messages[0].content
 
 
 def test_health_and_websocket_mock():
@@ -109,6 +115,65 @@ def test_health_and_websocket_mock():
             ws.send_json({"type": "stop"})
             closed = ws.receive_json()
             assert closed["type"] == "session_closed"
+
+
+def test_transcript_skips_kickoff_and_analysis_is_separate():
+    from sys112_llm.conversation import (
+        ANALYSIS_PROMPT,
+        KICKOFF_ID,
+        KICKOFF_TEXT,
+        ConversationManager,
+        analysis_messages,
+        format_transcript,
+    )
+
+    manager = ConversationManager()
+    session = manager.create("call-d", "victim")
+    manager.accept_user("call-d", KICKOFF_TEXT, KICKOFF_ID)
+    manager.append_assistant("call-d", "Помогите, у нас пожар.")
+    manager.accept_user("call-d", "Назовите адрес.", "m2")
+    text = format_transcript(session)
+    assert KICKOFF_TEXT not in text
+    assert "Заявитель: Помогите, у нас пожар." in text
+    assert "Оператор: Назовите адрес." in text
+    messages = analysis_messages(session)
+    assert messages[0]["content"] == ANALYSIS_PROMPT
+    assert "Помогите, у нас пожар." in messages[1]["content"]
+    assert KICKOFF_TEXT not in messages[1]["content"]
+
+
+def test_kickoff_analyze_and_intervention_mock():
+    from fastapi.testclient import TestClient
+    from sys112_llm.app import app
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/llm") as ws:
+            ws.send_json({"type": "start", "call_id": "kick", "conversation_role": "victim"})
+            ready = ws.receive_json()
+            assert ready["type"] in ("ready", "error")
+            if ready["type"] == "error":
+                return
+            ws.send_json({"type": "kickoff"})
+            first = ws.receive_json()
+            assert first["type"] in ("assistant_partial", "assistant_final", "error")
+            if first["type"] == "error":
+                return
+            if first["type"] == "assistant_partial":
+                assert ws.receive_json()["type"] == "assistant_final"
+            ws.send_json({"type": "analyze", "id": "last", "text": "Где это происходит?"})
+            analysis = ws.receive_json()
+            assert analysis["type"] in ("analysis_partial", "analysis_final", "error")
+            if analysis["type"] == "analysis_partial":
+                final = ws.receive_json()
+                assert final["type"] == "analysis_final"
+                assert final["text"]
+            ws.send_json({"type": "intervention", "command": "set_emotional_state"})
+            ack = ws.receive_json()
+            assert ack["type"] == "intervention_ack"
+            assert ack["accepted"] is False
+            assert ack["code"] == "not_implemented"
+            ws.send_json({"type": "stop"})
+            assert ws.receive_json()["type"] == "session_closed"
 
 
 def test_not_ready_and_missing_model():

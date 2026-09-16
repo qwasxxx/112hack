@@ -173,6 +173,10 @@ def build_llama_command(binary: Path) -> list[str]:
         str(LLM_THREADS),
         "--threads-batch",
         str(LLM_THREADS),
+        "-b",
+        "512",
+        "-ub",
+        "256",
         "-ngl",
         str(LLM_N_GPU_LAYERS if _has_nvidia() else 0),
     ]

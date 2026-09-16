@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
+import type { InterventionType } from '@sys112/shared-types';
 
 const tones = { ok: '#3dcc8a', warn: '#e0b341', bad: '#e35d6a' } as const;
+
+const EXAM_ACTIONS: Array<{ type: InterventionType; label: string; hint: string }> = [
+  { type: 'set_emotional_state', label: 'Негативные эмоции', hint: 'Паника, злость, растерянность' },
+  { type: 'add_circumstance', label: 'Новое обстоятельство', hint: 'Дым усилился, появился пострадавший' },
+  { type: 'inject_event', label: 'Внезапное событие', hint: 'Слышен удар, связь прерывается' },
+  { type: 'adjust_difficulty', label: 'Усложнить диалог', hint: 'Заявитель путает адрес и факты' },
+];
 
 function Dot(props: { tone: keyof typeof tones; label: string }) {
   return (
@@ -66,6 +74,22 @@ export function App() {
           label={`Realtime ${realtimeStatus}`}
         />
       </div>
+
+      <section className="exam">
+        <h2>Экзамен</h2>
+        <p className="muted">
+          На экзамене преподаватель сможет вмешиваться в разговор: эмоции, новые обстоятельства, внезапные события.
+          Пока команды только размечены — сервис диалога отвечает <code>not_implemented</code>.
+        </p>
+        <div className="exam-actions">
+          {EXAM_ACTIONS.map((action) => (
+            <button key={action.type} type="button" className="exam-btn" disabled title={action.hint}>
+              <strong>{action.label}</strong>
+              <span>{action.hint}</span>
+            </button>
+          ))}
+        </div>
+      </section>
     </main>
   );
 }

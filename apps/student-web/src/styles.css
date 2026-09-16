@@ -192,6 +192,42 @@ h2 {
   margin-top: 16px;
 }
 
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lesson-list {
+  display: grid;
+  gap: 12px;
+}
+
+.lesson-card {
+  border: 1px solid var(--line);
+  padding: 16px;
+  background: #f8fafb;
+}
+
+.lesson-card h2 {
+  margin: 4px 0 8px;
+}
+
+.call-body-solo {
+  grid-template-columns: 1fr;
+}
+
+.call-side {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-height: 0;
+}
+
+.analysis {
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
 .link {
   border: 0;
   background: none;
@@ -346,7 +382,8 @@ h2 {
 
 @media (max-width: 900px) {
   .split,
-  .call-body {
+  .call-body,
+  .call-body-solo {
     grid-template-columns: 1fr;
   }
 

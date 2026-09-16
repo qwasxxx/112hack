@@ -20,11 +20,21 @@ from sys112_llm.config import (
 
 logger = logging.getLogger("sys112_llm")
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_FOREIGN = re.compile(
+    r"(?:[\u3000-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF"
+    r"\uFF00-\uFFEF\u1100-\u11FF]|[A-Za-z])+"
+)
 
 
 def strip_reasoning(text: str) -> str:
     cleaned = _THINK.sub("", text)
     cleaned = re.sub(r"</?think>", "", cleaned, flags=re.IGNORECASE)
+    return " ".join(cleaned.split()).strip()
+
+
+def sanitize_speech(text: str) -> str:
+    cleaned = _FOREIGN.sub(" ", strip_reasoning(text))
+    cleaned = re.sub(r"\s+([,.;:!?])", r"\1", cleaned)
     return " ".join(cleaned.split()).strip()
 
 
@@ -40,7 +50,11 @@ class LlamaClient:
         except Exception:
             return False
 
-    async def stream_chat(self, messages: list[dict[str, str]]) -> AsyncIterator[str]:
+    async def stream_chat(
+        self,
+        messages: list[dict[str, str]],
+        max_tokens: int | None = None,
+    ) -> AsyncIterator[str]:
         payload = {
             "model": LLM_MODEL_NAME,
             "messages": messages,
@@ -48,7 +62,7 @@ class LlamaClient:
             "temperature": LLM_TEMPERATURE,
             "top_p": LLM_TOP_P,
             "top_k": LLM_TOP_K,
-            "max_tokens": LLM_MAX_TOKENS,
+            "max_tokens": LLM_MAX_TOKENS if max_tokens is None else max_tokens,
             "repeat_penalty": LLM_REPEAT_PENALTY,
             "chat_template_kwargs": {"enable_thinking": False},
         }

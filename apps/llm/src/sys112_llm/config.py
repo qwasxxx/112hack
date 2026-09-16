@@ -29,8 +29,17 @@ LLM_CONTEXT_SIZE = int(_env("LLM_CONTEXT_SIZE", "2048"))
 LLM_N_GPU_LAYERS = int(_env("LLM_N_GPU_LAYERS", "99"))
 LLM_TIMEOUT_SEC = float(_env("LLM_TIMEOUT_SEC", "60"))
 LLM_REPEAT_PENALTY = float(_env("LLM_REPEAT_PENALTY", "1.12"))
-_cpu = os.cpu_count() or 4
-LLM_THREADS = int(_env("LLM_THREADS", str(max(2, _cpu - 1) if _cpu > 4 else _cpu)))
+LLM_ANALYSIS_MAX_TOKENS = int(_env("LLM_ANALYSIS_MAX_TOKENS", "180"))
+
+
+def _default_threads() -> str:
+    logical = os.cpu_count() or 4
+    if logical >= 8:
+        return str(max(4, logical // 2))
+    return str(max(2, logical))
+
+
+LLM_THREADS = int(_env("LLM_THREADS", _default_threads()))
 LLM_TOOLS_DIR = Path(_env("LLM_TOOLS_DIR", str(REPO_ROOT / "tools" / "llama.cpp")))
 LLM_MODEL_URL = _env(
     "LLM_MODEL_URL",

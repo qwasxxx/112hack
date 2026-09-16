@@ -1,9 +1,9 @@
-import { SERVICE_LABEL, type TrainingScenario } from '../data/scenarios';
+import { LESSON_SECTIONS, SERVICE_LABEL, type LessonSection, type TrainingScenario } from '../data/scenarios';
 
 type Props = {
   scenario: TrainingScenario;
   onBack: () => void;
-  onStart: () => void;
+  onStart: (section: LessonSection) => void;
 };
 
 export function BriefingPage(props: Props) {
@@ -28,7 +28,7 @@ export function BriefingPage(props: Props) {
             {props.scenario.services.map((item) => SERVICE_LABEL[item]).join(' · ')} · около{' '}
             {props.scenario.durationMin} мин · {props.scenario.difficulty}
           </p>
-          <h2>Перед вызовом</h2>
+          <h2>Перед занятием</h2>
           <ul className="bullets">
             {props.scenario.theory.map((item) => (
               <li key={item}>{item}</li>
@@ -37,15 +37,24 @@ export function BriefingPage(props: Props) {
         </article>
 
         <aside className="panel">
-          <h2>Что нужно сделать</h2>
-          <ol className="steps">
-            {props.scenario.checklist.map((item) => (
-              <li key={item}>{item}</li>
+          <h2>Разделы урока</h2>
+          <div className="lesson-list">
+            {LESSON_SECTIONS.map((section) => (
+              <article key={section.id} className="lesson-card">
+                <p className="kicker">{section.youAre}</p>
+                <h2>{section.title}</h2>
+                <p className="lead">{section.lead}</p>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-block"
+                  disabled={!section.enabled}
+                  onClick={() => props.onStart(section.id)}
+                >
+                  {section.enabled ? `Начать: ${section.title}` : 'Скоро'}
+                </button>
+              </article>
             ))}
-          </ol>
-          <button type="button" className="btn btn-primary btn-block" onClick={props.onStart}>
-            Начать учебный вызов
-          </button>
+          </div>
         </aside>
       </section>
     </div>
