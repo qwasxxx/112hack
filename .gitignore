@@ -20,4 +20,10 @@ models/
 apps/stt/.venv
 apps/stt/.pytest_cache
 apps/stt/**/__pycache__
+apps/llm/.venv
+apps/llm/.pytest_cache
+apps/llm/**/__pycache__
+tools/llama.cpp
 *.onnx
+*.gguf
+data/llm-sessions/

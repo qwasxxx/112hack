@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TrainingScenario } from '../data/scenarios';
+import { createLlmStream } from '../lib/llm-stream';
 import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
 
@@ -8,7 +9,7 @@ type Line = {
   role: 'caller' | 'operator';
   text: string;
   live?: boolean;
-  source?: 'script' | 'stt' | 'typed';
+  source?: 'stt' | 'llm' | 'typed';
 };
 
 type CallState = 'idle' | 'connecting' | 'listening' | 'error' | 'ended';
@@ -19,10 +20,11 @@ type Props = {
 };
 
 export function CallPage(props: Props) {
+  const conversationRole = props.scenario.conversationRole ?? 'victim';
+  const userRole: Line['role'] = conversationRole === 'victim' ? 'operator' : 'caller';
+  const aiRole: Line['role'] = conversationRole === 'victim' ? 'caller' : 'operator';
   const [seconds, setSeconds] = useState(0);
-  const [lines, setLines] = useState<Line[]>([
-    { id: 'open', role: 'caller', text: props.scenario.callerOpening, source: 'script' },
-  ]);
+  const [lines, setLines] = useState<Line[]>([]);
   const [card, setCard] = useState<Record<string, string>>({});
   const [draft, setDraft] = useState('');
   const [recording, setRecording] = useState(false);
@@ -30,9 +32,14 @@ export function CallPage(props: Props) {
   const [micError, setMicError] = useState<string | undefined>();
   const logRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<ReturnType<typeof createSttStream> | undefined>(undefined);
+  const llmRef = useRef<ReturnType<typeof createLlmStream> | undefined>(undefined);
   const startingRef = useRef(false);
   const finalsRef = useRef(emptyTranscript());
   const leavingRef = useRef(false);
+  const seenFinalsRef = useRef(new Set<string>());
+  const utterancePartsRef = useRef<string[]>([]);
+  const liveSttRef = useRef('');
+  const flushTimerRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -48,8 +55,13 @@ export function CallPage(props: Props) {
   useEffect(() => {
     return () => {
       leavingRef.current = true;
+      if (flushTimerRef.current !== undefined) {
+        window.clearTimeout(flushTimerRef.current);
+      }
       void streamRef.current?.stop();
+      void llmRef.current?.stop();
       streamRef.current = undefined;
+      llmRef.current = undefined;
     };
   }, []);
 
@@ -59,12 +71,95 @@ export function CallPage(props: Props) {
     }
     startingRef.current = true;
     leavingRef.current = false;
+    seenFinalsRef.current = new Set();
+    finalsRef.current = emptyTranscript();
+    utterancePartsRef.current = [];
+    liveSttRef.current = '';
+    if (flushTimerRef.current !== undefined) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = undefined;
+    }
+    setLines([]);
     setMicError(undefined);
     setCallState('connecting');
+    const callId = crypto.randomUUID();
+    const llm = createLlmStream({
+      callId,
+      conversationRole,
+      systemPrompt: props.scenario.systemPrompt,
+      lessonId: props.scenario.id,
+      onEvent: (event) => {
+        if (event.type === 'assistant_partial' && event.text.trim()) {
+          setLines((current) => upsertLive(current, aiRole, event.text, 'llm'));
+        }
+        if (event.type === 'assistant_final' && event.text.trim()) {
+          setLines((current) => commitLive(current, aiRole, event.text, 'llm'));
+        }
+      },
+      onError: (message) => {
+        setMicError(message);
+      },
+    });
+    llmRef.current = llm;
+
+    const flushUtterance = () => {
+      if (flushTimerRef.current !== undefined) {
+        window.clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = undefined;
+      }
+      const text = composeUtterance(utterancePartsRef.current, liveSttRef.current);
+      utterancePartsRef.current = [];
+      liveSttRef.current = '';
+      if (!text.trim()) {
+        return;
+      }
+      const id = crypto.randomUUID();
+      setLines((current) => commitLive(current, userRole, text, 'stt'));
+      llmRef.current?.sendUserFinal(id, text);
+    };
+
+    const scheduleFlush = () => {
+      if (flushTimerRef.current !== undefined) {
+        window.clearTimeout(flushTimerRef.current);
+      }
+      flushTimerRef.current = window.setTimeout(flushUtterance, 500);
+    };
+
+    const showUserSpeech = (parts: string[], live: string) => {
+      const text = composeUtterance(parts, live);
+      if (!text.trim()) {
+        return;
+      }
+      setLines((current) => upsertLive(current, userRole, text, 'stt'));
+    };
+
     const stream = createSttStream({
       onEvent: (event) => {
         finalsRef.current = applySttEvent(finalsRef.current, event);
-        setLines((current) => syncOperatorLines(current, finalsRef.current.finals, finalsRef.current.partial));
+        if (event.type === 'partial' && event.text.trim()) {
+          if (!isShorterTranscript(liveSttRef.current, event.text)) {
+            liveSttRef.current = event.text;
+          }
+          showUserSpeech(utterancePartsRef.current, liveSttRef.current);
+          if (flushTimerRef.current !== undefined) {
+            scheduleFlush();
+          }
+        }
+        if (event.type === 'final') {
+          const last = finalsRef.current.finals.at(-1);
+          if (!last || !last.text.trim() || seenFinalsRef.current.has(last.id)) {
+            return;
+          }
+          seenFinalsRef.current.add(last.id);
+          const next = last.text.trim();
+          const joined = composeUtterance(utterancePartsRef.current, '');
+          if (!joined || !joined.toLowerCase().includes(next.toLowerCase())) {
+            utterancePartsRef.current = [...utterancePartsRef.current, next];
+          }
+          liveSttRef.current = '';
+          showUserSpeech(utterancePartsRef.current, '');
+          scheduleFlush();
+        }
       },
       onError: (message) => {
         setMicError(message);
@@ -74,9 +169,19 @@ export function CallPage(props: Props) {
     });
     streamRef.current = stream;
     try {
+      await llm.start().catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : 'Сервис диалога недоступен.';
+        setMicError(text);
+      });
+      if (leavingRef.current) {
+        await stream.stop();
+        await llm.stop();
+        return;
+      }
       await stream.start();
       if (leavingRef.current) {
         await stream.stop();
+        await llm.stop();
         return;
       }
       setRecording(true);
@@ -97,7 +202,11 @@ export function CallPage(props: Props) {
         return;
       }
       const text = error instanceof Error ? error.message : '';
-      setMicError(text && /микрофон|распознаван|браузер|модель/i.test(text) ? text : 'Не удалось начать распознавание. Проверьте, что сервис STT запущен.');
+      setMicError(
+        text && /микрофон|распознаван|браузер|модель|диалог/i.test(text)
+          ? text
+          : 'Не удалось начать распознавание. Проверьте, что сервисы STT и LLM запущены.',
+      );
     } finally {
       startingRef.current = false;
     }
@@ -108,10 +217,12 @@ export function CallPage(props: Props) {
     if (!trimmed) {
       return;
     }
+    const id = crypto.randomUUID();
     setLines((current) => [
       ...current.filter((line) => !line.live),
-      { id: crypto.randomUUID(), role: 'operator', text: trimmed, source: 'typed' },
+      { id, role: userRole, text: trimmed, source: 'typed' },
     ]);
+    llmRef.current?.sendUserFinal(id, trimmed);
     setDraft('');
   }
 
@@ -120,17 +231,29 @@ export function CallPage(props: Props) {
   }
 
   async function hangup() {
-    if (!streamRef.current) {
+    if (!streamRef.current && !llmRef.current) {
       props.onLeave();
       return;
     }
     leavingRef.current = true;
+    if (flushTimerRef.current !== undefined) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = undefined;
+    }
+    const leftover = composeUtterance(utterancePartsRef.current, liveSttRef.current);
+    utterancePartsRef.current = [];
+    liveSttRef.current = '';
+    if (leftover.trim()) {
+      llmRef.current?.sendUserFinal(crypto.randomUUID(), leftover);
+    }
     const complete = await streamRef.current?.stop();
+    await llmRef.current?.stop();
     streamRef.current = undefined;
+    llmRef.current = undefined;
     if (complete) {
       finalsRef.current = { ...finalsRef.current, completeText: complete, partial: '' };
-      setLines((current) => syncOperatorLines(current, finalsRef.current.finals, ''));
     }
+    setLines((current) => current.filter((line) => !line.live));
     setRecording(false);
     setCallState('ended');
   }
@@ -205,7 +328,7 @@ export function CallPage(props: Props) {
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                placeholder="Реплика оператора"
+                placeholder={userRole === 'caller' ? 'Реплика заявителя' : 'Реплика оператора'}
                 rows={2}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
@@ -275,22 +398,43 @@ export function CallPage(props: Props) {
   );
 }
 
-function syncOperatorLines(
-  current: Line[],
-  finals: Array<{ id: string; text: string }>,
-  partial: string,
-): Line[] {
-  const rest = current.filter((line) => line.source !== 'stt');
-  const caller = rest.filter((line) => line.role === 'caller');
-  const typed = rest.filter((line) => line.source === 'typed');
-  const operator: Line[] = finals.map((item) => ({
-    id: item.id,
-    role: 'operator',
-    text: item.text,
-    source: 'stt',
-  }));
-  if (partial) {
-    operator.push({ id: 'partial', role: 'operator', text: partial, live: true, source: 'stt' });
+function upsertLive(current: Line[], role: Line['role'], text: string, source: Line['source']): Line[] {
+  const next = current.filter((line) => !(line.live && line.source === source));
+  return [...next, { id: `${source}-live`, role, text, live: true, source }];
+}
+
+function commitLive(current: Line[], role: Line['role'], text: string, source: Line['source']): Line[] {
+  const next = current.filter((line) => !(line.live && line.source === source));
+  return [...next, { id: crypto.randomUUID(), role, text, source }];
+}
+
+function isShorterTranscript(previous: string, next: string): boolean {
+  const prev = previous.trim().replace(/\s+/g, ' ');
+  const value = next.trim().replace(/\s+/g, ' ');
+  if (!prev || !value || prev === value) {
+    return false;
   }
-  return [...caller, ...operator, ...typed];
+  const a = prev.toLowerCase();
+  const b = value.toLowerCase();
+  return a.startsWith(b) || (a.includes(b) && b.length + 4 <= a.length);
+}
+
+function composeUtterance(parts: string[], live: string): string {
+  const base = parts.map((item) => item.trim()).filter(Boolean).join(' ');
+  const extra = live.trim();
+  if (!extra) {
+    return base;
+  }
+  if (!base) {
+    return extra;
+  }
+  const b = base.toLowerCase();
+  const e = extra.toLowerCase();
+  if (e.startsWith(b)) {
+    return extra;
+  }
+  if (b.includes(e) || isShorterTranscript(base, extra)) {
+    return base;
+  }
+  return `${base} ${extra}`;
 }

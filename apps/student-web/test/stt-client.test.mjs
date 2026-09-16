@@ -84,3 +84,42 @@ test('microphone permission error is user-facing', () => {
       : 'other';
   assert.match(message, /микрофон/i);
 });
+
+test('llm is only called on final transcripts', () => {
+  const sent = [];
+  const seen = new Set();
+  function onStt(event) {
+    if (event.type !== 'final' || !event.text.trim() || seen.has(event.id)) {
+      return;
+    }
+    seen.add(event.id);
+    sent.push(event.text);
+  }
+  onStt({ type: 'partial', text: 'У нас' });
+  onStt({ type: 'partial', text: 'У нас пожар' });
+  onStt({ type: 'final', id: '1', text: 'У нас пожар в квартире.' });
+  onStt({ type: 'final', id: '1', text: 'У нас пожар в квартире.' });
+  assert.deepEqual(sent, ['У нас пожар в квартире.']);
+});
+
+test('live transcript does not shrink and merges split finals', () => {
+  function isShorterTranscript(previous, next) {
+    const prev = previous.trim();
+    const value = next.trim();
+    if (!prev || !value || prev === value) return false;
+    return prev.startsWith(value) || (prev.includes(value) && value.length + 4 <= prev.length);
+  }
+  function composeUtterance(parts, live) {
+    const base = parts.map((item) => item.trim()).filter(Boolean).join(' ');
+    const extra = live.trim();
+    if (!extra) return base;
+    if (!base) return extra;
+    if (extra.toLowerCase().startsWith(base.toLowerCase())) return extra;
+    if (base.toLowerCase().includes(extra.toLowerCase()) || isShorterTranscript(base, extra)) return base;
+    return `${base} ${extra}`;
+  }
+  assert.equal(isShorterTranscript('у нас пожар в квартире', 'у нас пожар'), true);
+  assert.equal(composeUtterance(['у нас пожар'], 'в квартире'), 'у нас пожар в квартире');
+  assert.equal(composeUtterance(['у нас пожар'], 'у нас'), 'у нас пожар');
+});
+

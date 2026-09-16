@@ -12,10 +12,13 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
+      '/api/llm': 'http://127.0.0.1:8091',
       '/api': 'http://127.0.0.1:3000',
       '/socket.io': { target: 'http://127.0.0.1:3000', ws: true },
       '/ws/stt': { target: 'http://127.0.0.1:8090', ws: true },
       '/stt-health': { target: 'http://127.0.0.1:8090', rewrite: (path) => path.replace('/stt-health', '/health') },
+      '/ws/llm': { target: 'http://127.0.0.1:8091', ws: true },
+      '/llm-health': { target: 'http://127.0.0.1:8091', rewrite: (path) => path.replace('/llm-health', '/health') },
     },
   },
 });

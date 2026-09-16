@@ -25,6 +25,39 @@ services:
       timeout: 5s
       retries: 12
 
+  llama:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: sys112-llama
+    command: >
+      -m /models/Qwen3-4B-Q4_K_M.gguf
+      --host 0.0.0.0
+      --port 8080
+      -c 4096
+      --jinja
+      -ngl 0
+    volumes:
+      - ../../models/llm:/models
+    ports:
+      - "8080:8080"
+
+  llm:
+    build:
+      context: ../..
+      dockerfile: apps/llm/Dockerfile
+    container_name: sys112-llm
+    environment:
+      LLM_MODE: local
+      LLM_PROVIDER: local
+      LLM_RUNTIME: llama_cpp
+      LLM_MODEL_NAME: Qwen3-4B
+      LLM_BASE_URL: http://llama:8080
+      LLM_HOST: 0.0.0.0
+      LLM_PORT: "8091"
+    ports:
+      - "8091:8091"
+    depends_on:
+      - llama
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: sys112-postgres

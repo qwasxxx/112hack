@@ -62,6 +62,14 @@ def test_normalize_transcript():
     assert normalize_transcript("  пожар   в  квартире ") == "пожар в квартире"
 
 
+def test_partial_does_not_shrink():
+    from sys112_stt.engine import _is_shorter_partial
+
+    assert _is_shorter_partial("у нас пожар в квартире", "у нас пожар")
+    assert not _is_shorter_partial("у нас пожар", "у нас пожар в квартире")
+    assert not _is_shorter_partial("", "пожар")
+
+
 def test_stable_prefix_holds_last_words():
     from sys112_stt.transcript_postprocessor import stable_prefix
 

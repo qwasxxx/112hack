@@ -143,6 +143,8 @@ class SttSession:
         except Exception:
             stamps = []
         visible = text if force_final else stable_prefix(text, stamps, self.audio_seconds, STT_PARTIAL_DELAY)
+        if visible and _is_shorter_partial(self.last_partial, visible):
+            visible = self.last_partial
         if visible and visible != self.last_partial:
             self.last_partial = visible
             events.append({"type": "partial", "text": visible})
@@ -191,6 +193,14 @@ class SttSession:
         self.finals.append(phrase)
         self.recognizer.reset(self.stream)
         return [{"type": "final", **phrase}]
+
+
+def _is_shorter_partial(previous: str, visible: str) -> bool:
+    if not previous or not visible or previous == visible:
+        return False
+    prev = previous.strip()
+    nxt = visible.strip()
+    return prev.startswith(nxt) or (nxt in prev and len(nxt) + 4 <= len(prev))
 
 
 def create_session(recognizer: RecognizerLike | None, status: str) -> SttSession:

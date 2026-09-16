@@ -19,6 +19,8 @@ export type TrainingScenario = {
   theory: string[];
   checklist: string[];
   callerOpening: string;
+  conversationRole?: 'victim' | 'operator';
+  systemPrompt?: string;
   cardFields: CardField[];
 };
 
@@ -50,6 +52,7 @@ export const SCENARIOS: TrainingScenario[] = [
       'Заполнить карточку происшествия',
     ],
     callerOpening: 'Алло, у нас пожар, из окна дым валит, скорее приезжайте!',
+    conversationRole: 'operator',
     cardFields: [
       { key: 'address', label: 'Адрес', type: 'string', required: true },
       { key: 'what_happened', label: 'Что произошло', type: 'text', required: true },
@@ -82,6 +85,7 @@ export const SCENARIOS: TrainingScenario[] = [
       'Уточнить, перекрыта ли дорога',
     ],
     callerOpening: 'Мы столкнулись на перекрёстке, тут человек в машине, он не выходит!',
+    conversationRole: 'operator',
     cardFields: [
       { key: 'address', label: 'Место', type: 'string', required: true },
       { key: 'what_happened', label: 'Что произошло', type: 'text', required: true },
@@ -113,6 +117,7 @@ export const SCENARIOS: TrainingScenario[] = [
       'Где видели последний раз',
     ],
     callerOpening: 'Я сына потеряла, ему семь лет, он был во дворе и пропал!',
+    conversationRole: 'operator',
     cardFields: [
       { key: 'address', label: 'Адрес / район', type: 'string', required: true },
       { key: 'who', label: 'Кого ищут', type: 'string', required: true },
