@@ -84,9 +84,6 @@ importers:
       '@sys112/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
-      '@sys112/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
       react:
         specifier: ^19.1.0
         version: 19.3.0
@@ -118,9 +115,6 @@ importers:
       '@sys112/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
-      '@sys112/ui':
-        specifier: workspace:*
-        version: link:../../packages/ui
       react:
         specifier: ^19.1.0
         version: 19.3.0
