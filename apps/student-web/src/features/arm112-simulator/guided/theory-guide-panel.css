@@ -1,0 +1,186 @@
+.theory-guide {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: #f4f7fb;
+  color: #1c2128;
+  border-left: 1px solid #d5dde6;
+  font: 14px/1.4 "Segoe UI", Arial, sans-serif;
+}
+
+.theory-guide-head {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid #e2e8ef;
+}
+
+.theory-guide-kicker {
+  margin: 0 0 4px;
+  color: #5d6670;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.theory-guide-head h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.theory-guide-head p {
+  margin: 6px 0 0;
+  color: #5d6670;
+  font-size: 13px;
+}
+
+.theory-guide-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid #e2e8ef;
+  overflow: auto;
+  max-height: 38%;
+}
+
+.theory-guide-step {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theory-guide-step:hover {
+  background: #e7eef6;
+}
+
+.theory-guide-step.is-active {
+  background: #1f4e79;
+  color: #fff;
+}
+
+.theory-guide-step b {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.theory-guide-lesson {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 18px 12px;
+}
+
+.theory-guide-index {
+  margin: 0 0 6px;
+  color: #1f4e79;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.theory-guide-lesson h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+}
+
+.theory-guide-block {
+  margin: 0 0 12px;
+}
+
+.theory-guide-block span {
+  display: block;
+  margin-bottom: 4px;
+  color: #5d6670;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.theory-guide-block p {
+  margin: 0;
+}
+
+.theory-guide-hotkey {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #e7eef6;
+  color: #1f4e79;
+  font-size: 12px;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.theory-guide-nav {
+  display: flex;
+  gap: 8px;
+  padding: 12px 18px 16px;
+  border-top: 1px solid #e2e8ef;
+}
+
+.theory-guide-nav button {
+  flex: 1;
+  height: 40px;
+  border: 1px solid #c5d0db;
+  background: #fff;
+  color: #1c2128;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.theory-guide-nav button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.theory-guide-nav .is-next {
+  border-color: #1f4e79;
+  background: #1f4e79;
+  color: #fff;
+}
+
+.theory-guide-toggle {
+  display: none;
+}
+
+@media (max-width: 1279px) {
+  .theory-guide {
+    position: relative;
+    max-height: 42vh;
+    border-left: 0;
+    border-top: 1px solid #d5dde6;
+  }
+
+  .theory-guide.is-collapsed {
+    max-height: 56px;
+  }
+
+  .theory-guide.is-collapsed .theory-guide-steps,
+  .theory-guide.is-collapsed .theory-guide-lesson,
+  .theory-guide.is-collapsed .theory-guide-nav {
+    display: none;
+  }
+
+  .theory-guide-toggle {
+    display: block;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid #c5d0db;
+    background: #fff;
+    cursor: pointer;
+  }
+}

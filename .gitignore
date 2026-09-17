@@ -27,3 +27,9 @@ tools/llama.cpp
 *.onnx
 *.gguf
 data/llm-sessions/
+.tmp-arm112-sources/
+.tmp-sidebar-art/
+.tmp-briefing-verify/
+.tmp-theory-sources/
+.tmp-theory-verify/
+.tmp-dds-verify/

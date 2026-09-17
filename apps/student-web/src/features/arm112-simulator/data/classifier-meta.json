@@ -1,0 +1,938 @@
+{
+  "sourceFile": "Классификатор_происшествий_v_046_11_ДТУ_15_11_2024_искл_пожар_задымление.xlsx",
+  "sourceSheet": "Лист1",
+  "sourceVersion": "v_046_11_ДТУ_15_11_2024",
+  "note": "Values copied from source without transformation. Empty cells omitted. Group header rows extracted separately.",
+  "recordCount": 1282,
+  "columnCount": 90,
+  "columns": [
+    {
+      "index": 1,
+      "key": "c01",
+      "label": "Г",
+      "headerRow1": "Генерация номера",
+      "headerRow2": "Г",
+      "headerRow3": "",
+      "parentBlock": "Генерация номера"
+    },
+    {
+      "index": 2,
+      "key": "c02",
+      "label": "п1",
+      "headerRow1": "",
+      "headerRow2": "п1",
+      "headerRow3": "",
+      "parentBlock": "Генерация номера"
+    },
+    {
+      "index": 3,
+      "key": "c03",
+      "label": "п2",
+      "headerRow1": "",
+      "headerRow2": "п2",
+      "headerRow3": "",
+      "parentBlock": "Генерация номера"
+    },
+    {
+      "index": 4,
+      "key": "c04",
+      "label": "п3",
+      "headerRow1": "",
+      "headerRow2": "п3",
+      "headerRow3": "",
+      "parentBlock": "Генерация номера"
+    },
+    {
+      "index": 5,
+      "key": "c05",
+      "label": "Номер",
+      "headerRow1": "",
+      "headerRow2": "Номер",
+      "headerRow3": "",
+      "parentBlock": "Генерация номера"
+    },
+    {
+      "index": 6,
+      "key": "c06",
+      "label": "Группа происшествий Учет в статистике в службе 112",
+      "headerRow1": "",
+      "headerRow2": "Группа происшествий Учет в статистике в службе 112",
+      "headerRow3": "",
+      "parentBlock": "Генерация номера"
+    },
+    {
+      "index": 7,
+      "key": "c07",
+      "label": "112 - Признак.1 (тип происшествия)",
+      "headerRow1": "Блок, как происшествие отображается для специалиста службы 112 (типовые признаки происшествия)",
+      "headerRow2": "112 - Признак.1 (тип происшествия)",
+      "headerRow3": "",
+      "parentBlock": "Блок, как происшествие отображается для специалиста службы 112 (типовые признаки происшествия)"
+    },
+    {
+      "index": 8,
+      "key": "c08",
+      "label": "112-Признак.2",
+      "headerRow1": "",
+      "headerRow2": "112-Признак.2",
+      "headerRow3": "",
+      "parentBlock": "Блок, как происшествие отображается для специалиста службы 112 (типовые признаки происшествия)"
+    },
+    {
+      "index": 9,
+      "key": "c09",
+      "label": "112-Признак.3",
+      "headerRow1": "",
+      "headerRow2": "112-Признак.3",
+      "headerRow3": "",
+      "parentBlock": "Блок, как происшествие отображается для специалиста службы 112 (типовые признаки происшествия)"
+    },
+    {
+      "index": 10,
+      "key": "c10",
+      "label": "Дополнительные признаки (не влияют на тип происшествия)",
+      "headerRow1": "",
+      "headerRow2": "Дополнительные признаки (не влияют на тип происшествия)",
+      "headerRow3": "",
+      "parentBlock": "Блок, как происшествие отображается для специалиста службы 112 (типовые признаки происшествия)"
+    },
+    {
+      "index": 11,
+      "key": "c11",
+      "label": "Итоговый тип происшествия",
+      "headerRow1": "",
+      "headerRow2": "Итоговый тип происшествия",
+      "headerRow3": "",
+      "parentBlock": "Блок, как происшествие отображается для специалиста службы 112 (типовые признаки происшествия)"
+    },
+    {
+      "index": 12,
+      "key": "c12",
+      "label": "ТИП происшествия ЕКП 35",
+      "headerRow1": "",
+      "headerRow2": "ТИП происшествия ЕКП 35",
+      "headerRow3": "",
+      "parentBlock": "Блок, как происшествие отображается для специалиста службы 112 (типовые признаки происшествия)"
+    },
+    {
+      "index": 13,
+      "key": "c13",
+      "label": "Сценарий реагирования",
+      "headerRow1": "Сценарий реагирования",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Сценарий реагирования"
+    },
+    {
+      "index": 14,
+      "key": "c14",
+      "label": "Главная служба",
+      "headerRow1": "Главная служба",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Главная служба"
+    },
+    {
+      "index": 15,
+      "key": "c15",
+      "label": "Служба 101 (признак НД - НЕТ ДОСТУПА не выбран)",
+      "headerRow1": "Классификатор МЧС",
+      "headerRow2": "Служба 101",
+      "headerRow3": "Служба 101 (признак НД - НЕТ ДОСТУПА не выбран)",
+      "parentBlock": "Классификатор МЧС"
+    },
+    {
+      "index": 16,
+      "key": "c16",
+      "label": "Служба 101 (выбран признак НД - НЕТ ДОСТУПА)",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "Служба 101 (выбран признак НД - НЕТ ДОСТУПА)",
+      "parentBlock": "Классификатор МЧС"
+    },
+    {
+      "index": 17,
+      "key": "c17",
+      "label": "ОДС ПСЦ (другие признаки не выбраны)",
+      "headerRow1": "",
+      "headerRow2": "ОДС ПСЦ",
+      "headerRow3": "ОДС ПСЦ (другие признаки не выбраны)",
+      "parentBlock": "Классификатор МЧС"
+    },
+    {
+      "index": 18,
+      "key": "c18",
+      "label": "ОДС ПСЦ (выбран признак УЛ - УГРОЗА ЛЮДЯМ)",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "ОДС ПСЦ (выбран признак УЛ - УГРОЗА ЛЮДЯМ)",
+      "parentBlock": "Классификатор МЧС"
+    },
+    {
+      "index": 19,
+      "key": "c19",
+      "label": "ОДС ПСЦ (выбран признак ПП - ПОСТРАДАВШИЕ ПОГИБШИЕ)",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "ОДС ПСЦ (выбран признак ПП - ПОСТРАДАВШИЕ ПОГИБШИЕ)",
+      "parentBlock": "Классификатор МЧС"
+    },
+    {
+      "index": 20,
+      "key": "c20",
+      "label": "ОДС ПСЦ (выбран признак НД - НЕТ ДОСТУПА)",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "ОДС ПСЦ (выбран признак НД - НЕТ ДОСТУПА)",
+      "parentBlock": "Классификатор МЧС"
+    },
+    {
+      "index": 21,
+      "key": "c21",
+      "label": "МГПСС",
+      "headerRow1": "",
+      "headerRow2": "МГПСС",
+      "headerRow3": "",
+      "parentBlock": "Классификатор МЧС"
+    },
+    {
+      "index": 22,
+      "key": "c22",
+      "label": "признак Правонарушение или Пострадавшие не выбран",
+      "headerRow1": "Классификатор МВД",
+      "headerRow2": "признак Правонарушение или Пострадавшие не выбран",
+      "headerRow3": "",
+      "parentBlock": "Классификатор МВД"
+    },
+    {
+      "index": 23,
+      "key": "c23",
+      "label": "выбран признак Правонарушение",
+      "headerRow1": "",
+      "headerRow2": "выбран признак Правонарушение",
+      "headerRow3": "",
+      "parentBlock": "Классификатор МВД"
+    },
+    {
+      "index": 24,
+      "key": "c24",
+      "label": "выбран признак Пострадавшие",
+      "headerRow1": "",
+      "headerRow2": "выбран признак Пострадавшие",
+      "headerRow3": "",
+      "parentBlock": "Классификатор МВД"
+    },
+    {
+      "index": 25,
+      "key": "c25",
+      "label": "Классификатор СМП (признак Пострадавшие не выбран)",
+      "headerRow1": "Классификатор СМП",
+      "headerRow2": "Классификатор СМП (признак Пострадавшие не выбран)",
+      "headerRow3": "",
+      "parentBlock": "Классификатор СМП"
+    },
+    {
+      "index": 26,
+      "key": "c26",
+      "label": "Классификатор СМП (выбран признак Пострадавшие)",
+      "headerRow1": "",
+      "headerRow2": "Классификатор СМП (выбран признак Пострадавшие)",
+      "headerRow3": "",
+      "parentBlock": "Классификатор СМП"
+    },
+    {
+      "index": 27,
+      "key": "c27",
+      "label": "Классификатор СМП (выбран признак Пострадавшие не на месте)",
+      "headerRow1": "",
+      "headerRow2": "Классификатор СМП (выбран признак Пострадавшие не на месте)",
+      "headerRow3": "",
+      "parentBlock": "Классификатор СМП"
+    },
+    {
+      "index": 28,
+      "key": "c28",
+      "label": "признак не выбран",
+      "headerRow1": "Классификатор МОСГАЗ",
+      "headerRow2": "",
+      "headerRow3": "признак не выбран",
+      "parentBlock": "Классификатор МОСГАЗ"
+    },
+    {
+      "index": 29,
+      "key": "c29",
+      "label": "газификация",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "газификация",
+      "parentBlock": "Классификатор МОСГАЗ"
+    },
+    {
+      "index": 30,
+      "key": "c30",
+      "label": "признаки не выбраны",
+      "headerRow1": "ЦЭМП",
+      "headerRow2": "",
+      "headerRow3": "признаки не выбраны",
+      "parentBlock": "ЦЭМП"
+    },
+    {
+      "index": 31,
+      "key": "c31",
+      "label": "угроза людям",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "угроза людям",
+      "parentBlock": "ЦЭМП"
+    },
+    {
+      "index": 32,
+      "key": "c32",
+      "label": "пострадавшие/погибшие",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "пострадавшие/погибшие",
+      "parentBlock": "ЦЭМП"
+    },
+    {
+      "index": 33,
+      "key": "c33",
+      "label": "мед. помощь",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "мед. помощь",
+      "parentBlock": "ЦЭМП"
+    },
+    {
+      "index": 34,
+      "key": "c34",
+      "label": "треб. Эвакуация",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "треб. Эвакуация",
+      "parentBlock": "ЦЭМП"
+    },
+    {
+      "index": 35,
+      "key": "c35",
+      "label": "признак не выбран",
+      "headerRow1": "Классификатор ФСБ",
+      "headerRow2": "",
+      "headerRow3": "признак не выбран",
+      "parentBlock": "Классификатор ФСБ"
+    },
+    {
+      "index": 36,
+      "key": "c36",
+      "label": ">5 чел / ОД",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": ">5 чел / ОД",
+      "parentBlock": "Классификатор ФСБ"
+    },
+    {
+      "index": 37,
+      "key": "c37",
+      "label": "Классификатор Мособлгаз",
+      "headerRow1": "Классификатор Мособлгаз",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Классификатор Мособлгаз"
+    },
+    {
+      "index": 38,
+      "key": "c38",
+      "label": "Автомобильные дороги",
+      "headerRow1": "Автомобильные дороги",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Автомобильные дороги"
+    },
+    {
+      "index": 39,
+      "key": "c39",
+      "label": "признак не выбран",
+      "headerRow1": "Мосгортранс",
+      "headerRow2": "",
+      "headerRow3": "признак не выбран",
+      "parentBlock": "Мосгортранс"
+    },
+    {
+      "index": 40,
+      "key": "c40",
+      "label": "постр / погибшие",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "постр / погибшие",
+      "parentBlock": "Мосгортранс"
+    },
+    {
+      "index": 41,
+      "key": "c41",
+      "label": "перекрытие движение",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "перекрытие движение",
+      "parentBlock": "Мосгортранс"
+    },
+    {
+      "index": 42,
+      "key": "c42",
+      "label": "Гор. Хозяйство",
+      "headerRow1": "Гор. Хозяйство",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Гор. Хозяйство"
+    },
+    {
+      "index": 43,
+      "key": "c43",
+      "label": "признак не выбран",
+      "headerRow1": "ГОРМОСТ",
+      "headerRow2": "",
+      "headerRow3": "признак не выбран",
+      "parentBlock": "ГОРМОСТ"
+    },
+    {
+      "index": 44,
+      "key": "c44",
+      "label": "тоннель",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "тоннель",
+      "parentBlock": "ГОРМОСТ"
+    },
+    {
+      "index": 45,
+      "key": "c45",
+      "label": "пеш",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "пеш",
+      "parentBlock": "ГОРМОСТ"
+    },
+    {
+      "index": 46,
+      "key": "c46",
+      "label": "ав",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "ав",
+      "parentBlock": "ГОРМОСТ"
+    },
+    {
+      "index": 47,
+      "key": "c47",
+      "label": "Канал имени Москвы",
+      "headerRow1": "Канал имени Москвы",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Канал имени Москвы"
+    },
+    {
+      "index": 48,
+      "key": "c48",
+      "label": "реагирование всегда",
+      "headerRow1": "МГТС",
+      "headerRow2": "",
+      "headerRow3": "реагирование всегда",
+      "parentBlock": "МГТС"
+    },
+    {
+      "index": 49,
+      "key": "c49",
+      "label": "на объектах связи",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "на объектах связи",
+      "parentBlock": "МГТС"
+    },
+    {
+      "index": 50,
+      "key": "c50",
+      "label": "Метро",
+      "headerRow1": "Метро",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Метро"
+    },
+    {
+      "index": 51,
+      "key": "c51",
+      "label": "Мосводоканал",
+      "headerRow1": "Мосводоканал",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Мосводоканал"
+    },
+    {
+      "index": 52,
+      "key": "c52",
+      "label": "МОЭК",
+      "headerRow1": "МОЭК",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "МОЭК"
+    },
+    {
+      "index": 53,
+      "key": "c53",
+      "label": "МОЭСК\n(ПАО \"Россети Московский регион\")",
+      "headerRow1": "МОЭСК\n(ПАО \"Россети Московский регион\")",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "МОЭСК\n(ПАО \"Россети Московский регион\")"
+    },
+    {
+      "index": 54,
+      "key": "c54",
+      "label": "ОЭК",
+      "headerRow1": "ОЭК",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "ОЭК"
+    },
+    {
+      "index": 55,
+      "key": "c55",
+      "label": "Мослифт",
+      "headerRow1": "Мослифт",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Мослифт"
+    },
+    {
+      "index": 56,
+      "key": "c56",
+      "label": "ЦОДД",
+      "headerRow1": "ЦОДД",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "ЦОДД"
+    },
+    {
+      "index": 57,
+      "key": "c57",
+      "label": "Деп. ЖКХ",
+      "headerRow1": "Деп. ЖКХ",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Деп. ЖКХ"
+    },
+    {
+      "index": 58,
+      "key": "c58",
+      "label": "Дежурная служба АРМ-112",
+      "headerRow1": "Департамент РБиПК             (ГКУ МОСБЕЗ)",
+      "headerRow2": "Дежурная служба АРМ-112",
+      "headerRow3": "",
+      "parentBlock": "Департамент РБиПК             (ГКУ МОСБЕЗ)"
+    },
+    {
+      "index": 59,
+      "key": "c59",
+      "label": "МКП, Аналитика (Старый КРИМ)",
+      "headerRow1": "",
+      "headerRow2": "МКП, Аналитика (Старый КРИМ)",
+      "headerRow3": "",
+      "parentBlock": "Департамент РБиПК             (ГКУ МОСБЕЗ)"
+    },
+    {
+      "index": 60,
+      "key": "c60",
+      "label": "Аппарат МЭРА",
+      "headerRow1": "Аппарат МЭРА",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Аппарат МЭРА"
+    },
+    {
+      "index": 61,
+      "key": "c61",
+      "label": "Москоллектор",
+      "headerRow1": "Москоллектор",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Москоллектор"
+    },
+    {
+      "index": 62,
+      "key": "c62",
+      "label": "РЖД",
+      "headerRow1": "РЖД",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "РЖД"
+    },
+    {
+      "index": 63,
+      "key": "c63",
+      "label": "Департамент образования",
+      "headerRow1": "Департамент образования",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Департамент образования"
+    },
+    {
+      "index": 64,
+      "key": "c64",
+      "label": "Центррегионводхоз (Московско-Окское БВУ)",
+      "headerRow1": "Центррегионводхоз (Московско-Окское БВУ)",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Центррегионводхоз (Московско-Окское БВУ)"
+    },
+    {
+      "index": 65,
+      "key": "c65",
+      "label": "Военная комендатура",
+      "headerRow1": "Военная комендатура",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Военная комендатура"
+    },
+    {
+      "index": 66,
+      "key": "c66",
+      "label": "ОАТИ",
+      "headerRow1": "ОАТИ",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "ОАТИ"
+    },
+    {
+      "index": 67,
+      "key": "c67",
+      "label": "Мосводосток",
+      "headerRow1": "Мосводосток",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Мосводосток"
+    },
+    {
+      "index": 68,
+      "key": "c68",
+      "label": "Департамент ППиООС",
+      "headerRow1": "Департамент ППиООС",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Департамент ППиООС"
+    },
+    {
+      "index": 69,
+      "key": "c69",
+      "label": "ОД Департамент ТСЗН",
+      "headerRow1": "ОД Департамент ТСЗН",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "ОД Департамент ТСЗН"
+    },
+    {
+      "index": 70,
+      "key": "c70",
+      "label": "РСВО",
+      "headerRow1": "РСВО",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "РСВО"
+    },
+    {
+      "index": 71,
+      "key": "c71",
+      "label": "ЭВАЖД",
+      "headerRow1": "ЭВАЖД",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "ЭВАЖД"
+    },
+    {
+      "index": 72,
+      "key": "c72",
+      "label": "МСППН",
+      "headerRow1": "МСППН",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "МСППН"
+    },
+    {
+      "index": 73,
+      "key": "c73",
+      "label": "ДТУ_Р (Ритуал)",
+      "headerRow1": "ДТУ_Р (Ритуал)",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "ДТУ_Р (Ритуал)"
+    },
+    {
+      "index": 74,
+      "key": "c74",
+      "label": "ДТУ",
+      "headerRow1": "ДТУ",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "ДТУ"
+    },
+    {
+      "index": 75,
+      "key": "c75",
+      "label": "Росгвардия",
+      "headerRow1": "Росгвардия",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Росгвардия"
+    },
+    {
+      "index": 76,
+      "key": "c76",
+      "label": "Территориальные ОИВ",
+      "headerRow1": "Территориальные ОИВ",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Территориальные ОИВ"
+    },
+    {
+      "index": 77,
+      "key": "c77",
+      "label": "Территориальные ОИВ    ТиНАО",
+      "headerRow1": "Территориальные ОИВ    ТиНАО",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Территориальные ОИВ    ТиНАО"
+    },
+    {
+      "index": 78,
+      "key": "c78",
+      "label": "Автомобильные дороги АО г.Москвы",
+      "headerRow1": "Автомобильные дороги АО г.Москвы",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Автомобильные дороги АО г.Москвы"
+    },
+    {
+      "index": 79,
+      "key": "c79",
+      "label": "признак не выбран",
+      "headerRow1": "Департамент строительства города Москвы",
+      "headerRow2": "",
+      "headerRow3": "признак не выбран",
+      "parentBlock": "Департамент строительства города Москвы"
+    },
+    {
+      "index": 80,
+      "key": "c80",
+      "label": "стройка",
+      "headerRow1": "",
+      "headerRow2": "",
+      "headerRow3": "стройка",
+      "parentBlock": "Департамент строительства города Москвы"
+    },
+    {
+      "index": 81,
+      "key": "c81",
+      "label": "Комитет ветеринарии",
+      "headerRow1": "Комитет ветеринарии",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Комитет ветеринарии"
+    },
+    {
+      "index": 82,
+      "key": "c82",
+      "label": "Мосжилинспекция",
+      "headerRow1": "Мосжилинспекция",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Мосжилинспекция"
+    },
+    {
+      "index": 83,
+      "key": "c83",
+      "label": "объект из перечня",
+      "headerRow1": "Департамент культуры",
+      "headerRow2": "",
+      "headerRow3": "объект из перечня",
+      "parentBlock": "Департамент культуры"
+    },
+    {
+      "index": 84,
+      "key": "c84",
+      "label": "ГКУ ЦСА имени Е.П.Глинки",
+      "headerRow1": "ГКУ ЦСА имени Е.П.Глинки",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "ГКУ ЦСА имени Е.П.Глинки"
+    },
+    {
+      "index": 85,
+      "key": "c85",
+      "label": "ГКУ НТУ",
+      "headerRow1": "ГКУ НТУ",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "ГКУ НТУ"
+    },
+    {
+      "index": 86,
+      "key": "c86",
+      "label": "ФСО",
+      "headerRow1": "ФСО",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "ФСО"
+    },
+    {
+      "index": 87,
+      "key": "c87",
+      "label": "(КУБ)",
+      "headerRow1": "ГУП МСР",
+      "headerRow2": "(КУБ)",
+      "headerRow3": "",
+      "parentBlock": "ГУП МСР"
+    },
+    {
+      "index": 88,
+      "key": "c88",
+      "label": "Комитет по туризму г.Москвы",
+      "headerRow1": "Комитет по туризму г.Москвы",
+      "headerRow2": "",
+      "headerRow3": "",
+      "parentBlock": "Комитет по туризму г.Москвы"
+    },
+    {
+      "index": 89,
+      "key": "c89",
+      "label": "интеграция",
+      "headerRow1": "ДГП (Департамент градостроительной политики)",
+      "headerRow2": "интеграция",
+      "headerRow3": "",
+      "parentBlock": "ДГП (Департамент градостроительной политики)"
+    },
+    {
+      "index": 90,
+      "key": "c90",
+      "label": "АРМ-112",
+      "headerRow1": "",
+      "headerRow2": "АРМ-112",
+      "headerRow3": "",
+      "parentBlock": "ДГП (Департамент градостроительной политики)"
+    }
+  ],
+  "groups": [
+    {
+      "code": "1",
+      "title": "Пожары и задымления",
+      "row": 4
+    },
+    {
+      "code": "2",
+      "title": "ДТП",
+      "row": 276
+    },
+    {
+      "code": "3",
+      "title": "Взрывы",
+      "row": 324
+    },
+    {
+      "code": "4",
+      "title": "Угрозы взрывов и террористических актов",
+      "row": 370
+    },
+    {
+      "code": "5",
+      "title": "Обрушения",
+      "row": 400
+    },
+    {
+      "code": "6",
+      "title": "Угрозы обрушений",
+      "row": 441
+    },
+    {
+      "code": "7",
+      "title": "Опасные геологические, гидрологические и метеорологические явления",
+      "row": 472
+    },
+    {
+      "code": "8",
+      "title": "Экологические происшествия",
+      "row": 503
+    },
+    {
+      "code": "9",
+      "title": "Аварии на гидротехнических сооружениях",
+      "row": 519
+    },
+    {
+      "code": "10",
+      "title": "Аварии на опасных и производственных объектах",
+      "row": 522
+    },
+    {
+      "code": "11",
+      "title": "Угрозы выброса опасных веществ",
+      "row": 541
+    },
+    {
+      "code": "12",
+      "title": "Аварии и происшествия на транспортных объектах",
+      "row": 574
+    },
+    {
+      "code": "13",
+      "title": "Запах газа",
+      "row": 638
+    },
+    {
+      "code": "14",
+      "title": "Аварии и происшествия в городском хозяйстве",
+      "row": 671
+    },
+    {
+      "code": "15",
+      "title": "Нарушение правопорядка",
+      "row": 865
+    },
+    {
+      "code": "16",
+      "title": "Проблемы на дороге",
+      "row": 1040
+    },
+    {
+      "code": "17",
+      "title": "Человек в опасности",
+      "row": 1071
+    },
+    {
+      "code": "18",
+      "title": "Ребенок в опасности",
+      "row": 1157
+    },
+    {
+      "code": "19",
+      "title": "Смертельный исход человека",
+      "row": 1174
+    },
+    {
+      "code": "20",
+      "title": "Социальная помощь",
+      "row": 1206
+    },
+    {
+      "code": "21",
+      "title": "Происшествия с участием животных",
+      "row": 1215
+    },
+    {
+      "code": "22",
+      "title": "Оказание медицинской скорой и неотложной помощи",
+      "row": 1229
+    },
+    {
+      "code": "23",
+      "title": "Прочие происшествия",
+      "row": 1289
+    }
+  ],
+  "fullRecordsFile": "classifier-v046.json"
+}

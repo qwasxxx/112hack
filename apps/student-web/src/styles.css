@@ -212,14 +212,6 @@ h2 {
   margin: 4px 0 8px;
 }
 
-.login-page {
-  max-width: 640px;
-}
-
-.login-panel {
-  margin-bottom: 16px;
-}
-
 .operator .link {
   margin-top: 4px;
 }
@@ -278,6 +270,26 @@ h2 {
   height: 100vh;
   display: grid;
   grid-template-rows: auto 1fr;
+}
+
+.call.call-panel {
+  height: 100%;
+  min-height: 0;
+  background: #fff;
+  border-left: 1px solid var(--line);
+}
+
+.call-bar-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.call.call-panel .call-body,
+.call.call-panel .call-body-solo {
+  grid-template-columns: 1fr;
+  padding: 10px 12px 12px;
 }
 
 .call-bar {

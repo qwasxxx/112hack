@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import type { Session } from './auth/accounts';
 import { AccountBar } from './auth/account-bar';
-import type { LessonSection, TrainingScenario } from './data/scenarios';
+import type { TrainingScenario } from './data/scenarios';
+import { Arm112TheoryPage, Arm112TrainingPage } from './features/arm112-simulator';
+import { DdsTrainingPage } from './features/dds-training';
+import { lessonScreenFor, type LessonScreenName } from './lesson-routing';
 import { BriefingPage } from './pages/briefing-page';
 import { CallPage } from './pages/call-page';
 import { CatalogPage } from './pages/catalog-page';
@@ -9,7 +12,8 @@ import { CatalogPage } from './pages/catalog-page';
 type Screen =
   | { name: 'catalog' }
   | { name: 'briefing'; scenario: TrainingScenario }
-  | { name: 'call'; scenario: TrainingScenario; section: LessonSection };
+  | { name: LessonScreenName; scenario: TrainingScenario }
+  | { name: 'dds'; scenario: TrainingScenario };
 
 type Props = {
   operator: Session;
@@ -26,16 +30,47 @@ export function StudentApp(props: Props) {
         scenario={screen.scenario}
         accountBar={bar}
         onBack={() => setScreen({ name: 'catalog' })}
-        onStart={(section) => setScreen({ name: 'call', scenario: screen.scenario, section })}
+        onStart={(section) =>
+          setScreen({ name: lessonScreenFor(section), scenario: screen.scenario })
+        }
+        onStartDds={() => setScreen({ name: 'dds', scenario: screen.scenario })}
       />
     );
   }
 
-  if (screen.name === 'call') {
+  if (screen.name === 'dds') {
+    return (
+      <DdsTrainingPage
+        scenario={screen.scenario}
+        onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
+      />
+    );
+  }
+
+  if (screen.name === 'theory') {
+    return (
+      <Arm112TheoryPage
+        scenario={screen.scenario}
+        onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
+      />
+    );
+  }
+
+  if (screen.name === 'training') {
+    return (
+      <Arm112TrainingPage
+        scenario={screen.scenario}
+        operatorName={props.operator.name}
+        onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
+      />
+    );
+  }
+
+  if (screen.name === 'exam') {
     return (
       <CallPage
         scenario={screen.scenario}
-        section={screen.section}
+        section="exam"
         onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
       />
     );

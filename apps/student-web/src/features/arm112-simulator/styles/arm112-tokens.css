@@ -1,0 +1,26 @@
+/* Scoped ARM-112 tokens. Do not import from global styles.css. */
+.arm112-root {
+  --arm112-page: #c5c5c5;
+  --arm112-panel: #ffffff;
+  --arm112-header: #ececec;
+  --arm112-border: #d4d4d4;
+  --arm112-muted: #757575;
+  --arm112-text: #212121;
+  --arm112-orange: #f15a24;
+  --arm112-blue: #1e88e5;
+  --arm112-timer: #2b2b2b;
+  --arm112-timer-over: #e53935;
+  --arm112-journal: #2c3338;
+  --arm112-font: Arial, Helvetica, sans-serif;
+  font-family: var(--arm112-font);
+  color: var(--arm112-text);
+  background: var(--arm112-page);
+  min-height: 100%;
+}
+
+.arm112-root button,
+.arm112-root input,
+.arm112-root textarea,
+.arm112-root select {
+  font-family: inherit;
+}

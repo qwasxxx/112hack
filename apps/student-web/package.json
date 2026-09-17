@@ -8,7 +8,10 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"lint: student-web skipped\""
+    "test": "node scripts/regression-training-accept.mjs",
+    "lint": "echo \"lint: student-web skipped\"",
+    "classifier:generate": "python3 scripts/generate-classifier-runtime.py",
+    "classifier:verify": "node scripts/verify-classifier-runtime.mjs"
   },
   "dependencies": {
     "@sys112/api-client": "workspace:*",

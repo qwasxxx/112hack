@@ -19,9 +19,12 @@ type Props = {
   scenario: TrainingScenario;
   section: LessonSection;
   onLeave: () => void;
+  variant?: 'page' | 'panel';
+  autoStart?: boolean;
 };
 
 export function CallPage(props: Props) {
+  const embedded = props.variant === 'panel';
   const conversationRole = SECTION_AI_ROLE[props.section];
   const userRole: Line['role'] = conversationRole === 'victim' ? 'operator' : 'caller';
   const aiRole: Line['role'] = conversationRole === 'victim' ? 'caller' : 'operator';
@@ -44,8 +47,8 @@ export function CallPage(props: Props) {
   const liveSttRef = useRef('');
   const flushTimerRef = useRef<number | undefined>(undefined);
   const analysisDoneRef = useRef<(() => void) | undefined>(undefined);
-  const wantsAnalysis = props.section === 'training' || props.section === 'exam';
-  const showCard = props.section !== 'theory';
+  const wantsAnalysis = !embedded && (props.section === 'training' || props.section === 'exam');
+  const showCard = !embedded && props.section !== 'theory';
   const sectionLabel = props.section === 'theory' ? 'Теория' : props.section === 'exam' ? 'Экзамен' : 'Тренировка';
   const youAre = conversationRole === 'victim' ? 'Вы — оператор' : 'Вы — заявитель';
 
@@ -248,7 +251,9 @@ export function CallPage(props: Props) {
 
   async function hangup() {
     if (!streamRef.current && !llmRef.current) {
-      props.onLeave();
+      if (!embedded) {
+        props.onLeave();
+      }
       return;
     }
     leavingRef.current = true;
@@ -322,8 +327,35 @@ export function CallPage(props: Props) {
           ? 'Повторить'
           : 'Позвонить';
 
+  useEffect(() => {
+    if (!props.autoStart) {
+      return;
+    }
+    void startCall();
+    // Mount-only: start the existing conversation after Принять.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- startCall is recreated each render
+  }, [props.autoStart]);
+
   return (
-    <div className="call">
+    <div className={embedded ? 'call call-panel' : 'call'} data-conversation={embedded ? 'training' : undefined}>
+      {embedded ? (
+        <header className="call-bar call-bar-panel">
+          <div>
+            <p className={`call-live${callState === 'listening' ? ' call-live-on' : ''}`}>{liveLabel}</p>
+            <h1>Разговор</h1>
+          </div>
+          {callState === 'ended' ? null : (
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={() => void hangup()}
+              disabled={callState === 'connecting' || callState === 'analyzing'}
+            >
+              Завершить
+            </button>
+          )}
+        </header>
+      ) : (
       <header className="call-bar">
         <div>
           <p className={`call-live${callState === 'listening' ? ' call-live-on' : ''}`}>{liveLabel}</p>
@@ -350,6 +382,7 @@ export function CallPage(props: Props) {
           )}
         </div>
       </header>
+      )}
 
       <div className={`call-body${showCard || wantsAnalysis ? '' : ' call-body-solo'}`}>
         <section className="panel call-log" aria-label="Разговор">

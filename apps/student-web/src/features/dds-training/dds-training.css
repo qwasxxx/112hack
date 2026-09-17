@@ -1,0 +1,495 @@
+.dds-page {
+  display: grid;
+  grid-template-rows: 44px 1fr;
+  height: 100vh;
+  background: #8d8d8d;
+  color: #222;
+  overflow: hidden;
+  font: 13px/1.3 "Segoe UI", Tahoma, Arial, sans-serif;
+}
+
+.dds-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px;
+  background: #f3f5f7;
+  border-bottom: 1px solid #c9d0d6;
+}
+
+.dds-bar h1 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.dds-bar p {
+  margin: 0;
+  color: #667;
+  font-size: 12px;
+}
+
+.dds-bar button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #c5d0db;
+  background: #fff;
+  cursor: pointer;
+}
+
+.dds-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: #555;
+}
+
+.dds-shell {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+}
+
+.dds-journal {
+  min-width: 1180px;
+  min-height: 100%;
+  background: #8a8e93;
+}
+
+.dds-journal-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px 8px;
+  background: #f4f4f4;
+}
+
+.dds-journal-head h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 400;
+}
+
+.dds-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  color: #666;
+  font-size: 13px;
+}
+
+.dds-search-row input {
+  width: 280px;
+  border: 0;
+  border-bottom: 1px solid #9aa;
+  background: transparent;
+  padding: 2px 4px;
+}
+
+.dds-search-row button,
+.dds-clock-tools button,
+.dds-page-row select {
+  height: 24px;
+  border: 1px solid #c8c8c8;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dds-clock {
+  min-width: 220px;
+  background: #1f1f1f;
+  color: #fff;
+  padding: 8px 12px 10px;
+  text-align: right;
+}
+
+.dds-clock strong {
+  display: block;
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.dds-clock span {
+  font-size: 12px;
+  color: #ddd;
+}
+
+.dds-list-wrap {
+  padding: 8px 16px 16px;
+}
+
+.dds-list-title {
+  color: #fff;
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.dds-cols,
+.dds-row {
+  display: grid;
+  grid-template-columns: 36px 40px 48px 40px 92px 78px 78px 88px 52px minmax(160px, 1.3fr) 130px 24px;
+  gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.dds-row span,
+.dds-cols span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dds-cols {
+  color: #d7d7d7;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.dds-row-block {
+  margin-bottom: 2px;
+}
+
+.dds-row {
+  background: #3a3a3a;
+  color: #eee;
+  padding: 4px 8px;
+  border: 0;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dds-row.is-active {
+  outline: 1px solid #7eb6e6;
+}
+
+.dds-row.is-done {
+  opacity: 0.72;
+}
+
+.dds-row b {
+  font-weight: 600;
+}
+
+.dds-status-cell {
+  color: #f3c48b;
+}
+
+.dds-desc {
+  background: #2f2f2f;
+  color: #ddd;
+  font-size: 12px;
+  padding: 3px 8px 5px 36px;
+}
+
+.dds-page-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  color: #eee;
+  font-size: 12px;
+  padding: 8px 4px;
+}
+
+.dds-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 1180px;
+  min-height: 100%;
+  background: #d4d4d4;
+}
+
+.dds-card-top {
+  display: grid;
+  grid-template-columns: 150px 1fr 1fr 1fr auto;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #f2f2f2;
+  border-bottom: 1px solid #ccc;
+}
+
+.dds-phone {
+  min-height: 58px;
+  padding: 4px 8px;
+  background: #fff;
+  border: 1px solid #d5d5d5;
+}
+
+.dds-phone span {
+  display: block;
+  color: #777;
+  font-size: 11px;
+}
+
+.dds-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dds-tools button {
+  height: 26px;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: default;
+}
+
+.dds-meta {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.dds-meta-text {
+  text-align: right;
+  font-size: 11px;
+}
+
+.dds-modes {
+  display: flex;
+  flex-direction: column;
+}
+
+.dds-modes button {
+  min-width: 110px;
+  height: 28px;
+  border: 0;
+  background: #d9d9d9;
+  cursor: pointer;
+}
+
+.dds-modes .is-on {
+  background: #1f6fb2;
+  color: #fff;
+}
+
+.dds-idrow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  background: #f7f7f7;
+  border-bottom: 1px solid #ddd;
+  font-size: 12px;
+}
+
+.dds-flags {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dds-flags button {
+  width: 28px;
+  height: 24px;
+  border: 1px solid #ccc;
+  background: #fff;
+  cursor: pointer;
+}
+
+.dds-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 0.92fr 1.08fr;
+  min-height: 280px;
+}
+
+.dds-left {
+  background: #fff;
+  border-right: 1px solid #ccc;
+  padding: 10px 12px;
+}
+
+.dds-left h3,
+.dds-right-label {
+  margin: 0 0 8px;
+  color: #777;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dds-addr {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.dds-left p {
+  margin: 6px 0 0;
+  color: #444;
+}
+
+.dds-note {
+  margin-top: 16px;
+  color: #333;
+}
+
+.dds-right {
+  padding: 8px 10px;
+}
+
+.dds-type-bar {
+  background: #2f2f2f;
+  color: #fff;
+  padding: 6px 10px;
+  font-weight: 650;
+}
+
+.dds-tags,
+.dds-class {
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.dds-footer {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 10px 10px;
+  background: #4a4a4a;
+}
+
+.dds-chip {
+  min-width: 88px;
+  border: 0;
+  background: #3a3a3a;
+  color: #eee;
+  padding: 6px 8px 4px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dds-chip small {
+  display: block;
+  color: #c9b48a;
+  font-size: 10px;
+}
+
+.dds-chip.is-edit {
+  background: #2b4d73;
+}
+
+.dds-chip.is-done {
+  box-shadow: inset 0 -3px 0 #8bc34a;
+}
+
+.dds-more,
+.dds-close {
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  border: 1px solid #777;
+  background: #3a3a3a;
+  color: #fff;
+  cursor: pointer;
+}
+
+.dds-form {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 62px;
+  display: grid;
+  grid-template-columns: 220px 120px 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  background: #ececec;
+  border: 1px solid #bbb;
+  padding: 8px;
+  z-index: 5;
+}
+
+.dds-form select,
+.dds-form input {
+  width: 100%;
+  height: 28px;
+  border: 1px solid #ccc;
+  background: #fff;
+  padding: 0 8px;
+}
+
+.dds-form button {
+  width: 32px;
+  height: 28px;
+  cursor: pointer;
+}
+
+.dds-ok {
+  border: 1px solid #888;
+  background: #fff;
+}
+
+.dds-hist {
+  position: absolute;
+  left: 180px;
+  bottom: 108px;
+  width: 420px;
+  background: #1f5f99;
+  color: #fff;
+  padding: 8px 10px 10px;
+  z-index: 4;
+  font-size: 12px;
+}
+
+.dds-hist header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.dds-hist button {
+  border: 0;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.dds-hist li {
+  margin: 0 0 6px;
+  list-style: none;
+}
+
+.dds-hist ul {
+  margin: 0;
+  padding: 0;
+}
+
+.dds-result {
+  position: absolute;
+  inset: 48px 80px auto;
+  z-index: 8;
+  background: #fff;
+  border: 1px solid #c5c5c5;
+  padding: 20px 22px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+}
+
+.dds-result h2 {
+  margin: 0 0 10px;
+}
+
+.dds-result table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.dds-result td,
+.dds-result th {
+  text-align: left;
+  padding: 6px 4px;
+  border-bottom: 1px solid #eee;
+}
+
+@media (max-width: 1279px) {
+  .dds-shell {
+    overflow: auto;
+  }
+}
