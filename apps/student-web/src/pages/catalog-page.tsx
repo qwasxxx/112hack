@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react';
 import { SERVICE_LABEL, SCENARIOS, type TrainingScenario } from '../data/scenarios';
 
 type Props = {
+  accountBar: ReactNode;
   onOpen: (scenario: TrainingScenario) => void;
 };
 
@@ -15,10 +17,7 @@ export function CatalogPage(props: Props) {
             <p className="brand-sub">Система обеспечения вызова экстренных служб</p>
           </div>
         </div>
-        <div className="operator">
-          <span className="operator-role">Обучающийся</span>
-          <span className="operator-name">Смирнова А. В.</span>
-        </div>
+        {props.accountBar}
       </header>
 
       <section className="panel">

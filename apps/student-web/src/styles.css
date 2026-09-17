@@ -212,6 +212,18 @@ h2 {
   margin: 4px 0 8px;
 }
 
+.login-page {
+  max-width: 640px;
+}
+
+.login-panel {
+  margin-bottom: 16px;
+}
+
+.operator .link {
+  margin-top: 4px;
+}
+
 .call-body-solo {
   grid-template-columns: 1fr;
 }

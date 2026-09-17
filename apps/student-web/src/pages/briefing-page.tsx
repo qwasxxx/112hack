@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react';
 import { LESSON_SECTIONS, SERVICE_LABEL, type LessonSection, type TrainingScenario } from '../data/scenarios';
 
 type Props = {
   scenario: TrainingScenario;
+  accountBar: ReactNode;
   onBack: () => void;
   onStart: (section: LessonSection) => void;
 };
@@ -13,10 +15,7 @@ export function BriefingPage(props: Props) {
         <button type="button" className="link" onClick={props.onBack}>
           К списку сценариев
         </button>
-        <div className="operator">
-          <span className="operator-role">Обучающийся</span>
-          <span className="operator-name">Смирнова А. В.</span>
-        </div>
+        {props.accountBar}
       </header>
 
       <section className="split">

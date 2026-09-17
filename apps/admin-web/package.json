@@ -1,5 +1,5 @@
 {
-  "name": "@sys112/teacher-web",
+  "name": "@sys112/admin-web",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -7,7 +7,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "echo \"lint: teacher-web skipped\""
+    "lint": "echo \"lint: admin-web skipped\""
   },
   "dependencies": {
     "@sys112/api-client": "workspace:*",

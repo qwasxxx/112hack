@@ -13,6 +13,7 @@
   "dependencies": {
     "@sys112/api-client": "workspace:*",
     "@sys112/shared-types": "workspace:*",
+    "@sys112/ui": "workspace:*",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

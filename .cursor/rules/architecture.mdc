@@ -5,7 +5,7 @@ alwaysApply: true
 
 # sys112-trainer
 
-Монорепо: `apps/student-web`, `apps/teacher-web`, `apps/api`. Админку добавлять как `apps/admin-web`, не вшивать в ученика.
+Монорепо: `apps/student-web` — единый веб (вход по роли: ученик / преподаватель / администратор), `apps/api`. Панели учителя и админа — шеллы внутри student-web, не отдельные порты.
 
 Контракты только в `packages/shared-types`. Фронт не вызывает SDK моделей. STT/LLM/TTS — адаптеры за портами в `apps/api` (`SpeechToTextPort` и остальные). Аудио с клиента уходит на API/realtime, в UI приходит `TranscriptUpdated`.
 

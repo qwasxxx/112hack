@@ -9,7 +9,6 @@
     "dev": "turbo dev",
     "dev:api": "pnpm --filter @sys112/api dev",
     "dev:student": "pnpm --filter @sys112/student-web dev",
-    "dev:teacher": "pnpm --filter @sys112/teacher-web dev",
     "dev:stt": "powershell -ExecutionPolicy Bypass -File scripts/start-stt.ps1",
     "dev:llm": "powershell -ExecutionPolicy Bypass -File scripts/start-llm.ps1",
     "build": "turbo build",

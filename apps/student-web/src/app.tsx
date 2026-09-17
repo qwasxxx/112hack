@@ -1,36 +1,93 @@
 import { useState } from 'react';
-import type { LessonSection, TrainingScenario } from './data/scenarios';
-import { CatalogPage } from './pages/catalog-page';
-import { BriefingPage } from './pages/briefing-page';
-import { CallPage } from './pages/call-page';
+import { Role } from '@sys112/shared-types';
+import { AdminApp } from './admin/admin-app';
+import {
+  DEMO_PASSWORD,
+  authenticate,
+  loadAccounts,
+  readSession,
+  saveAccounts,
+  writeSession,
+  type Account,
+  type Session,
+} from './auth/accounts';
+import { LoginPage } from './pages/login-page';
+import { StudentApp } from './student-app';
+import { TeacherApp } from './teacher/teacher-app';
 
-type Screen =
-  | { name: 'catalog' }
-  | { name: 'briefing'; scenario: TrainingScenario }
-  | { name: 'call'; scenario: TrainingScenario; section: LessonSection };
+function nextAccountId(): string {
+  return `user-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export function App() {
-  const [screen, setScreen] = useState<Screen>({ name: 'catalog' });
+  const [accounts, setAccounts] = useState<Account[]>(() => loadAccounts());
+  const [session, setSession] = useState<Session | null>(() => readSession());
+  const [error, setError] = useState<string>();
 
-  if (screen.name === 'briefing') {
+  function persist(next: Account[]) {
+    setAccounts(next);
+    saveAccounts(next);
+  }
+
+  function login(login: string, password: string) {
+    const result = authenticate(accounts, login, password);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setError(undefined);
+    setSession(result.session);
+    writeSession(result.session);
+  }
+
+  function logout() {
+    setSession(null);
+    writeSession(null);
+  }
+
+  function createAccount(input: { name: string; login: string; role: Account['role'] }): Account {
+    const account: Account = {
+      id: nextAccountId(),
+      name: input.name,
+      login: input.login,
+      password: DEMO_PASSWORD,
+      role: input.role,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    };
+    persist([account, ...accounts]);
+    return account;
+  }
+
+  function toggleAccount(userId: string) {
+    persist(
+      accounts.map((item) =>
+        item.id === userId
+          ? { ...item, status: item.status === 'active' ? 'blocked' : 'active' }
+          : item,
+      ),
+    );
+  }
+
+  if (!session) {
+    return <LoginPage error={error} onSubmit={login} />;
+  }
+
+  if (session.role === Role.ADMIN) {
     return (
-      <BriefingPage
-        scenario={screen.scenario}
-        onBack={() => setScreen({ name: 'catalog' })}
-        onStart={(section) => setScreen({ name: 'call', scenario: screen.scenario, section })}
+      <AdminApp
+        operator={session}
+        accounts={accounts}
+        onLogout={logout}
+        onCreateAccount={createAccount}
+        onToggleAccount={toggleAccount}
       />
     );
   }
 
-  if (screen.name === 'call') {
-    return (
-      <CallPage
-        scenario={screen.scenario}
-        section={screen.section}
-        onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
-      />
-    );
+  if (session.role === Role.TEACHER) {
+    return <TeacherApp operator={session} onLogout={logout} />;
   }
 
-  return <CatalogPage onOpen={(scenario) => setScreen({ name: 'briefing', scenario })} />;
+  return <StudentApp operator={session} onLogout={logout} />;
 }
