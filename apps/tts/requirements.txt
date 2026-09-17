@@ -1,0 +1,11 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+onnxruntime>=1.17.0
+numpy>=1.24.0
+scipy>=1.11.0
+soundfile>=0.12.1
+pydantic>=2.0.0
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.1.0
+edge-tts>=6.1.0
+silero-stress>=1.0.0

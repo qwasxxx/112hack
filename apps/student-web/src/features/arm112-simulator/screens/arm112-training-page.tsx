@@ -2,6 +2,7 @@ import type { TrainingScenario } from '../../../data/scenarios';
 import { JournalScreen } from '../components/journal-screen';
 import { useArm112Workspace } from '../hooks/use-arm112-workspace';
 import { CallPage } from '../../../pages/call-page';
+import { unlockTtsAudio } from '../../../lib/tts-player';
 import '../styles/arm112.css';
 import { CardCreateScreen } from './card-create-screen';
 import { CardViewScreen } from './card-view-screen';
@@ -51,7 +52,10 @@ export function Arm112TrainingPage(props: Props) {
             telephonyStatus={workspace.telephonyStatus}
             incoming={workspace.phase === 'входящий звонок'}
             incomingNumber={binding.incomingNumber}
-            onAcceptCall={workspace.acceptCall}
+            onAcceptCall={() => {
+              unlockTtsAudio();
+              workspace.acceptCall();
+            }}
             onDismissIncoming={() => workspace.setPhase('ожидание')}
             onCreateCard={workspace.openManualCard}
             onToggleTelephony={() =>

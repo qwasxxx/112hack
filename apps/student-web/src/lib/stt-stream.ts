@@ -7,6 +7,7 @@ const FRAME_SAMPLES = 2400;
 export type SttStream = {
   start(): Promise<void>;
   stop(): Promise<string>;
+  setCaptureEnabled(enabled: boolean): void;
 };
 
 export function createSttStream(handlers: {
@@ -22,6 +23,7 @@ export function createSttStream(handlers: {
   let pending = new Int16Array(0);
   let stopped = false;
   let started = false;
+  let captureEnabled = true;
 
   function sendPcm(frame: Int16Array) {
     if (!socket || socket.readyState !== WebSocket.OPEN || frame.length === 0) {
@@ -61,14 +63,22 @@ export function createSttStream(handlers: {
       throw new Error('Браузер не поддерживает запись звука.');
     }
     try {
-      media = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: TARGET_RATE,
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
+      media = await Promise.race([
+        navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: TARGET_RATE,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: false,
+          },
+        }),
+        new Promise<MediaStream>((_, reject) => {
+          window.setTimeout(() => reject(new Error('Микрофон не ответил.')), 2500);
+        }),
+      ]);
+      media.getAudioTracks().forEach((track) => {
+        track.enabled = captureEnabled;
       });
       context = new AudioContext();
       await context.resume();
@@ -77,7 +87,7 @@ export function createSttStream(handlers: {
       mute = context.createGain();
       mute.gain.value = 0;
       processor.onaudioprocess = (event) => {
-        if (stopped) {
+        if (stopped || !captureEnabled) {
           return;
         }
         const input = event.inputBuffer.getChannelData(0);
@@ -92,8 +102,12 @@ export function createSttStream(handlers: {
       processor.connect(mute);
       mute.connect(context.destination);
 
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      socket = new WebSocket(`${protocol}//${window.location.host}/ws/stt`);
+      const host = window.location.hostname;
+      socket = new WebSocket(
+        host === 'localhost' || host === '127.0.0.1'
+          ? 'ws://127.0.0.1:8090/ws/stt'
+          : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/stt`,
+      );
       socket.binaryType = 'arraybuffer';
 
       await new Promise<void>((resolve, reject) => {
@@ -215,5 +229,15 @@ export function createSttStream(handlers: {
     });
   }
 
-  return { start, stop };
+  function setCaptureEnabled(enabled: boolean) {
+    captureEnabled = enabled;
+    media?.getAudioTracks().forEach((track) => {
+      track.enabled = enabled;
+    });
+    if (!enabled) {
+      pending = new Int16Array(0);
+    }
+  }
+
+  return { start, stop, setCaptureEnabled };
 }

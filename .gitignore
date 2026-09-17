@@ -23,6 +23,9 @@ apps/stt/**/__pycache__
 apps/llm/.venv
 apps/llm/.pytest_cache
 apps/llm/**/__pycache__
+apps/tts/.venv
+apps/tts/.pytest_cache
+apps/tts/**/__pycache__
 tools/llama.cpp
 *.onnx
 *.gguf

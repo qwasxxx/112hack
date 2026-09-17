@@ -34,9 +34,7 @@ LLM_ANALYSIS_MAX_TOKENS = int(_env("LLM_ANALYSIS_MAX_TOKENS", "180"))
 
 def _default_threads() -> str:
     logical = os.cpu_count() or 4
-    if logical >= 8:
-        return str(max(4, logical // 2))
-    return str(max(2, logical))
+    return str(min(4, max(2, logical // 2)))
 
 
 LLM_THREADS = int(_env("LLM_THREADS", _default_threads()))

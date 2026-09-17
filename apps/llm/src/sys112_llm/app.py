@@ -23,6 +23,7 @@ from sys112_llm.conversation import (
     KICKOFF_TEXT,
     ConversationManager,
     analysis_messages,
+    generation_messages,
 )
 from sys112_llm.runtime import model_present
 from sys112_llm.think import ThinkFilter
@@ -140,7 +141,13 @@ async def llm_socket(ws: WebSocket) -> None:
                         }
                     )
                     continue
-                manager.create(call_id, role, payload.get("system_prompt"))
+                opening = payload.get("opening")
+                manager.create(
+                    call_id,
+                    role,
+                    payload.get("system_prompt"),
+                    opening if isinstance(opening, str) else None,
+                )
                 logger.info("[LLM] Call session created")
                 await ws.send_json({"type": "ready", "call_id": call_id, "llm": llm_status})
                 continue
@@ -246,7 +253,7 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
         logger.info("[LLM] User transcript received")
         logger.info("[LLM] Generating response")
         try:
-            full = await _generate(session.to_openai(), ws)
+            full = await _generate(generation_messages(session), ws)
         except Exception:
             logger.exception("[LLM] Generation failed")
             await ws.send_json({"type": "error", "message": "Не удалось получить ответ модели."})

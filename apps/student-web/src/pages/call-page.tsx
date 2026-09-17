@@ -4,6 +4,7 @@ import { SECTION_AI_ROLE } from '../data/scenarios';
 import { createLlmStream } from '../lib/llm-stream';
 import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
+import { enqueueTtsAudio, stopTtsAudio, takeSpeechChunks, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
 
 type Line = {
   id: string;
@@ -47,6 +48,9 @@ export function CallPage(props: Props) {
   const liveSttRef = useRef('');
   const flushTimerRef = useRef<number | undefined>(undefined);
   const analysisDoneRef = useRef<(() => void) | undefined>(undefined);
+  const ttsHoldRef = useRef(false);
+  const spokenTtsRef = useRef('');
+  const aiVoiceId = conversationRole;
   const wantsAnalysis = !embedded && (props.section === 'training' || props.section === 'exam');
   const showCard = !embedded && props.section !== 'theory';
   const sectionLabel = props.section === 'theory' ? 'Теория' : props.section === 'exam' ? 'Экзамен' : 'Тренировка';
@@ -64,24 +68,34 @@ export function CallPage(props: Props) {
   }, [lines]);
 
   useEffect(() => {
+    let armed = false;
+    const arm = window.setTimeout(() => {
+      armed = true;
+    }, 80);
     return () => {
+      window.clearTimeout(arm);
+      if (!armed) {
+        return;
+      }
       leavingRef.current = true;
       if (flushTimerRef.current !== undefined) {
         window.clearTimeout(flushTimerRef.current);
       }
       void streamRef.current?.stop();
       void llmRef.current?.stop();
+      stopTtsAudio();
       streamRef.current = undefined;
       llmRef.current = undefined;
     };
   }, []);
 
   async function startCall() {
-    if (startingRef.current || recording || callState === 'connecting') {
+    if (startingRef.current || recording) {
       return;
     }
     startingRef.current = true;
     leavingRef.current = false;
+    unlockTtsAudio();
     seenFinalsRef.current = new Set();
     finalsRef.current = emptyTranscript();
     utterancePartsRef.current = [];
@@ -90,21 +104,50 @@ export function CallPage(props: Props) {
       window.clearTimeout(flushTimerRef.current);
       flushTimerRef.current = undefined;
     }
+    spokenTtsRef.current = '';
     setLines([]);
     setAnalysis('');
     setMicError(undefined);
-    setCallState('connecting');
+    setRecording(true);
+    setCallState('listening');
+    const opening =
+      conversationRole === 'victim' ? props.scenario.callerOpening.trim() : '';
+    if (opening) {
+      setLines([
+        {
+          id: 'caller-opening',
+          role: 'caller',
+          text: opening,
+          source: 'llm',
+        },
+      ]);
+      spokenTtsRef.current = opening;
+      void enqueueTtsAudio(opening, aiVoiceId);
+    }
     const callId = crypto.randomUUID();
     const llm = createLlmStream({
       callId,
       conversationRole,
+      opening: opening || undefined,
+      systemPrompt:
+        conversationRole === 'victim'
+          ? `${props.scenario.summary} Первая реплика уже сказана, не повторяй её и не здоровайся заново. Жди вопрос оператора.`
+          : props.scenario.summary,
       lessonId: props.scenario.id,
       onEvent: (event) => {
         if (event.type === 'assistant_partial' && event.text.trim()) {
+          if (isSameSpeech(event.text, opening)) {
+            return;
+          }
           setLines((current) => upsertLive(current, aiRole, event.text, 'llm'));
+          feedAiSpeech(event.text, false);
         }
         if (event.type === 'assistant_final' && event.text.trim()) {
+          if (isSameSpeech(event.text, opening)) {
+            return;
+          }
           setLines((current) => commitLive(current, aiRole, event.text, 'llm'));
+          void speakAi(event.text);
         }
         if (event.type === 'analysis_partial' && event.text.trim()) {
           setAnalysis(event.text);
@@ -154,6 +197,9 @@ export function CallPage(props: Props) {
 
     const stream = createSttStream({
       onEvent: (event) => {
+        if (ttsHoldRef.current) {
+          return;
+        }
         finalsRef.current = applySttEvent(finalsRef.current, event);
         if (event.type === 'partial' && event.text.trim()) {
           if (!isShorterTranscript(liveSttRef.current, event.text)) {
@@ -182,52 +228,81 @@ export function CallPage(props: Props) {
       },
       onError: (message) => {
         setMicError(message);
-        setCallState('error');
-        setRecording(false);
       },
     });
     streamRef.current = stream;
     try {
       await llm.start();
-      if (conversationRole === 'victim') {
+      if (conversationRole === 'victim' && !opening) {
         llm.kickoff();
       }
-      if (leavingRef.current) {
-        await stream.stop();
-        await llm.stop();
-        return;
-      }
-      await stream.start();
-      if (leavingRef.current) {
-        await stream.stop();
-        await llm.stop();
-        return;
-      }
-      setRecording(true);
-      setCallState('listening');
     } catch (error: unknown) {
-      streamRef.current = undefined;
-      if (leavingRef.current) {
-        return;
-      }
-      setCallState('error');
-      setRecording(false);
-      if (error instanceof DOMException && error.name === 'NotAllowedError') {
-        setMicError('Нет доступа к микрофону. Разрешите запись в браузере.');
-        return;
-      }
-      if (error instanceof DOMException && error.name === 'NotFoundError') {
-        setMicError('Микрофон не найден.');
-        return;
-      }
       const text = error instanceof Error ? error.message : '';
       setMicError(
-        text && /микрофон|распознаван|браузер|модель|диалог/i.test(text)
+        text && /модель|диалог/i.test(text)
           ? text
-          : 'Не удалось начать распознавание. Проверьте, что сервисы STT и LLM запущены.',
+          : 'Не удалось начать диалог. Можно отвечать текстом, если сервис поднимется.',
       );
+    }
+    try {
+      await stream.start();
+    } catch (error: unknown) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        setMicError('Нет доступа к микрофону. Можно отвечать текстом.');
+      } else if (error instanceof DOMException && error.name === 'NotFoundError') {
+        setMicError('Микрофон не найден. Можно отвечать текстом.');
+      } else {
+        setMicError('Распознавание речи недоступно. Можно отвечать текстом.');
+      }
     } finally {
       startingRef.current = false;
+    }
+  }
+
+  function holdMicForTts() {
+    ttsHoldRef.current = true;
+    if (flushTimerRef.current !== undefined) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = undefined;
+    }
+    utterancePartsRef.current = [];
+    liveSttRef.current = '';
+    streamRef.current?.setCaptureEnabled(false);
+  }
+
+  function feedAiSpeech(text: string, final: boolean) {
+    if (spokenTtsRef.current && !text.startsWith(spokenTtsRef.current)) {
+      stopTtsAudio();
+      spokenTtsRef.current = '';
+    }
+    const { chunks, spoken } = takeSpeechChunks(text, spokenTtsRef.current);
+    spokenTtsRef.current = spoken;
+    let pending = chunks;
+    if (final) {
+      const tail = text.slice(spokenTtsRef.current.length).trim();
+      if (tail) {
+        pending = [...pending, tail];
+        spokenTtsRef.current = text;
+      }
+    }
+    if (!pending.length) {
+      return;
+    }
+    holdMicForTts();
+    for (const chunk of pending) {
+      void enqueueTtsAudio(chunk, aiVoiceId);
+    }
+  }
+
+  async function speakAi(text: string) {
+    feedAiSpeech(text, true);
+    try {
+      await waitTtsQueue();
+    } finally {
+      ttsHoldRef.current = false;
+      if (!leavingRef.current) {
+        streamRef.current?.setCaptureEnabled(true);
+      }
     }
   }
 
@@ -257,6 +332,7 @@ export function CallPage(props: Props) {
       return;
     }
     leavingRef.current = true;
+    stopTtsAudio();
     if (flushTimerRef.current !== undefined) {
       window.clearTimeout(flushTimerRef.current);
       flushTimerRef.current = undefined;
@@ -349,7 +425,7 @@ export function CallPage(props: Props) {
               type="button"
               className="btn btn-danger"
               onClick={() => void hangup()}
-              disabled={callState === 'connecting' || callState === 'analyzing'}
+              disabled={callState === 'analyzing'}
             >
               Завершить
             </button>
@@ -375,7 +451,7 @@ export function CallPage(props: Props) {
               type="button"
               className="btn btn-danger"
               onClick={() => void hangup()}
-              disabled={callState === 'connecting' || callState === 'analyzing'}
+              disabled={callState === 'analyzing'}
             >
               Завершить
             </button>
@@ -431,7 +507,7 @@ export function CallPage(props: Props) {
                 <button
                   type="button"
                   className={recording ? 'btn btn-danger' : 'btn btn-primary'}
-                  disabled={callState === 'connecting' || recording}
+                  disabled={recording || callState === 'listening'}
                   onClick={() => void startCall()}
                 >
                   {micLabel}
@@ -498,6 +574,17 @@ export function CallPage(props: Props) {
       </div>
     </div>
   );
+}
+
+function isSameSpeech(left: string, right: string): boolean {
+  const clean = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
+  const a = clean(left);
+  const b = clean(right);
+  return Boolean(a && b && a === b);
 }
 
 function upsertLive(current: Line[], role: Line['role'], text: string, source: Line['source']): Line[] {
