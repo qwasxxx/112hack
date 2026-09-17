@@ -4,6 +4,7 @@ import { SECTION_AI_ROLE } from '../data/scenarios';
 import { createLlmStream } from '../lib/llm-stream';
 import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
+import { enqueueTtsAudio, stopTtsAudio, takeSpeechChunks, waitTtsQueue } from '../lib/tts-player';
 
 type Line = {
   id: string;
@@ -44,6 +45,9 @@ export function CallPage(props: Props) {
   const liveSttRef = useRef('');
   const flushTimerRef = useRef<number | undefined>(undefined);
   const analysisDoneRef = useRef<(() => void) | undefined>(undefined);
+  const ttsHoldRef = useRef(false);
+  const spokenTtsRef = useRef('');
+  const aiVoiceId = conversationRole;
   const wantsAnalysis = props.section === 'training' || props.section === 'exam';
   const showCard = props.section !== 'theory';
   const sectionLabel = props.section === 'theory' ? 'Теория' : props.section === 'exam' ? 'Экзамен' : 'Тренировка';
@@ -68,6 +72,7 @@ export function CallPage(props: Props) {
       }
       void streamRef.current?.stop();
       void llmRef.current?.stop();
+      stopTtsAudio();
       streamRef.current = undefined;
       llmRef.current = undefined;
     };
@@ -87,6 +92,7 @@ export function CallPage(props: Props) {
       window.clearTimeout(flushTimerRef.current);
       flushTimerRef.current = undefined;
     }
+    spokenTtsRef.current = '';
     setLines([]);
     setAnalysis('');
     setMicError(undefined);
@@ -99,9 +105,11 @@ export function CallPage(props: Props) {
       onEvent: (event) => {
         if (event.type === 'assistant_partial' && event.text.trim()) {
           setLines((current) => upsertLive(current, aiRole, event.text, 'llm'));
+          feedAiSpeech(event.text, false);
         }
         if (event.type === 'assistant_final' && event.text.trim()) {
           setLines((current) => commitLive(current, aiRole, event.text, 'llm'));
+          void speakAi(event.text);
         }
         if (event.type === 'analysis_partial' && event.text.trim()) {
           setAnalysis(event.text);
@@ -151,6 +159,9 @@ export function CallPage(props: Props) {
 
     const stream = createSttStream({
       onEvent: (event) => {
+        if (ttsHoldRef.current) {
+          return;
+        }
         finalsRef.current = applySttEvent(finalsRef.current, event);
         if (event.type === 'partial' && event.text.trim()) {
           if (!isShorterTranscript(liveSttRef.current, event.text)) {
@@ -228,6 +239,53 @@ export function CallPage(props: Props) {
     }
   }
 
+  function holdMicForTts() {
+    ttsHoldRef.current = true;
+    if (flushTimerRef.current !== undefined) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = undefined;
+    }
+    utterancePartsRef.current = [];
+    liveSttRef.current = '';
+    streamRef.current?.setCaptureEnabled(false);
+  }
+
+  function feedAiSpeech(text: string, final: boolean) {
+    if (spokenTtsRef.current && !text.startsWith(spokenTtsRef.current)) {
+      stopTtsAudio();
+      spokenTtsRef.current = '';
+    }
+    const { chunks, spoken } = takeSpeechChunks(text, spokenTtsRef.current);
+    spokenTtsRef.current = spoken;
+    let pending = chunks;
+    if (final) {
+      const tail = text.slice(spokenTtsRef.current.length).trim();
+      if (tail) {
+        pending = [...pending, tail];
+        spokenTtsRef.current = text;
+      }
+    }
+    if (!pending.length) {
+      return;
+    }
+    holdMicForTts();
+    for (const chunk of pending) {
+      void enqueueTtsAudio(chunk, aiVoiceId);
+    }
+  }
+
+  async function speakAi(text: string) {
+    feedAiSpeech(text, true);
+    try {
+      await waitTtsQueue();
+    } finally {
+      ttsHoldRef.current = false;
+      if (!leavingRef.current) {
+        streamRef.current?.setCaptureEnabled(true);
+      }
+    }
+  }
+
   function addOperatorLine(text: string) {
     const trimmed = text.trim();
     if (!trimmed) {
@@ -252,6 +310,7 @@ export function CallPage(props: Props) {
       return;
     }
     leavingRef.current = true;
+    stopTtsAudio();
     if (flushTimerRef.current !== undefined) {
       window.clearTimeout(flushTimerRef.current);
       flushTimerRef.current = undefined;

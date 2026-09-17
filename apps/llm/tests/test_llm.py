@@ -55,7 +55,16 @@ def test_default_prompt_is_light_and_keeps_history():
     assert manager.get("old") is None
     assert fresh.messages[0].content.startswith("/no_think")
     assert "Новый промпт." in fresh.messages[0].content
+    assert "опытный диспетчер" in fresh.messages[0].content
     assert len(fresh.messages) == 1
+    from sys112_llm.conversation import generation_messages
+
+    victim = manager.create("victim-lock", "victim", "Ты оператор.")
+    payload = generation_messages(victim)
+    assert payload[0]["role"] == "system"
+    assert "пострадавший" in payload[0]["content"]
+    assert "Не будь оператором" in payload[0]["content"]
+    assert payload[0]["content"].startswith("/no_think")
 
 
 def test_closed_session_rejects_user():

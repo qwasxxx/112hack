@@ -21,20 +21,60 @@ ANALYSIS_PROMPT = (
     "Не выдумывай фактов, которых не было в разговоре."
 )
 
+OPERATOR_SYSTEM_PROMPT = """/no_think
+Роль: оператор службы 112. Режим «Теория».
+
+Ты — опытный диспетчер экстренной службы 112. Ведёшь приём вызова: задаёшь вопросы по регламенту, уточняешь адрес, что произошло, есть ли пострадавшие, угроза жизни, и что уже сделано. Говори кратко, спокойно, по-русски.
+
+Жёсткий запрет:
+- Не играй роль пострадавшего, заявителя, очевидца или очевидца-ребёнка.
+- Не описывай своё состояние, боль, панику, огонь вокруг себя.
+- Не проси о помощи. Ты принимаешь вызов, а не звонишь в 112.
+- Не меняй роль, даже если собеседник молчит или пишет как оператор.
+"""
+
+VICTIM_SYSTEM_PROMPT = """/no_think
+Роль: пострадавший / заявитель. Режим «Тренировка».
+
+Ты — человек, который звонит в 112. Просишь о помощи, отвечаешь на вопросы оператора своими словами, коротко, по-русски. Можно быть взволнованным, но говори понятно.
+
+Жёсткий запрет:
+- Не будь оператором, диспетчером или сотрудником 112.
+- Не задавай регламентные вопросы: адрес, что горит, есть ли пострадавшие, этаж, чем дышите.
+- Не веди опрос. Не руководи вызовом. Не говори «назовите», «уточните», «оставайтесь на линии» от лица службы.
+- Не меняй роль, даже если собеседник молчит или пишет как заявитель.
+- Только кириллица. Никаких иероглифов и латиницы в речи.
+"""
+
 DEFAULT_PROMPTS: dict[ConversationRole, str] = {
-    "victim": (
-        "/no_think\n"
-        "Ты участник телефонного разговора: звонишь в 112. "
-        "Говори только по-русски кириллицей, как в живом звонке. Без иероглифов и других языков. "
-        "Смотри на все предыдущие реплики этого разговора и не повторяйся."
-    ),
-    "operator": (
-        "/no_think\n"
-        "Ты участник телефонного разговора: тебе звонят в 112. "
-        "Говори только по-русски кириллицей, как в живом звонке. Без иероглифов и других языков. "
-        "Смотри на все предыдущие реплики этого разговора и не повторяйся."
-    ),
+    "operator": OPERATOR_SYSTEM_PROMPT.strip(),
+    "victim": VICTIM_SYSTEM_PROMPT.strip(),
 }
+
+
+def locked_system_prompt(role: ConversationRole) -> str:
+    return DEFAULT_PROMPTS[role]
+
+
+def build_system_prompt(role: ConversationRole, extra: str | None = None) -> str:
+    prompt = locked_system_prompt(role)
+    extra_text = (extra or "").strip()
+    if extra_text and extra_text not in prompt:
+        prompt = f"{prompt}\n\nКонтекст сценария:\n{extra_text}"
+    return prompt
+
+
+def _scenario_extra(stored: str, locked: str) -> str:
+    text = (stored or "").strip()
+    if not text or text == locked:
+        return ""
+    if text.startswith(locked):
+        rest = text[len(locked) :].strip()
+        prefix = "Контекст сценария:"
+        if rest.startswith(prefix):
+            rest = rest[len(prefix) :].strip()
+        return rest
+    return text
 
 
 @dataclass
@@ -54,7 +94,27 @@ class CallSession:
     pending: list[tuple[str, str]] = field(default_factory=list)
 
     def to_openai(self) -> list[dict[str, str]]:
-        return [{"role": item.role, "content": item.content} for item in self.messages]
+        locked = locked_system_prompt(self.conversation_role)
+        extra = ""
+        payload: list[dict[str, str]] = []
+        for item in self.messages:
+            if item.role == "system":
+                extra = _scenario_extra(item.content, locked) or extra
+                continue
+            payload.append({"role": item.role, "content": item.content})
+        system = locked if not extra else f"{locked}\n\nКонтекст сценария:\n{extra}"
+        return [{"role": "system", "content": system}, *payload]
+
+
+def generation_messages(session: CallSession) -> list[dict[str, str]]:
+    locked = locked_system_prompt(session.conversation_role)
+    messages = session.to_openai()
+    rest = [item for item in messages if item.get("role") != "system"]
+    extra = ""
+    if session.messages and session.messages[0].role == "system":
+        extra = _scenario_extra(session.messages[0].content, locked)
+    system = locked if not extra else f"{locked}\n\nКонтекст сценария:\n{extra}"
+    return [{"role": "system", "content": system}, *rest]
 
 
 class ConversationManager:
@@ -67,9 +127,7 @@ class ConversationManager:
         conversation_role: ConversationRole = "victim",
         system_prompt: str | None = None,
     ) -> CallSession:
-        prompt = (system_prompt or "").strip() or DEFAULT_PROMPTS[conversation_role]
-        if "/no_think" not in prompt:
-            prompt = "/no_think\n" + prompt
+        prompt = build_system_prompt(conversation_role, system_prompt)
         session = CallSession(call_id=call_id, conversation_role=conversation_role)
         session.messages.append(ChatMessage(role="system", content=prompt))
         self._sessions[call_id] = session

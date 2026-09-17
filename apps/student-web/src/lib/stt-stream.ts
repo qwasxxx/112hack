@@ -7,6 +7,7 @@ const FRAME_SAMPLES = 2400;
 export type SttStream = {
   start(): Promise<void>;
   stop(): Promise<string>;
+  setCaptureEnabled(enabled: boolean): void;
 };
 
 export function createSttStream(handlers: {
@@ -22,6 +23,7 @@ export function createSttStream(handlers: {
   let pending = new Int16Array(0);
   let stopped = false;
   let started = false;
+  let captureEnabled = true;
 
   function sendPcm(frame: Int16Array) {
     if (!socket || socket.readyState !== WebSocket.OPEN || frame.length === 0) {
@@ -65,10 +67,13 @@ export function createSttStream(handlers: {
         audio: {
           channelCount: 1,
           sampleRate: TARGET_RATE,
-          echoCancellation: false,
-          noiseSuppression: false,
+          echoCancellation: true,
+          noiseSuppression: true,
           autoGainControl: false,
         },
+      });
+      media.getAudioTracks().forEach((track) => {
+        track.enabled = captureEnabled;
       });
       context = new AudioContext();
       await context.resume();
@@ -77,7 +82,7 @@ export function createSttStream(handlers: {
       mute = context.createGain();
       mute.gain.value = 0;
       processor.onaudioprocess = (event) => {
-        if (stopped) {
+        if (stopped || !captureEnabled) {
           return;
         }
         const input = event.inputBuffer.getChannelData(0);
@@ -215,5 +220,15 @@ export function createSttStream(handlers: {
     });
   }
 
-  return { start, stop };
+  function setCaptureEnabled(enabled: boolean) {
+    captureEnabled = enabled;
+    media?.getAudioTracks().forEach((track) => {
+      track.enabled = enabled;
+    });
+    if (!enabled) {
+      pending = new Int16Array(0);
+    }
+  }
+
+  return { start, stop, setCaptureEnabled };
 }

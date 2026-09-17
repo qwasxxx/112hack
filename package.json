@@ -12,6 +12,7 @@
     "dev:teacher": "pnpm --filter @sys112/teacher-web dev",
     "dev:stt": "powershell -ExecutionPolicy Bypass -File scripts/start-stt.ps1",
     "dev:llm": "powershell -ExecutionPolicy Bypass -File scripts/start-llm.ps1",
+    "dev:tts": "powershell -ExecutionPolicy Bypass -File scripts/start-tts.ps1",
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",

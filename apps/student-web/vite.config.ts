@@ -12,6 +12,7 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
+      '/api/v1/tts': 'http://127.0.0.1:8092',
       '/api/llm': 'http://127.0.0.1:8091',
       '/api': 'http://127.0.0.1:3000',
       '/socket.io': { target: 'http://127.0.0.1:3000', ws: true },

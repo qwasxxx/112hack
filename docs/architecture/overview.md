@@ -34,6 +34,9 @@ Next.js, GraphQL, Redis, отдельная vector DB, отдельный AI-с�
 apps/student-web     training UI
 apps/teacher-web     monitoring / control UI
 apps/api             modular monolith
+apps/stt             FastAPI T-one STT (:8090)
+apps/llm             FastAPI Qwen conversation (:8091)
+apps/tts             FastAPI Coqui XTTS-v2 (:8092)
 packages/shared-types
 packages/api-client
 packages/ui
@@ -44,7 +47,16 @@ docs/architecture
 docs/scenarios
 ```
 
-`services/api|realtime|ai` из исходного предложения нет. Realtime и AI — модули API.
+`services/api|realtime|ai` из исходного предложения нет. Realtime и AI-порты — модули API. Живой голосовой пайплайн вынесен в отдельные Python-процессы: STT, LLM, TTS. NestJS `TextToSpeechPort` остаётся mock и в звонке не вызывается.
+
+## Живой TTS (Coqui XTTS-v2)
+
+Озвучка реплик ИИ — изолированный сервис `apps/tts`, Python 3.11 + FastAPI, порт **8092**. Модель `coqui/XTTS-v2`, `language=ru`, zero-shot cloning по референсу из `models/tts/voices/` (`panic.wav`, `victim_female.wav`, `victim_male.wav`; при отсутствии файлов создаются WAV-заглушки).
+
+- Health: `GET http://127.0.0.1:8092/health`
+- Синтез: `POST /api/v1/tts/synthesize` `{ "text", "voice_id" }` → `audio/wav`
+- Student Web проксирует `/api/v1/tts` на `:8092`. На `assistant_final` UI вызывает `playTtsAudio`; если сервис недоступен, звонок продолжается текстом.
+- Запуск: `pnpm dev:tts` / `scripts/start-tts.ps1`. Docker-сервис `tts` в `infra/docker/docker-compose.yml`.
 
 ## Bounded contexts (модули NestJS)
 
@@ -95,7 +107,7 @@ Optimistic concurrency: `stateVersion`.
 4. Scenario Engine собирает prompt context (+ optional RAG)
 5. LLM port возвращает utterance + structured deltas
 6. Engine применяет deltas, `save(expectedVersion)`
-7. TTS port
+7. Student Web `POST /api/v1/tts/synthesize` (Coqui XTTS-v2, процесс `apps/tts`)
 8. Event bus: `TranscriptUpdated`, `AiTurnCompleted`, `ScenarioStateChanged`
 
 ### Teacher intervention
@@ -124,4 +136,4 @@ Documents → chunk → embeddings port → vector store port → retrieval → 
 
 ## Что сознательно не сделано
 
-Auth JWT, реальные STT/TTS/LLM, WebRTC media path, загрузка документов, UI сценариев, Redis/BullMQ, Prometheus, GraphQL, микросервисы.
+Auth JWT, реальные адаптеры STT/TTS/LLM внутри NestJS, WebRTC media path, загрузка документов, UI сценариев, Redis/BullMQ, Prometheus, GraphQL, микросервисы домена. Живые STT/LLM/TTS работают отдельными FastAPI-процессами и не проходят через Nest AI ports.
