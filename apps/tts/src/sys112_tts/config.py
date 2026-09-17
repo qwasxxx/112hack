@@ -14,6 +14,11 @@ TTS_PORT = int(_env("TTS_PORT", "8092"))
 TTS_LANGUAGE = _env("TTS_LANGUAGE", "ru")
 TTS_SAMPLE_RATE = int(_env("TTS_SAMPLE_RATE", "48000"))
 TTS_THREADS = int(_env("TTS_THREADS", "4"))
+TTS_MODEL_ID = _env("TTS_MODEL_ID", "v5_5_ru")
+TTS_DEVICE = _env("TTS_DEVICE", "cpu")
+TTS_LOCAL_PLAY = _env("TTS_LOCAL_PLAY", "0").strip().lower() in {"1", "true", "yes", "on"}
+TTS_OPERATOR_SPEAKER = _env("TTS_OPERATOR_SPEAKER", "aidar")
+TTS_VICTIM_SPEAKER = _env("TTS_VICTIM_SPEAKER", "xenia")
 TTS_SILERO_DIR = Path(_env("TTS_SILERO_DIR", str(REPO_ROOT / "models" / "tts" / "silero")))
 if not TTS_SILERO_DIR.is_absolute():
     TTS_SILERO_DIR = (Path.cwd() / TTS_SILERO_DIR).resolve()

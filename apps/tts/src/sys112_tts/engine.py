@@ -1,47 +1,82 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import io
 import logging
+import os
 import threading
 import time
 from collections.abc import AsyncIterator
 from typing import Any
+from xml.sax.saxutils import escape as xml_escape
+
 import numpy as np
-import onnxruntime as ort
+import torch
 from scipy.io import wavfile
 
 from sys112_tts.config import (
+    TTS_DEVICE,
     TTS_LANGUAGE,
+    TTS_MODEL_ID,
     TTS_SAMPLE_RATE,
-    TTS_SILERO_ONNX,
-    TTS_SILERO_PT,
     TTS_THREADS,
 )
-from sys112_tts.download import ensure_silero_model
 from sys112_tts.text import normalize_text, split_sentences
-from sys112_tts.voices import list_voice_ids, resolve_profile
+from sys112_tts.voices import CHARACTERS, list_voice_ids, resolve_profile, resolve_role
 
 logger = logging.getLogger("sys112_tts")
 
-
-EDGE_VOICES = {
-    "kseniya": ("ru-RU-SvetlanaNeural", "+6%"),
-    "baya": ("ru-RU-SvetlanaNeural", "-4%"),
-    "xenia": ("ru-RU-SvetlanaNeural", "+0%"),
-    "aidar": ("ru-RU-DmitryNeural", "+0%"),
-    "eugene": ("ru-RU-DmitryNeural", "-4%"),
+EMOTIONS = {
+    "operator_calm": {"rate": "1.0", "pitch": "medium", "volume": "medium"},
+    "calm": {"rate": "1.0", "pitch": "medium", "volume": "medium"},
+    "panic_high": {"rate": "1.12", "pitch": "medium", "volume": "medium"},
+    "panic": {"rate": "1.12", "pitch": "medium", "volume": "medium"},
+    "panic_crying": {"rate": "1.08", "pitch": "medium", "volume": "medium"},
+    "victim_panic": {"rate": "1.12", "pitch": "medium", "volume": "medium"},
+    "victim_scared": {"rate": "1.08", "pitch": "medium", "volume": "medium"},
 }
 
 
-def _session_options() -> ort.SessionOptions:
-    opts = ort.SessionOptions()
-    opts.intra_op_num_threads = TTS_THREADS
-    opts.inter_op_num_threads = max(1, TTS_THREADS // 2)
-    opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-    opts.enable_mem_pattern = True
-    opts.enable_cpu_mem_arena = True
-    return opts
+def _rate_attr(speed: float) -> str:
+    if abs(speed - 1.0) < 1e-6:
+        return "1.0"
+    text = f"{speed:.2f}".rstrip("0").rstrip(".")
+    return text or "1.0"
+
+
+def _ssml_rate_pitch(emotion: str | None, rate: float | str | None, pitch: str | None) -> tuple[str, str]:
+    profile = EMOTIONS.get((emotion or "").strip().lower().replace("-", "_"), {})
+    rate_value = _rate_attr(float(rate)) if rate is not None else str(profile.get("rate") or "1.0")
+    pitch_value = pitch or str(profile.get("pitch") or "medium")
+    return rate_value, pitch_value
+
+
+def build_ssml(
+    text: str,
+    speaker: str,
+    emotion: str | None = None,
+    rate: float | str | None = None,
+    pitch: str | None = None,
+) -> str:
+    rate_value, pitch_value = _ssml_rate_pitch(emotion, rate, pitch)
+    body = xml_escape((text or "").strip())
+    return (
+        f'<speak><voice name="{xml_escape(speaker)}">'
+        f'<prosody rate="{rate_value}" pitch="{pitch_value}">{body}</prosody>'
+        f"</voice></speak>"
+    )
+
+
+def build_silero_ssml(
+    text: str,
+    emotion: str | None = None,
+    rate: float | str | None = None,
+    pitch: str | None = None,
+) -> str:
+    rate_value, pitch_value = _ssml_rate_pitch(emotion, rate, pitch)
+    body = xml_escape((text or "").strip())
+    return f'<speak><prosody rate="{rate_value}" pitch="{pitch_value}">{body}</prosody></speak>'
 
 
 def _trim_silence(samples: np.ndarray, sample_rate: int) -> np.ndarray:
@@ -83,11 +118,31 @@ def _to_wav_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
     return buffer.getvalue()
 
 
-class SileroOnnxEngine:
-    _instance: SileroOnnxEngine | None = None
+def _keyboard_samples(sample_rate: int) -> np.ndarray:
+    rng = np.random.default_rng(112)
+    audio = np.zeros(int(sample_rate * 0.42), dtype=np.float32)
+    for delay in (0.03, 0.11, 0.18, 0.27, 0.34):
+        start = int(delay * sample_rate)
+        n = int(0.012 * sample_rate)
+        click = rng.normal(0, 0.22, n).astype(np.float32)
+        env = np.linspace(1.0, 0.0, n, dtype=np.float32) ** 3
+        end = min(audio.size, start + n)
+        audio[start:end] += click[: end - start] * env[: end - start]
+    peak = float(np.max(np.abs(audio))) or 1.0
+    return audio * (0.35 / peak)
+
+
+def _to_numpy(wav: Any) -> np.ndarray:
+    if hasattr(wav, "detach"):
+        wav = wav.detach().cpu().numpy()
+    return np.asarray(wav, dtype=np.float32).reshape(-1)
+
+
+class SileroTTSEngine:
+    _instance: SileroTTSEngine | None = None
     _ctor_lock = threading.Lock()
 
-    def __new__(cls) -> SileroOnnxEngine:
+    def __new__(cls) -> SileroTTSEngine:
         if cls._instance is None:
             with cls._ctor_lock:
                 if cls._instance is None:
@@ -98,13 +153,12 @@ class SileroOnnxEngine:
         if getattr(self, "_initialized", False):
             return
         self._initialized = True
+        self._wrapper: Any = None
         self._model: Any = None
-        self._session: ort.InferenceSession | None = None
-        self._accentor: Any = None
-        self._edge_ready: bool | None = None
         self._lock = threading.Lock()
+        self._fillers: dict[str, np.ndarray] = {}
         self.status = "loading"
-        self.backend = "silero-onnx"
+        self.backend = "silero-tts"
         self.error: str | None = None
         self.sample_rate = TTS_SAMPLE_RATE
 
@@ -117,121 +171,164 @@ class SileroOnnxEngine:
             except Exception as exc:
                 self.status = "not_ready"
                 self.error = str(exc)
-                logger.exception("[TTS] Silero load failed")
+                logger.exception("[TTS] Silero TTS load failed")
                 raise
 
     def _load_unlocked(self) -> None:
-        opts = _session_options()
-        if TTS_SILERO_ONNX.is_file() and TTS_SILERO_ONNX.stat().st_size > 1_000_000:
-            self._session = ort.InferenceSession(
-                str(TTS_SILERO_ONNX),
-                sess_options=opts,
-                providers=["CPUExecutionProvider"],
-            )
-            self.backend = "silero-onnx"
-            self._load_accentor()
-            self.status = "ready"
-            logger.info("[TTS] ONNX Runtime session ready file=%s threads=%s", TTS_SILERO_ONNX, TTS_THREADS)
-            return
-        path = ensure_silero_model(TTS_SILERO_PT)
-        import torch
-
         torch.set_num_threads(TTS_THREADS)
         try:
             torch.set_num_interop_threads(max(1, TTS_THREADS // 2))
         except RuntimeError:
             pass
-        torch._C._jit_set_profiling_mode(False)
-        importer = torch.package.PackageImporter(str(path))
-        self._model = importer.load_pickle("tts_models", "model")
-        if hasattr(self._model, "unpack_q_model"):
-            self._model.unpack_q_model()
-        self.backend = "silero-onnx-v4"
-        self._load_accentor()
-        self._warmup_unlocked(torch)
+        self._model = self._init_silero()
+        self._warmup_unlocked()
+        self._prepare_fillers()
+        self.backend = "silero-tts"
         self.status = "ready"
         self.error = None
         logger.info(
-            "[TTS] Silero v4 ready file=%s onnxruntime=%s threads=%s sr=%s",
-            path,
-            ort.__version__,
+            "[TTS] SileroTTS ready model=%s device=%s threads=%s sr=%s speakers=%s",
+            TTS_MODEL_ID,
+            TTS_DEVICE,
             TTS_THREADS,
             self.sample_rate,
+            ["aidar", "xenia", "eugene"],
         )
 
-    def _warmup_unlocked(self, torch: Any) -> None:
+    def _init_silero(self) -> Any:
+        from silero_tts.silero_tts import SileroTTS
+
+        yml = os.path.join(os.path.dirname(inspect.getfile(SileroTTS)), "latest_silero_models.yml")
+        try:
+            SileroTTS.download_models_config_static(yml)
+        except Exception:
+            logger.warning("[TTS] Could not refresh Silero models.yml")
+        try:
+            self._wrapper = SileroTTS(
+                language=TTS_LANGUAGE,
+                model_id=TTS_MODEL_ID,
+                speaker="aidar",
+                sample_rate=self.sample_rate,
+                device=TTS_DEVICE,
+                num_threads=TTS_THREADS,
+            )
+            return self._wrapper.tts_model
+        except Exception as exc:
+            logger.warning("[TTS] SileroTTS(%s) failed: %s; torch.hub fallback", TTS_MODEL_ID, exc)
+            self._wrapper = None
+            model, _ = torch.hub.load(
+                repo_or_dir="snakers4/silero-models",
+                model="silero_tts",
+                language=TTS_LANGUAGE,
+                speaker=TTS_MODEL_ID,
+                trust_repo=True,
+            )
+            model.to(torch.device(TTS_DEVICE))
+            return model
+
+    def _warmup_unlocked(self) -> None:
         started = time.perf_counter()
-        profiles = ("kseniya", "baya", "aidar")
+        for speaker in ("aidar", "xenia"):
+            self._apply_tts("Да, я вас слушаю.", speaker, 1.0, "medium")
+        logger.info("[TTS] Warmup %.3fs", time.perf_counter() - started)
+
+    def _prepare_fillers(self) -> None:
+        keyboard = _keyboard_samples(self.sample_rate)
+        sigh = self._apply_tts("Мм...", "xenia", 1.0, "medium")
+        self._fillers = {
+            "operator": keyboard,
+            "victim": sigh if sigh.size else keyboard,
+        }
+
+    def ready(self) -> bool:
+        return self.status == "ready" and self._model is not None
+
+    def _apply_tts(self, text: str, speaker: str, speed: float, pitch: str) -> np.ndarray:
+        if self._model is None:
+            raise RuntimeError("Silero model is not loaded")
+        ssml = build_silero_ssml(text, rate=speed, pitch=pitch)
+        used_ssml = True
         with torch.inference_mode():
-            for speaker in profiles:
-                self._model.apply_tts(
-                    text="Да, я вас слушаю.",
+            try:
+                wav = self._model.apply_tts(
+                    ssml_text=ssml,
+                    speaker=speaker,
+                    sample_rate=self.sample_rate,
+                )
+            except Exception:
+                used_ssml = False
+                wav = self._model.apply_tts(
+                    text=text,
                     speaker=speaker,
                     sample_rate=self.sample_rate,
                     put_accent=True,
                     put_yo=True,
                 )
-        logger.info("[TTS] Warmup %.3fs speakers=%s", time.perf_counter() - started, len(profiles))
-
-    def _load_accentor(self) -> None:
-        try:
-            from silero_stress import load_accentor
-
-            self._accentor = load_accentor()
-            logger.info("[TTS] silero-stress accentor ready")
-        except Exception:
-            self._accentor = None
-            logger.exception("[TTS] silero-stress unavailable")
-
-    def _accent(self, text: str) -> str:
-        if self._accentor is None:
-            return text
-        marked = self._accentor(text)
-        if not isinstance(marked, str) or not marked.strip():
-            return text
-        return marked.strip()
-
-    async def _edge_audio(self, text: str, speaker: str) -> bytes:
-        if self._edge_ready is False:
-            raise RuntimeError("edge-tts disabled")
-        import edge_tts
-
-        voice, rate = EDGE_VOICES.get(speaker, EDGE_VOICES["kseniya"])
-        communicate = edge_tts.Communicate(text, voice, rate=rate)
-        parts: list[bytes] = []
-        async for message in communicate.stream():
-            if message.get("type") == "audio" and message.get("data"):
-                parts.append(message["data"])
-        audio = b"".join(parts)
-        if len(audio) < 64:
-            raise RuntimeError("edge-tts returned empty audio")
-        self._edge_ready = True
+        audio = _to_numpy(wav)
+        if not used_ssml and abs(speed - 1.0) > 0.02:
+            new_len = max(1, int(audio.size / speed))
+            x_old = np.linspace(0.0, 1.0, audio.size, dtype=np.float32)
+            x_new = np.linspace(0.0, 1.0, new_len, dtype=np.float32)
+            audio = np.interp(x_new, x_old, audio).astype(np.float32)
         return audio
 
-    def ready(self) -> bool:
-        return self.status == "ready" and (self._model is not None or self._session is not None)
+    def _play(self, samples: np.ndarray) -> None:
+        try:
+            import sounddevice as sd
 
-    def _synth_numpy(self, text: str, speaker: str, speed: float, pitch: str) -> np.ndarray:
-        if self._session is not None and self._model is None:
-            raise RuntimeError("Silero ONNX graph is present but has no compatible runner")
-        if self._model is None:
-            raise RuntimeError("Silero model is not loaded")
-        import torch
+            sd.stop()
+            sd.play(np.asarray(samples, dtype=np.float32), self.sample_rate, blocking=False)
+        except Exception as exc:
+            logger.debug("[TTS] sounddevice skipped: %s", exc)
 
-        own_accent = self._accentor is None
-        with torch.inference_mode():
-            wav = self._model.apply_tts(
-                text=self._accent(text) if not own_accent else text,
-                speaker=speaker,
-                sample_rate=self.sample_rate,
-                put_accent=own_accent,
-                put_yo=own_accent,
-            )
-        return np.asarray(wav.detach().cpu().numpy() if hasattr(wav, "detach") else wav, dtype=np.float32).reshape(-1)
+    def filler_wav(self, role: str | None = None) -> bytes:
+        samples = self._fillers.get(resolve_role(role), _keyboard_samples(self.sample_rate))
+        return _to_wav_bytes(samples, self.sample_rate)
 
-    def synthesize_sentence(self, text: str, speaker: str, speed: float, pitch: str = "medium") -> bytes:
+    def play_filler(self, role: str | None = None) -> bytes:
+        key = resolve_role(role)
+        samples = self._fillers.get(key, _keyboard_samples(self.sample_rate))
+        self._play(samples)
+        return _to_wav_bytes(samples, self.sample_rate)
+
+    def synthesize_role(
+        self,
+        text: str,
+        role: str,
+        play: bool = True,
+        emotion: str | None = None,
+        voice_id: str | None = None,
+        gender: str | None = None,
+    ) -> bytes:
+        cleaned = normalize_text(text)
+        if not cleaned:
+            raise ValueError("text is empty")
+        if not self.ready():
+            self.load()
+        profile = resolve_profile(role, emotion, role, voice_id, gender)
+        speaker = str(profile["speaker"])
+        speed = float(profile["speed"])
+        pitch = str(profile["pitch"])
+        sentences = split_sentences(cleaned)
+        parts: list[np.ndarray] = []
+        gap = np.zeros(int(self.sample_rate * 0.06), dtype=np.float32)
         with self._lock:
-            return _to_wav_bytes(self._synth_numpy(text, speaker, speed, pitch), self.sample_rate)
+            for index, sentence in enumerate(sentences):
+                parts.append(self._apply_tts(sentence, speaker, speed, pitch))
+                if index < len(sentences) - 1:
+                    parts.append(gap)
+        audio = np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
+        if play:
+            self._play(audio)
+        logger.info(
+            "[TTS] role=%s speaker=%s rate=%s chars=%s samples=%s",
+            profile["role"],
+            speaker,
+            _rate_attr(speed),
+            len(cleaned),
+            int(audio.size),
+        )
+        return _to_wav_bytes(audio, self.sample_rate)
 
     async def synthesize_stream(
         self,
@@ -242,45 +339,29 @@ class SileroOnnxEngine:
         ambient_type: str | None = None,
         random_sfx: bool = False,
         role: str | None = None,
+        gender: str | None = None,
     ) -> AsyncIterator[bytes]:
         del ambient_type, random_sfx
-        cleaned = normalize_text(text)
-        if not cleaned:
-            raise ValueError("text is empty")
-        if not self.ready():
-            await asyncio.to_thread(self.load)
-        profile = resolve_profile(role, emotion, conversation_role, voice_id)
-        speaker = str(profile["speaker"])
-        speed = float(profile["speed"])
-        pitch = str(profile.get("pitch") or "medium")
-        sentences = split_sentences(cleaned)
+        role_key = resolve_role(role, conversation_role, voice_id)
         started = time.perf_counter()
-        first = True
-        for index, sentence in enumerate(sentences, start=1):
-            used = "silero"
-            try:
-                chunk = await self._edge_audio(sentence, speaker)
-                used = "edge-tts"
-                self.backend = "edge-tts"
-            except Exception as exc:
-                self._edge_ready = False
-                logger.warning("[TTS] edge-tts fallback to Silero: %s", exc)
-                chunk = await asyncio.to_thread(self.synthesize_sentence, sentence, speaker, speed, pitch)
-                used = "silero"
-                self.backend = "silero-stress" if self._accentor is not None else "silero-onnx-v4"
-            if first:
-                logger.info(
-                    "[TTS] Time-To-Audio %.1fms backend=%s speaker=%s sentence=%s/%s bytes=%s",
-                    (time.perf_counter() - started) * 1000,
-                    used,
-                    speaker,
-                    index,
-                    len(sentences),
-                    len(chunk),
-                )
-                first = False
-            if chunk:
-                yield chunk
+        chunk = await asyncio.to_thread(
+            self.synthesize_role,
+            text,
+            role_key,
+            False,
+            emotion,
+            voice_id,
+            gender,
+        )
+        logger.info(
+            "[TTS] Time-To-Audio %.1fms backend=%s role=%s bytes=%s",
+            (time.perf_counter() - started) * 1000,
+            self.backend,
+            role_key,
+            len(chunk),
+        )
+        if chunk:
+            yield chunk
 
     async def synthesize_with_emotion(
         self,
@@ -291,6 +372,7 @@ class SileroOnnxEngine:
         ambient_type: str | None = None,
         random_sfx: bool = False,
         role: str | None = None,
+        gender: str | None = None,
     ) -> bytes:
         parts = [
             chunk
@@ -302,6 +384,7 @@ class SileroOnnxEngine:
                 ambient_type,
                 random_sfx,
                 role,
+                gender,
             )
         ]
         if not parts:
@@ -317,6 +400,7 @@ class SileroOnnxEngine:
         ambient_type: str | None = None,
         random_sfx: bool = False,
         role: str | None = None,
+        gender: str | None = None,
     ) -> tuple[bytes, str]:
         audio = await self.synthesize_with_emotion(
             text,
@@ -326,6 +410,7 @@ class SileroOnnxEngine:
             ambient_type,
             random_sfx,
             role,
+            gender,
         )
         return audio, "audio/wav"
 
@@ -334,16 +419,17 @@ class SileroOnnxEngine:
             "status": "ready" if self.ready() else self.status,
             "tts": "ready" if self.ready() else self.status,
             "backend": self.backend,
-            "model": "edge-tts-ru" if self.backend == "edge-tts" else "silero-v4-ru",
-            "local": self.backend != "edge-tts",
-            "accentor": "silero-stress" if self._accentor is not None else "silero-builtin",
+            "model": TTS_MODEL_ID,
+            "local": True,
             "language": TTS_LANGUAGE,
             "sample_rate": self.sample_rate,
             "voices": list_voice_ids(),
-            "speakers": ["kseniya", "xenia", "baya", "aidar", "eugene"],
+            "speakers": ["aidar", "xenia", "eugene"],
+            "characters": {key: value["name"] for key, value in CHARACTERS.items()},
             "error": self.error,
         }
 
 
-engine = SileroOnnxEngine()
-TTSEngine = SileroOnnxEngine
+engine = SileroTTSEngine()
+TTSEngine = SileroTTSEngine
+SileroOnnxEngine = SileroTTSEngine

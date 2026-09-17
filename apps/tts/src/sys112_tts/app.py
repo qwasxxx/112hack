@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import struct
 import time
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from sys112_tts.engine import engine
+from sys112_tts.voices import resolve_role
 
 logger = logging.getLogger("sys112_tts")
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -21,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 async def lifespan(_app: FastAPI):
     try:
         engine.load()
-        logger.info("[TTS] Silero local engine ready")
+        logger.info("[TTS] Silero v5_5_ru engine ready")
     except Exception:
         logger.exception("[TTS] Silero load failed")
         engine.status = "not_ready"
@@ -39,12 +41,14 @@ app.add_middleware(
 
 class SynthesizeRequest(BaseModel):
     text: str = Field(min_length=1)
-    role: str | None = None
+    role: Literal["victim", "operator"] | str | None = None
     emotion: str | None = None
     voice_id: str | None = None
     conversation_role: str | None = None
     ambient_type: str | None = None
     random_sfx: bool = False
+    gender: str | None = None
+    play: bool = False
 
 
 @app.get("/health")
@@ -59,36 +63,28 @@ def _frame(chunk: bytes) -> bytes:
 @app.post("/api/v1/tts/synthesize")
 async def synthesize(body: SynthesizeRequest) -> StreamingResponse:
     started = time.perf_counter()
-    stream = engine.synthesize_stream(
-        body.text,
-        body.voice_id,
-        body.emotion,
-        body.conversation_role,
-        body.ambient_type,
-        body.random_sfx,
-        body.role,
-    )
+    role = resolve_role(body.role, body.conversation_role, body.voice_id)
     try:
-        first = await stream.__anext__()
+        first = await asyncio.to_thread(
+            engine.synthesize_role,
+            body.text,
+            role,
+            body.play,
+            body.emotion,
+            body.voice_id,
+            body.gender,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except StopAsyncIteration as exc:
-        raise HTTPException(status_code=500, detail="TTS returned empty audio") from exc
     except Exception:
         logger.exception("[TTS] Synthesis failed")
         raise HTTPException(status_code=500, detail="Speech synthesis failed") from None
 
     tta_ms = (time.perf_counter() - started) * 1000
-    logger.info("[TTS] Time-To-Audio %.1fms http_first_chunk bytes=%s", tta_ms, len(first))
+    logger.info("[TTS] Time-To-Audio %.1fms http_first_chunk bytes=%s role=%s", tta_ms, len(first), role)
 
     async def generate():
         yield _frame(first)
-        try:
-            async for chunk in stream:
-                if chunk:
-                    yield _frame(chunk)
-        except Exception:
-            logger.exception("[TTS] Stream chunk failed")
         yield struct.pack("<I", 0)
 
     return StreamingResponse(
@@ -97,6 +93,7 @@ async def synthesize(body: SynthesizeRequest) -> StreamingResponse:
         headers={
             "X-TTS-Stream": "1",
             "X-TTS-TTA-MS": f"{tta_ms:.1f}",
+            "X-TTS-Role": role,
             "Cache-Control": "no-store",
         },
     )

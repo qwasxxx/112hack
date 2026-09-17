@@ -8,7 +8,7 @@ if (-not (Test-Path $Py)) {
   python -m venv $Venv
 }
 
-Write-Host "[TTS] Installing Silero ONNX runtime..."
+Write-Host "[TTS] Installing silero-tts num2words sounddevice torch torchaudio numpy..."
 & $Py -m pip install -q -r (Join-Path $Tts "requirements.txt")
 
 $env:PYTHONPATH = Join-Path $Tts "src"
@@ -17,7 +17,7 @@ $env:TTS_PORT = "8092"
 $env:TTS_LANGUAGE = "ru"
 $env:TTS_THREADS = "4"
 
-Write-Host "[TTS] Ensuring Silero v4 model..."
+Write-Host "[TTS] Ensuring Silero v5_5_ru model..."
 & $Py (Join-Path $Tts "scripts\download_silero.py")
 
 Write-Host "[TTS] Voice service on http://127.0.0.1:8092"
