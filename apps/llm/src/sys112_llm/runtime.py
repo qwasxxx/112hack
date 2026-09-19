@@ -18,7 +18,6 @@ from sys112_llm.config import (
     LLM_MIN_MODEL_BYTES,
     LLM_MODEL_PATH,
     LLM_MODEL_URL,
-    LLM_N_GPU_LAYERS,
     LLM_THREADS,
     LLM_TOOLS_DIR,
 )
@@ -174,17 +173,19 @@ def build_llama_command(binary: Path) -> list[str]:
         "--threads-batch",
         str(LLM_THREADS),
         "-b",
-        "512",
+        "128",
         "-ub",
-        "256",
+        "64",
+        "--cache-type-k",
+        "q8_0",
+        "--cache-type-v",
+        "q8_0",
+        "--parallel",
+        "1",
         "-ngl",
-        str(LLM_N_GPU_LAYERS if _has_nvidia() else 0),
+        "0",
     ]
     return command
-
-
-def _has_nvidia() -> bool:
-    return shutil.which("nvidia-smi") is not None
 
 
 def wait_ready(url: str, timeout: float = 120.0) -> bool:
@@ -207,10 +208,28 @@ def start_llama_process() -> subprocess.Popen[bytes]:
     ready = wait_ready(f"http://127.0.0.1:{LLM_LLAMA_PORT}/v1/models", timeout=180)
     if not ready:
         process.terminate()
-        fallback = [item for item in command if item != "--chat-template-kwargs" and item != '{"enable_thinking": false}']
-        if fallback != command:
+        stripped = [item for item in command if item != "--chat-template-kwargs" and item != '{"enable_thinking": false}']
+        if stripped != command:
             logger.info("[LLM] Retrying llama.cpp without chat-template-kwargs")
-            process = _spawn(fallback)
+            process = _spawn(stripped)
+            ready = wait_ready(f"http://127.0.0.1:{LLM_LLAMA_PORT}/v1/models", timeout=180)
+            command = stripped
+    if not ready:
+        process.terminate()
+        compact = []
+        skip_next = False
+        drop = {"--cache-type-k", "--cache-type-v", "--parallel"}
+        for item in command:
+            if skip_next:
+                skip_next = False
+                continue
+            if item in drop:
+                skip_next = True
+                continue
+            compact.append(item)
+        if compact != command:
+            logger.info("[LLM] Retrying llama.cpp without quantized KV cache")
+            process = _spawn(compact)
             ready = wait_ready(f"http://127.0.0.1:{LLM_LLAMA_PORT}/v1/models", timeout=180)
     if not ready:
         process.terminate()

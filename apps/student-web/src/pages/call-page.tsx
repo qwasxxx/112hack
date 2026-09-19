@@ -50,6 +50,7 @@ export function CallPage(props: Props) {
   const analysisDoneRef = useRef<(() => void) | undefined>(undefined);
   const ttsHoldRef = useRef(false);
   const spokenTtsRef = useRef('');
+  const userSpokeRef = useRef(false);
   const aiVoiceId = conversationRole;
   const wantsAnalysis = !embedded && (props.section === 'training' || props.section === 'exam');
   const showCard = !embedded && props.section !== 'theory';
@@ -105,6 +106,8 @@ export function CallPage(props: Props) {
       flushTimerRef.current = undefined;
     }
     spokenTtsRef.current = '';
+    userSpokeRef.current = false;
+    ttsHoldRef.current = false;
     setLines([]);
     setAnalysis('');
     setMicError(undefined);
@@ -136,14 +139,16 @@ export function CallPage(props: Props) {
       lessonId: props.scenario.id,
       onEvent: (event) => {
         if (event.type === 'assistant_partial' && event.text.trim()) {
-          if (isSameSpeech(event.text, opening)) {
+          if (!userSpokeRef.current && isSameSpeech(event.text, opening)) {
             return;
           }
           setLines((current) => upsertLive(current, aiRole, event.text, 'llm'));
           feedAiSpeech(event.text, false);
         }
         if (event.type === 'assistant_final' && event.text.trim()) {
-          if (isSameSpeech(event.text, opening)) {
+          if (!userSpokeRef.current && isSameSpeech(event.text, opening)) {
+            ttsHoldRef.current = false;
+            streamRef.current?.setCaptureEnabled(true);
             return;
           }
           setLines((current) => commitLive(current, aiRole, event.text, 'llm'));
@@ -177,6 +182,7 @@ export function CallPage(props: Props) {
       }
       const id = crypto.randomUUID();
       setLines((current) => commitLive(current, userRole, text, 'stt'));
+      beginUserTurn();
       llmRef.current?.sendUserFinal(id, text);
     };
 
@@ -184,7 +190,7 @@ export function CallPage(props: Props) {
       if (flushTimerRef.current !== undefined) {
         window.clearTimeout(flushTimerRef.current);
       }
-      flushTimerRef.current = window.setTimeout(flushUtterance, 500);
+      flushTimerRef.current = window.setTimeout(flushUtterance, 180);
     };
 
     const showUserSpeech = (parts: string[], live: string) => {
@@ -288,22 +294,30 @@ export function CallPage(props: Props) {
     if (!pending.length) {
       return;
     }
-    holdMicForTts();
     for (const chunk of pending) {
       void enqueueTtsAudio(chunk, aiVoiceId);
     }
   }
 
   async function speakAi(text: string) {
+    holdMicForTts();
     feedAiSpeech(text, true);
     try {
-      await waitTtsQueue();
+      await Promise.race([waitTtsQueue(), delayMs(12000)]);
     } finally {
       ttsHoldRef.current = false;
       if (!leavingRef.current) {
         streamRef.current?.setCaptureEnabled(true);
       }
     }
+  }
+
+  function beginUserTurn() {
+    userSpokeRef.current = true;
+    spokenTtsRef.current = '';
+    stopTtsAudio();
+    ttsHoldRef.current = false;
+    streamRef.current?.setCaptureEnabled(true);
   }
 
   function addOperatorLine(text: string) {
@@ -316,6 +330,7 @@ export function CallPage(props: Props) {
       ...current.filter((line) => !line.live),
       { id, role: userRole, text: trimmed, source: 'typed' },
     ]);
+    beginUserTurn();
     llmRef.current?.sendUserFinal(id, trimmed);
     setDraft('');
   }
@@ -626,4 +641,10 @@ function composeUtterance(parts: string[], live: string): string {
     return base;
   }
   return `${base} ${extra}`;
+}
+
+function delayMs(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
 }

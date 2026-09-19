@@ -21,7 +21,7 @@ $env:LLM_PORT = "8091"
 $env:LLM_LLAMA_PORT = "8080"
 $env:LLM_TEMPERATURE = "0.7"
 $env:LLM_MAX_TOKENS = "96"
-$env:LLM_CONTEXT_SIZE = "2048"
+$env:LLM_CONTEXT_SIZE = "1536"
 
 Write-Host "[LLM] Loading model..."
 & $Py (Join-Path $Llm "scripts\download_model.py")

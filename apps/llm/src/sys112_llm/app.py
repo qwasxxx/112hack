@@ -258,11 +258,16 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
             logger.exception("[LLM] Generation failed")
             await ws.send_json({"type": "error", "message": "Не удалось получить ответ модели."})
             session.busy = False
-            return
+            if not session.pending:
+                return
+            continue
         if full:
             manager.append_assistant(call_id, full)
             await ws.send_json({"type": "assistant_final", "text": full})
             logger.info("[LLM] Response complete")
+        else:
+            await ws.send_json({"type": "assistant_final", "text": ""})
+            logger.warning("[LLM] Empty response")
         session.busy = False
         if not session.pending:
             return

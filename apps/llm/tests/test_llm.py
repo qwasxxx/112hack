@@ -67,6 +67,21 @@ def test_default_prompt_is_light_and_keeps_history():
     assert payload[0]["content"].startswith("/no_think")
 
 
+def test_generation_keeps_only_recent_turns():
+    from sys112_llm.conversation import generation_messages
+
+    manager = ConversationManager()
+    manager.create("long", "operator")
+    for index in range(10):
+        manager.accept_user("long", f"Реплика {index}.", f"u{index}")
+        manager.append_assistant("long", f"Ответ {index}.")
+    payload = generation_messages(manager.get("long"))
+    user_assistant = [item for item in payload if item["role"] != "system"]
+    assert len(user_assistant) == 12
+    assert user_assistant[0]["content"] == "Реплика 4."
+    assert user_assistant[-1]["content"] == "Ответ 9."
+
+
 def test_closed_session_rejects_user():
     manager = ConversationManager()
     manager.create("gone")

@@ -72,6 +72,9 @@ CPU достаточно. GPU не требуется.
 | `STT_DECODING_METHOD` | `greedy_search` | без KenLM |
 | `STT_ONNX_PROVIDER` | `cpu` | `cpu` или `cuda` |
 | `STT_HOST` / `STT_PORT` | `0.0.0.0` / `8090` | bind |
+| `STT_ENDPOINT_RULE1` | `1.2` | тишина до endpoint, если речь ещё не распознана, сек |
+| `STT_ENDPOINT_RULE2` | `0.7` | тишина после распознанной речи, сек |
+| `STT_ENDPOINT_CONFIRM` | `0.12` | доп. подтверждение после endpoint, сек |
 
 `STT_PROVIDER=mock` в корневом `.env` относится к NestJS-адаптеру API, не к этому сервису.
 

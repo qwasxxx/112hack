@@ -109,11 +109,17 @@ class CallSession:
 def generation_messages(session: CallSession) -> list[dict[str, str]]:
     locked = locked_system_prompt(session.conversation_role)
     messages = session.to_openai()
-    rest = [item for item in messages if item.get("role") != "system"]
     extra = ""
     if session.messages and session.messages[0].role == "system":
         extra = _scenario_extra(session.messages[0].content, locked)
     system = locked if not extra else f"{locked}\n\nКонтекст сценария:\n{extra}"
+    rest = [item for item in messages if item.get("role") != "system"]
+    if len(rest) > 12:
+        rest = rest[-12:]
+    if rest and rest[-1].get("role") == "user":
+        content = str(rest[-1].get("content") or "")
+        if content and not content.startswith("/no_think"):
+            rest = [*rest[:-1], {"role": "user", "content": f"/no_think\n{content}"}]
     return [{"role": "system", "content": system}, *rest]
 
 

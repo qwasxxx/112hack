@@ -2,7 +2,7 @@ import { downsampleToPcm16k8 } from './pcm';
 import { parseSttEvent, type SttEvent } from './stt-protocol';
 
 const TARGET_RATE = 8000;
-const FRAME_SAMPLES = 2400;
+const FRAME_SAMPLES = 800;
 
 export type SttStream = {
   start(): Promise<void>;

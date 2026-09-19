@@ -65,6 +65,8 @@ class LlamaClient:
             "max_tokens": LLM_MAX_TOKENS if max_tokens is None else max_tokens,
             "repeat_penalty": LLM_REPEAT_PENALTY,
             "chat_template_kwargs": {"enable_thinking": False},
+            "enable_thinking": False,
+            "reasoning_effort": "low",
         }
         async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SEC) as client:
             async with client.stream(

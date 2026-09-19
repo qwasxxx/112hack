@@ -117,7 +117,7 @@ export function takeSpeechChunks(full: string, already: string): { chunks: strin
   let rest = full.slice(prefix.length);
   const chunks: string[] = [];
   while (rest) {
-    const match = rest.match(/^[\s\S]*?[.!?…](?:\s+|$)/);
+    const match = rest.match(/^[\s\S]*?[.!?…](?:\s+|$)/) || rest.match(/^[\s\S]{18,120}?[,;:](?:\s+|$)/);
     if (!match) {
       break;
     }
@@ -127,18 +127,6 @@ export function takeSpeechChunks(full: string, already: string): { chunks: strin
     }
     prefix += match[0];
     rest = full.slice(prefix.length);
-  }
-  if (chunks.length === 0) {
-    const trimmed = rest.trim();
-    if (trimmed.length >= 42) {
-      const cut = trimmed.lastIndexOf(' ', 54);
-      if (cut > 16) {
-        const piece = trimmed.slice(0, cut).trim();
-        chunks.push(piece);
-        const idx = rest.indexOf(piece);
-        prefix += idx >= 0 ? rest.slice(0, idx + piece.length) : piece;
-      }
-    }
   }
   return { chunks, spoken: prefix };
 }
