@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LessonSection, TrainingScenario } from '../data/scenarios';
 import { SECTION_AI_ROLE } from '../data/scenarios';
+import { buildLessonSystemPrompt } from '../data/ags-tickets';
 import { createLlmStream } from '../lib/llm-stream';
 import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
@@ -51,8 +52,10 @@ export function CallPage(props: Props) {
   const ttsHoldRef = useRef(false);
   const spokenTtsRef = useRef('');
   const userSpokeRef = useRef(false);
+  const awaitingReplyRef = useRef(false);
+  const staleGensRef = useRef(new Set<number>());
   const aiVoiceId = conversationRole;
-  const wantsAnalysis = !embedded && (props.section === 'training' || props.section === 'exam');
+  const wantsAnalysis = props.section === 'training' || props.section === 'exam';
   const showCard = !embedded && props.section !== 'theory';
   const sectionLabel = props.section === 'theory' ? 'Теория' : props.section === 'exam' ? 'Экзамен' : 'Тренировка';
   const youAre = conversationRole === 'victim' ? 'Вы — оператор' : 'Вы — заявитель';
@@ -107,6 +110,8 @@ export function CallPage(props: Props) {
     }
     spokenTtsRef.current = '';
     userSpokeRef.current = false;
+    awaitingReplyRef.current = false;
+    staleGensRef.current = new Set();
     ttsHoldRef.current = false;
     setLines([]);
     setAnalysis('');
@@ -132,12 +137,23 @@ export function CallPage(props: Props) {
       callId,
       conversationRole,
       opening: opening || undefined,
-      systemPrompt:
-        conversationRole === 'victim'
-          ? `${props.scenario.summary} Первая реплика уже сказана, не повторяй её и не здоровайся заново. Жди вопрос оператора.`
-          : props.scenario.summary,
+      systemPrompt: buildLessonSystemPrompt(props.scenario, props.section),
       lessonId: props.scenario.id,
       onEvent: (event) => {
+        if ('gen' in event && typeof event.gen === 'number' && staleGensRef.current.has(event.gen)) {
+          return;
+        }
+        if (event.type === 'generation_cancelled') {
+          if (typeof event.gen === 'number') {
+            staleGensRef.current.add(event.gen);
+          }
+          stopTtsAudio();
+          spokenTtsRef.current = '';
+          ttsHoldRef.current = false;
+          streamRef.current?.setCaptureEnabled(true);
+          setLines((current) => current.filter((line) => !(line.role === aiRole && line.live)));
+          return;
+        }
         if (event.type === 'assistant_partial' && event.text.trim()) {
           if (!userSpokeRef.current && isSameSpeech(event.text, opening)) {
             return;
@@ -145,7 +161,14 @@ export function CallPage(props: Props) {
           setLines((current) => upsertLive(current, aiRole, event.text, 'llm'));
           feedAiSpeech(event.text, false);
         }
-        if (event.type === 'assistant_final' && event.text.trim()) {
+        if (event.type === 'assistant_final') {
+          awaitingReplyRef.current = false;
+          if (!event.text.trim()) {
+            if (userSpokeRef.current) {
+              setMicError('Модель не вернула ответ. Повторите фразу.');
+            }
+            return;
+          }
           if (!userSpokeRef.current && isSameSpeech(event.text, opening)) {
             ttsHoldRef.current = false;
             streamRef.current?.setCaptureEnabled(true);
@@ -181,8 +204,9 @@ export function CallPage(props: Props) {
         return;
       }
       const id = crypto.randomUUID();
-      setLines((current) => commitLive(current, userRole, text, 'stt'));
+      setLines((current) => replaceOrAppendUser(current, userRole, aiRole, text, id, 'stt'));
       beginUserTurn();
+      awaitingReplyRef.current = true;
       llmRef.current?.sendUserFinal(id, text);
     };
 
@@ -244,6 +268,13 @@ export function CallPage(props: Props) {
       }
     } catch (error: unknown) {
       const text = error instanceof Error ? error.message : '';
+      if (leavingRef.current || text === 'stopped') {
+        setRecording(false);
+        setCallState('idle');
+        return;
+      }
+      setRecording(false);
+      setCallState('error');
       setMicError(
         text && /модель|диалог/i.test(text)
           ? text
@@ -326,11 +357,9 @@ export function CallPage(props: Props) {
       return;
     }
     const id = crypto.randomUUID();
-    setLines((current) => [
-      ...current.filter((line) => !line.live),
-      { id, role: userRole, text: trimmed, source: 'typed' },
-    ]);
+    setLines((current) => replaceOrAppendUser(current, userRole, aiRole, trimmed, id, 'typed'));
     beginUserTurn();
+    awaitingReplyRef.current = true;
     llmRef.current?.sendUserFinal(id, trimmed);
     setDraft('');
   }
@@ -605,6 +634,22 @@ function isSameSpeech(left: string, right: string): boolean {
 function upsertLive(current: Line[], role: Line['role'], text: string, source: Line['source']): Line[] {
   const next = current.filter((line) => !(line.live && line.source === source));
   return [...next, { id: `${source}-live`, role, text, live: true, source }];
+}
+
+function replaceOrAppendUser(
+  current: Line[],
+  userRole: Line['role'],
+  aiRole: Line['role'],
+  text: string,
+  id: string,
+  source: Line['source'],
+): Line[] {
+  const cleaned = current.filter((line) => !(line.role === aiRole && line.live));
+  const last = cleaned.at(-1);
+  if (last?.role === userRole) {
+    return [...cleaned.slice(0, -1), { id, role: userRole, text, source }];
+  }
+  return [...cleaned, { id, role: userRole, text, source }];
 }
 
 function commitLive(current: Line[], role: Line['role'], text: string, source: Line['source']): Line[] {

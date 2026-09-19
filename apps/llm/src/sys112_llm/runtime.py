@@ -19,6 +19,7 @@ from sys112_llm.config import (
     LLM_MODEL_PATH,
     LLM_MODEL_URL,
     LLM_THREADS,
+    LLM_THREADS_BATCH,
     LLM_TOOLS_DIR,
 )
 
@@ -171,11 +172,13 @@ def build_llama_command(binary: Path) -> list[str]:
         "-t",
         str(LLM_THREADS),
         "--threads-batch",
-        str(LLM_THREADS),
+        str(LLM_THREADS_BATCH),
         "-b",
-        "128",
+        "1024",
         "-ub",
-        "64",
+        "512",
+        "--flash-attn",
+        "on",
         "--cache-type-k",
         "q8_0",
         "--cache-type-v",
@@ -218,7 +221,7 @@ def start_llama_process() -> subprocess.Popen[bytes]:
         process.terminate()
         compact = []
         skip_next = False
-        drop = {"--cache-type-k", "--cache-type-v", "--parallel"}
+        drop = {"--cache-type-k", "--cache-type-v", "--parallel", "--flash-attn"}
         for item in command:
             if skip_next:
                 skip_next = False

@@ -8,7 +8,7 @@ import iconChild from '../assets/catalog/catalog-icon-child.webp';
 import iconCrash from '../assets/catalog/catalog-icon-crash.webp';
 import iconFire from '../assets/catalog/catalog-icon-fire.webp';
 import sidebarBase from '../assets/catalog/catalog-sidebar-base.webp';
-import { SCENARIOS, SERVICE_LABEL, type ServiceKind, type TrainingScenario } from '../data/scenarios';
+import { SCENARIOS, DIFFICULTY_LABEL, DIFFICULTY_ORDER, SERVICE_LABEL, type ServiceKind, type TrainingScenario } from '../data/scenarios';
 
 type Props = {
   accountBar: ReactNode;
@@ -19,21 +19,12 @@ type DifficultyFilter = 'all' | TrainingScenario['difficulty'];
 type DurationFilter = 'all' | 'short' | 'long';
 type ServiceFilter = 'all' | ServiceKind;
 
-const DIFFICULTY_LABEL: Record<TrainingScenario['difficulty'], string> = {
-  базовый: 'Базовый',
-  стандарт: 'Стандарт',
-  сложный: 'Сложный',
-};
-
 const SERVICE_FILTERS: ServiceFilter[] = [
   'all',
   ...Array.from(new Set(SCENARIOS.flatMap((scenario) => scenario.services))),
 ];
 
-const DIFFICULTY_FILTERS: DifficultyFilter[] = [
-  'all',
-  ...Array.from(new Set(SCENARIOS.map((scenario) => scenario.difficulty))),
-];
+const DIFFICULTY_FILTERS: DifficultyFilter[] = ['all', ...DIFFICULTY_ORDER];
 
 const HERO_POINTS = [
   {
@@ -52,12 +43,6 @@ const HERO_POINTS = [
     art: heroPrep,
   },
 ];
-
-const SCENARIO_ART: Record<string, string> = {
-  'apartment-fire': iconFire,
-  'road-accident': iconCrash,
-  'lost-child': iconChild,
-};
 
 const SIDEBAR_ITEMS = [
   { id: 'scenarios', label: 'Учебные сценарии', icon: 'book' as const, active: true },
@@ -83,7 +68,8 @@ export function CatalogPage(props: Props) {
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return SCENARIOS.filter((scenario) => {
-      const haystack = `${scenario.code} ${scenario.title} ${scenario.summary}`.toLowerCase();
+      const haystack =
+        `${scenario.code} ${scenario.title} ${scenario.summary} ${scenario.situation ?? ''} ${scenario.address ?? ''}`.toLowerCase();
       const matchesQuery = needle.length === 0 || haystack.includes(needle);
       const matchesService = service === 'all' || scenario.services.includes(service);
       const matchesDifficulty = difficulty === 'all' || scenario.difficulty === difficulty;
@@ -334,7 +320,7 @@ function ScenarioToolbar(props: {
           id="catalog-search"
           type="search"
           value={props.query}
-          placeholder="Поиск по названию или описанию сценария..."
+          placeholder="Поиск по коду или ситуации..."
           autoComplete="off"
           onChange={(event) => props.onQuery(event.target.value)}
         />
@@ -500,13 +486,7 @@ function CatalogMenu(props: {
 }
 
 function ScenarioListShell(props: { children: ReactNode }) {
-  const tilt = useCatalogGroupTilt<HTMLDivElement>({ x: 4.8, y: 5.4 }, { idle: false });
-
-  return (
-    <div ref={tilt.ref} className="scenario-list-shell">
-      {props.children}
-    </div>
-  );
+  return <div className="scenario-list-shell">{props.children}</div>;
 }
 
 function ScenarioRow(props: { scenario: TrainingScenario; onOpen: (scenario: TrainingScenario) => void }) {
@@ -516,7 +496,7 @@ function ScenarioRow(props: { scenario: TrainingScenario; onOpen: (scenario: Tra
     <li className="scenario-row">
       <div className="scenario-lead">
         <p className="scenario-code">{scenario.code}</p>
-        <ScenarioPictogram id={scenario.id} />
+        <ScenarioPictogram id={scenario.id} services={scenario.services} />
         <div className="scenario-copy">
           <strong className="scenario-title">{scenario.title}</strong>
           <p className="scenario-desc">{scenario.summary}</p>
@@ -542,11 +522,16 @@ function ScenarioRow(props: { scenario: TrainingScenario; onOpen: (scenario: Tra
   );
 }
 
-function ScenarioPictogram(props: { id: string }) {
-  const kind = props.id === 'apartment-fire' ? 'fire' : props.id === 'road-accident' ? 'crash' : 'child';
-  const src = SCENARIO_ART[props.id] ?? iconChild;
+function ScenarioPictogram(props: { id: string; services: ServiceKind[] }) {
+  const kind =
+    props.services[0] === 'fire' || props.services[0] === 'gas'
+      ? 'fire'
+      : props.services[0] === 'ambulance'
+        ? 'crash'
+        : 'child';
+  const src = kind === 'fire' ? iconFire : kind === 'crash' ? iconCrash : iconChild;
   return (
-    <span className={`scenario-pictogram is-${kind} catalog-pictogram-tilt`} aria-hidden="true">
+    <span className={`scenario-pictogram is-${kind}`} aria-hidden="true">
       <img src={src} alt="" />
     </span>
   );

@@ -37,6 +37,16 @@ def test_empty_and_duplicate_are_ignored():
     assert manager.accept_user("call-b", "Пожар в квартире.", "id-1") is None
 
 
+def test_drop_unanswered_user_keeps_opening():
+    manager = ConversationManager()
+    session = manager.create("call-x", "victim", opening="Алло, помогите!")
+    manager.accept_user("call-x", "Скажите адрес", "u1")
+    manager.drop_unanswered_user("call-x")
+    roles = [item.role for item in session.messages]
+    assert roles == ["system", "assistant"]
+    assert session.messages[-1].content == "Алло, помогите!"
+
+
 def test_default_prompt_is_light_and_keeps_history():
     manager = ConversationManager()
     session = manager.create("call-c", "operator")
@@ -97,6 +107,16 @@ def test_think_filter_and_strip():
     assert "车" not in leaked
     assert "e," not in leaked
     assert "авария" in leaked
+    spoken = sanitize_speech("Это STR 2, через 3 KM, ул. Ленина д. 5")
+    assert "строение" in spoken
+    assert "километр" in spoken
+    assert "улица" in spoken
+    assert "дом" in spoken
+    assert "STR" not in spoken
+    assert "KM" not in spoken
+    station = sanitize_speech("около ст. Киевская, строение2")
+    assert "станция" in station
+    assert "строение 2" in station
     session = ConversationManager().create("ru-only", "victim")
     assert "иероглиф" in session.messages[0].content
 

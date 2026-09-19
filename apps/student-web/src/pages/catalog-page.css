@@ -882,7 +882,6 @@
   font-weight: 800;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  transform: translateZ(8px);
 }
 
 .scenario-list-head-action {
@@ -890,45 +889,23 @@
 }
 
 .scenario-list-shell {
-  --catalog-tilt-x: 0deg;
-  --catalog-tilt-y: 0deg;
-  --catalog-tilt-i: 0;
-  --catalog-tilt-gx: 50%;
-  --catalog-tilt-gy: 50%;
-  --catalog-tilt-sx: 0px;
-  --catalog-tilt-sy: 10px;
   position: relative;
   display: grid;
   flex: none;
   width: 100%;
   min-width: 0;
-  overflow: visible;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 18px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(236, 243, 248, 0.94));
   box-shadow:
     0 14px 28px rgba(21, 32, 51, 0.055),
-    0 var(--catalog-tilt-sy) 22px rgba(21, 32, 51, calc(0.03 + var(--catalog-tilt-i) * 0.05)),
+    0 10px 22px rgba(21, 32, 51, 0.03),
     inset 0 1px 0 rgba(255, 255, 255, 0.88);
-  transform-origin: 50% 50%;
-  transform-style: preserve-3d;
-  transform: perspective(1280px) rotateX(var(--catalog-tilt-x)) rotateY(var(--catalog-tilt-y));
 }
 
 .scenario-list-shell::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  background: radial-gradient(
-    280px circle at var(--catalog-tilt-gx) var(--catalog-tilt-gy),
-    rgba(255, 255, 255, 0.38),
-    transparent 62%
-  );
-  opacity: calc(var(--catalog-tilt-i) * 0.28);
-  transform: translateZ(0);
+  display: none;
 }
 
 .scenario-list {
@@ -939,9 +916,8 @@
   gap: 0;
   margin: 0;
   padding: 2px 0 6px;
-  overflow: visible;
+  overflow: hidden;
   list-style: none;
-  transform-style: preserve-3d;
 }
 
 .scenario-empty {
@@ -960,8 +936,6 @@
   border-bottom: 1px solid rgba(176, 191, 205, 0.28);
   border-radius: 0;
   box-shadow: none;
-  transform: translateZ(12px) rotateX(calc(var(--catalog-tilt-x) * 0.3)) rotateY(calc(var(--catalog-tilt-y) * 0.3));
-  transform-style: preserve-3d;
   transition: background-color 180ms ease;
 }
 
@@ -1064,7 +1038,6 @@
 
 .scenario-copy {
   min-width: 0;
-  transform: translateZ(8px);
 }
 
 .scenario-pictogram {
@@ -1079,7 +1052,6 @@
   box-shadow:
     0 5px 12px rgba(21, 32, 51, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.55);
-  transform: translateZ(12px);
 }
 
 .scenario-pictogram img {

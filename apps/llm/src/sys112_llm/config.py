@@ -24,8 +24,8 @@ LLM_LLAMA_PORT = int(_env("LLM_LLAMA_PORT", "8080"))
 LLM_TEMPERATURE = float(_env("LLM_TEMPERATURE", "0.7"))
 LLM_TOP_P = float(_env("LLM_TOP_P", "0.8"))
 LLM_TOP_K = int(_env("LLM_TOP_K", "20"))
-LLM_MAX_TOKENS = int(_env("LLM_MAX_TOKENS", "96"))
-LLM_CONTEXT_SIZE = int(_env("LLM_CONTEXT_SIZE", "1536"))
+LLM_MAX_TOKENS = int(_env("LLM_MAX_TOKENS", "48"))
+LLM_CONTEXT_SIZE = int(_env("LLM_CONTEXT_SIZE", "2048"))
 LLM_N_GPU_LAYERS = 0
 LLM_TIMEOUT_SEC = float(_env("LLM_TIMEOUT_SEC", "60"))
 LLM_REPEAT_PENALTY = float(_env("LLM_REPEAT_PENALTY", "1.12"))
@@ -34,10 +34,16 @@ LLM_ANALYSIS_MAX_TOKENS = int(_env("LLM_ANALYSIS_MAX_TOKENS", "180"))
 
 def _default_threads() -> str:
     logical = os.cpu_count() or 4
-    return str(max(2, min(logical, 4)))
+    return str(max(4, min(logical - 2, 8)))
+
+
+def _default_batch_threads() -> str:
+    logical = os.cpu_count() or 4
+    return str(max(int(_default_threads()), min(logical - 1, 14)))
 
 
 LLM_THREADS = int(_env("LLM_THREADS", _default_threads()))
+LLM_THREADS_BATCH = int(_env("LLM_THREADS_BATCH", _default_batch_threads()))
 LLM_TOOLS_DIR = Path(_env("LLM_TOOLS_DIR", str(REPO_ROOT / "tools" / "llama.cpp")))
 LLM_MODEL_URL = _env(
     "LLM_MODEL_URL",

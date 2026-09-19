@@ -1,12 +1,18 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import heroFire from '../assets/briefing/briefing-fire-apartment.webp';
 import heroCrash from '../assets/briefing/briefing-traffic-accident.webp';
 import heroChild from '../assets/briefing/briefing-missing-child.webp';
 import iconDescription from '../assets/briefing/briefing-icon-description.png';
 import iconGoals from '../assets/briefing/briefing-icon-goals.png';
-import iconHints from '../assets/briefing/briefing-icon-hints.png';
-import iconMaterials from '../assets/briefing/briefing-icon-materials.png';
-import { LESSON_SECTIONS, type LessonSection, type TrainingScenario } from '../data/scenarios';
+import { buildLessonSystemPrompt } from '../data/ags-tickets';
+import {
+  DIFFICULTY_LABEL,
+  LESSON_SECTIONS,
+  SERVICE_LABEL,
+  type LessonSection,
+  type TrainingScenario,
+} from '../data/scenarios';
+import { warmupLesson } from '../lib/llm-stream';
 import { StudentShell } from '../student-shell/student-shell';
 import { useStudentTilt } from '../student-shell/student-tilt';
 import './briefing-page.css';
@@ -19,48 +25,47 @@ type Props = {
   onStartDds: () => void;
 };
 
-type BriefingTab = 'description' | 'goals' | 'hints' | 'materials';
-
-const DIFFICULTY_LABEL: Record<TrainingScenario['difficulty'], string> = {
-  базовый: 'Базовый',
-  стандарт: 'Стандарт',
-  сложный: 'Сложный',
-};
-
 type LessonIcon = LessonSection | 'dds';
 
-const HERO_BY_SCENARIO: Record<string, { src: string; position: string }> = {
-  'apartment-fire': { src: heroFire, position: '84% 40%' },
-  'road-accident': { src: heroCrash, position: '82% 48%' },
-  'lost-child': { src: heroChild, position: '80% 46%' },
+const HERO_BY_SERVICE: Record<string, { src: string; position: string }> = {
+  fire: { src: heroFire, position: '84% 40%' },
+  gas: { src: heroFire, position: '84% 40%' },
+  ambulance: { src: heroCrash, position: '82% 48%' },
+  police: { src: heroChild, position: '80% 46%' },
 };
+
+const COLLECT = [
+  'Где это происходит — адрес или понятный ориентир',
+  'Что происходит прямо сейчас',
+  'Есть ли пострадавшие и угроза жизни',
+  'Кто звонит и телефон для связи',
+  'Какие службы направить',
+];
+
+function heroFor(scenario: TrainingScenario) {
+  return HERO_BY_SERVICE[scenario.services[0]] ?? { src: heroFire, position: '78% 42%' };
+}
 
 const GROUP_TILT = { x: 4.2, y: 4.8 } as const;
 
-const TABS: Array<{ id: BriefingTab; label: string; icon: string }> = [
-  { id: 'description', label: 'Описание', icon: iconDescription },
-  { id: 'goals', label: 'Цели', icon: iconGoals },
-  { id: 'hints', label: 'Подсказки', icon: iconHints },
-  { id: 'materials', label: 'Материалы', icon: iconMaterials },
-];
-
 export function BriefingPage(props: Props) {
-  const [tab, setTab] = useState<BriefingTab>('description');
   const scenario = props.scenario;
-  const hero = HERO_BY_SCENARIO[scenario.id] ?? { src: heroFire, position: '78% 42%' };
-  const hasGoals = scenario.checklist.length > 0;
+  const hero = heroFor(scenario);
+
+  useEffect(() => {
+    warmupLesson({
+      conversationRole: 'victim',
+      systemPrompt: buildLessonSystemPrompt(scenario, 'training'),
+      opening: scenario.callerOpening,
+    });
+  }, [scenario]);
 
   return (
     <StudentShell accountBar={props.accountBar} onCatalog={props.onBack}>
       <div className="briefing-body">
         <BriefingHero scenario={scenario} hero={hero} onBack={props.onBack} />
         <div className="briefing-workspace">
-          <BriefingBrief
-            scenario={scenario}
-            tab={tab}
-            hasGoals={hasGoals}
-            onSelectTab={setTab}
-          />
+          <BriefingBrief scenario={scenario} />
           <BriefingLessons onStart={props.onStart} onStartDds={props.onStartDds} />
         </div>
       </div>
@@ -74,6 +79,7 @@ function BriefingHero(props: {
   onBack: () => void;
 }) {
   const scenario = props.scenario;
+  const services = scenario.services.map((item) => SERVICE_LABEL[item]).join(', ');
 
   return (
     <section className="briefing-hero" aria-labelledby="briefing-title">
@@ -91,6 +97,8 @@ function BriefingHero(props: {
           <p className="briefing-summary">{scenario.summary}</p>
           <p className="briefing-meta-line">
             <span>{scenario.code}</span>
+            <span aria-hidden="true">·</span>
+            <span>{services}</span>
             <span aria-hidden="true">·</span>
             <span>{scenario.durationMin} мин</span>
             <span aria-hidden="true">·</span>
@@ -120,131 +128,65 @@ function BackControl(props: { onBack: () => void }) {
   );
 }
 
-function BriefingBrief(props: {
-  scenario: TrainingScenario;
-  tab: BriefingTab;
-  hasGoals: boolean;
-  onSelectTab: (tab: BriefingTab) => void;
-}) {
+function BriefingBrief(props: { scenario: TrainingScenario }) {
   const tilt = useStudentTilt<HTMLElement>(GROUP_TILT, 'medium');
+  const note =
+    props.scenario.difficulty === 'сложный'
+      ? 'Держите линию. Уточняйте по ходу, не сворачивайте опрос из‑за паники заявителя.'
+      : props.scenario.difficulty === 'базовый'
+        ? 'Спокойный разбор обращения: отделите, есть ли происшествие и нужны ли службы.'
+        : 'Снимите обязательные данные и только потом направляйте службы.';
 
   return (
     <section
       ref={tilt.ref}
       className="briefing-main"
-      aria-label="Брифинг сценария"
+      aria-label="О занятии"
       onPointerMove={tilt.onPointerMove}
       onPointerLeave={tilt.onPointerLeave}
       onPointerCancel={tilt.onPointerLeave}
     >
-      <div className="briefing-tabs" role="tablist" aria-label="Разделы брифинга">
-        {TABS.map((item) => (
-          <BriefingTabButton
-            key={item.id}
-            tab={item}
-            active={props.tab === item.id}
-            onSelect={() => props.onSelectTab(item.id)}
-          />
-        ))}
-      </div>
-      <div className="briefing-panel" role="tabpanel">
-        {props.tab === 'description' ? <DescriptionTab scenario={props.scenario} /> : null}
-        {props.tab === 'goals' ? (
-          props.hasGoals ? <GoalsTab items={props.scenario.checklist} /> : <EmptyTab />
-        ) : null}
-        {props.tab === 'hints' || props.tab === 'materials' ? <EmptyTab /> : null}
+      <div className="briefing-panel">
+        <div className="briefing-stack">
+          <article className="briefing-block">
+            <h3>
+              <span className="briefing-block-icon is-situation">
+                <img src={iconDescription} alt="" />
+              </span>
+              Задача
+            </h3>
+            <p>
+              Вы — оператор 112. Легенду билета заранее не показываем: где, что случилось и кому
+              нужна помощь, выясняете сами во время звонка.
+            </p>
+          </article>
+          <article className="briefing-block">
+            <h3>
+              <span className="briefing-block-icon is-situation">
+                <img src={iconGoals} alt="" />
+              </span>
+              Что снять на линии
+            </h3>
+            <ol className="briefing-steps">
+              {COLLECT.map((item, index) => (
+                <li key={item}>
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  {item}
+                </li>
+              ))}
+            </ol>
+          </article>
+          <article className="briefing-block is-note">
+            <h3>
+              <span className="briefing-block-icon is-note">!</span>
+              Как работать
+            </h3>
+            <p>{note}</p>
+          </article>
+        </div>
       </div>
     </section>
   );
-}
-
-function BriefingTabButton(props: {
-  tab: { id: BriefingTab; label: string; icon: string };
-  active: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={props.active}
-      className={`briefing-tab${props.active ? ' is-active' : ''}`}
-      onClick={props.onSelect}
-    >
-      <img src={props.tab.icon} alt="" />
-      {props.tab.label}
-    </button>
-  );
-}
-
-function DescriptionTab(props: { scenario: TrainingScenario }) {
-  return (
-    <div className="briefing-stack">
-      <article className="briefing-block">
-        <h3>
-          <span className="briefing-block-icon is-situation">
-            <img src={iconDescription} alt="" />
-          </span>
-          Ситуация
-        </h3>
-        <p>{props.scenario.summary}</p>
-      </article>
-      <article className="briefing-block is-prep">
-        <h3>
-          <span className="briefing-block-icon is-prep">i</span>
-          Перед занятием
-        </h3>
-        <ol className="briefing-steps">
-          {props.scenario.theory.map((item, index) => (
-            <li key={item}>
-              <span>{String(index + 1).padStart(2, '0')}</span>
-              {item}
-            </li>
-          ))}
-        </ol>
-      </article>
-      {props.scenario.checklist.length > 0 ? (
-        <article className="briefing-block is-note">
-          <h3>
-            <span className="briefing-block-icon is-note">!</span>
-            Важно
-          </h3>
-          <ul>
-            {props.scenario.checklist.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </article>
-      ) : null}
-    </div>
-  );
-}
-
-function GoalsTab(props: { items: string[] }) {
-  return (
-    <div className="briefing-stack">
-      <article className="briefing-block">
-        <h3>
-          <span className="briefing-block-icon is-situation">
-            <img src={iconGoals} alt="" />
-          </span>
-          Цели занятия
-        </h3>
-        <ol className="briefing-steps">
-          {props.items.map((item, index) => (
-            <li key={item}>
-              <span>{String(index + 1).padStart(2, '0')}</span>
-              {item}
-            </li>
-          ))}
-        </ol>
-      </article>
-    </div>
-  );
-}
-
-function EmptyTab() {
-  return <p className="briefing-empty">Содержание раздела пока не подготовлено.</p>;
 }
 
 function BriefingLessons(props: { onStart: (section: LessonSection) => void; onStartDds: () => void }) {

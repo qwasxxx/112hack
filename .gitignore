@@ -35,4 +35,4 @@ data/llm-sessions/
 .tmp-briefing-verify/
 .tmp-theory-sources/
 .tmp-theory-verify/
-.tmp-dds-verify/
+.tmp-tickets-pdf/

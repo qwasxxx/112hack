@@ -21,6 +21,7 @@ from sys112_llm.config import (
 from sys112_llm.conversation import (
     KICKOFF_ID,
     KICKOFF_TEXT,
+    CallSession,
     ConversationManager,
     analysis_messages,
     generation_messages,
@@ -110,10 +111,38 @@ def health() -> dict[str, Any]:
     return health_payload()
 
 
+@app.post("/warmup")
+@app.post("/api/llm/warmup")
+async def warmup_prompt(payload: dict[str, Any]) -> dict[str, str]:
+    if LLM_MODE == "mock" or llm_status == "mock":
+        return {"status": "mock"}
+    if llm_status != "ready":
+        return {"status": llm_status}
+    role = payload.get("conversation_role") or "victim"
+    if role not in {"victim", "operator"}:
+        role = "victim"
+    extra = payload.get("system_prompt")
+    opening = payload.get("opening")
+    scratch = ConversationManager()
+    session = scratch.create(
+        "_warmup",
+        role,
+        extra if isinstance(extra, str) else None,
+        opening if isinstance(opening, str) else None,
+    )
+    try:
+        await client.prefetch_chat(session.to_openai())
+    except Exception:
+        logger.exception("[LLM] Prompt warmup failed")
+        return {"status": "error"}
+    return {"status": "warm"}
+
+
 @app.websocket("/ws/llm")
 async def llm_socket(ws: WebSocket) -> None:
     await ws.accept()
     call_id = ""
+    gen_task: asyncio.Task[None] | None = None
     try:
         while True:
             payload = await ws.receive_json()
@@ -142,7 +171,7 @@ async def llm_socket(ws: WebSocket) -> None:
                     )
                     continue
                 opening = payload.get("opening")
-                manager.create(
+                session = manager.create(
                     call_id,
                     role,
                     payload.get("system_prompt"),
@@ -150,6 +179,7 @@ async def llm_socket(ws: WebSocket) -> None:
                 )
                 logger.info("[LLM] Call session created")
                 await ws.send_json({"type": "ready", "call_id": call_id, "llm": llm_status})
+                asyncio.create_task(_warmup(session.call_id))
                 continue
             if kind == "kickoff":
                 if not call_id:
@@ -161,7 +191,7 @@ async def llm_socket(ws: WebSocket) -> None:
                     continue
                 if manager.accept_user(call_id, KICKOFF_TEXT, KICKOFF_ID) is None:
                     continue
-                await _reply_until_idle(call_id, ws)
+                gen_task = asyncio.create_task(_reply_until_idle(call_id, ws))
                 continue
             if kind == "analyze":
                 if not call_id:
@@ -220,19 +250,28 @@ async def llm_socket(ws: WebSocket) -> None:
                 message_id = str(payload.get("id") or uuid.uuid4())
                 text = str(payload.get("text") or "")
                 if current.busy:
-                    current.pending.append((message_id, text))
+                    current.pending = [(message_id, text)]
+                    current.cancel.set()
                     continue
                 session = manager.accept_user(call_id, text, message_id)
                 if session is None:
                     continue
-                await _reply_until_idle(call_id, ws)
+                gen_task = asyncio.create_task(_reply_until_idle(call_id, ws))
                 continue
             if kind == "stop":
+                live = manager.get(call_id)
+                if live:
+                    live.cancel.set()
+                if gen_task and not gen_task.done():
+                    await asyncio.sleep(0)
                 manager.close(call_id)
                 logger.info("[LLM] Call session closed")
                 await ws.send_json({"type": "session_closed", "call_id": call_id})
                 break
     except WebSocketDisconnect:
+        live = manager.get(call_id) if call_id else None
+        if live:
+            live.cancel.set()
         if call_id:
             manager.close(call_id)
             logger.info("[LLM] Call session closed")
@@ -244,36 +283,78 @@ async def llm_socket(ws: WebSocket) -> None:
             pass
 
 
+async def _warmup(call_id: str) -> None:
+    session = manager.get(call_id)
+    if session is None or session.closed or LLM_MODE == "mock" or llm_status == "mock":
+        return
+    try:
+        await client.prefetch_chat(session.to_openai())
+        logger.info("[LLM] Prompt cache warmed")
+    except Exception:
+        logger.exception("[LLM] Prompt warmup failed")
+
+
 async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
     while True:
         session = manager.get(call_id)
         if session is None or session.closed:
             return
         session.busy = True
+        session.cancel.clear()
+        session.generation += 1
+        gen_id = session.generation
         logger.info("[LLM] User transcript received")
         logger.info("[LLM] Generating response")
         try:
-            full = await _generate(generation_messages(session), ws)
+            full = await _generate(generation_messages(session), ws, session=session, gen_id=gen_id)
+        except WebSocketDisconnect:
+            session.busy = False
+            logger.info("[LLM] Client left during generation")
+            return
         except Exception:
             logger.exception("[LLM] Generation failed")
-            await ws.send_json({"type": "error", "message": "Не удалось получить ответ модели."})
             session.busy = False
+            try:
+                await ws.send_json({"type": "error", "message": "Не удалось получить ответ модели."})
+            except Exception:
+                return
             if not session.pending:
+                return
+            message_id, text = session.pending.pop(0)
+            session.pending.clear()
+            if manager.accept_user(call_id, text, message_id) is None:
+                return
+            continue
+        if session.cancel.is_set() or full is None:
+            manager.drop_unanswered_user(call_id)
+            session.busy = False
+            logger.info("[LLM] Generation cancelled")
+            try:
+                await ws.send_json({"type": "generation_cancelled", "gen": gen_id})
+            except Exception:
+                return
+            if not session.pending:
+                return
+            message_id, text = session.pending.pop(0)
+            session.pending.clear()
+            if manager.accept_user(call_id, text, message_id) is None:
                 return
             continue
         if full:
             manager.append_assistant(call_id, full)
-            await ws.send_json({"type": "assistant_final", "text": full})
+            await ws.send_json({"type": "assistant_final", "text": full, "gen": gen_id})
             logger.info("[LLM] Response complete")
         else:
-            await ws.send_json({"type": "assistant_final", "text": ""})
+            await ws.send_json({"type": "assistant_final", "text": "", "gen": gen_id})
             logger.warning("[LLM] Empty response")
         session.busy = False
         if not session.pending:
             return
         message_id, text = session.pending.pop(0)
+        session.pending.clear()
         if manager.accept_user(call_id, text, message_id) is None:
-            continue
+            return
+        continue
 
 
 async def _generate(
@@ -281,21 +362,42 @@ async def _generate(
     ws: WebSocket,
     partial_type: str = "assistant_partial",
     max_tokens: int | None = None,
-) -> str:
+    session: CallSession | None = None,
+    gen_id: int = 0,
+) -> str | None:
+    live = session
+
+    def stopped() -> bool:
+        return bool(live and live.cancel.is_set())
+
     if LLM_MODE == "mock" or llm_status == "mock":
+        if stopped():
+            return None
         text = (
             "Адрес назван. Дальше стоит уточнить, есть ли пострадавшие."
             if partial_type == "analysis_partial"
             else "Назовите адрес, где это происходит."
         )
-        await ws.send_json({"type": partial_type, "text": text})
+        await ws.send_json({"type": partial_type, "text": text, "gen": gen_id})
         return text
     filter_ = ThinkFilter()
     visible = ""
-    async for piece in client.stream_chat(messages, max_tokens=max_tokens):
+    last_sent = ""
+    async for piece in client.stream_chat(messages, max_tokens=max_tokens, should_stop=stopped):
+        if stopped():
+            return None
         chunk = filter_.feed(piece)
         if not chunk:
             continue
         visible += chunk
-        await ws.send_json({"type": partial_type, "text": sanitize_speech(visible)})
-    return sanitize_speech(visible)
+        spoken = sanitize_speech(visible)
+        if not spoken or spoken == last_sent:
+            continue
+        await ws.send_json({"type": partial_type, "text": spoken, "gen": gen_id})
+        last_sent = spoken
+    if stopped():
+        return None
+    leftover = filter_.feed("")
+    if leftover:
+        visible += leftover
+    return sanitize_speech(visible) or last_sent

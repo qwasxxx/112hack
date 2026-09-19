@@ -36,55 +36,18 @@ function rowByNumber(number: string) {
 }
 
 export function trainingBindingFor(scenario: TrainingScenario): TrainingBinding {
-  if (scenario.id === 'apartment-fire' || scenario.code === '112-01') {
-    const record = rowByNumber('1050101');
-    return {
-      scenarioId: scenario.id,
-      scenarioCode: scenario.code,
-      incomingNumber: INCOMING_NUMBER,
-      incomingNumberSource: INCOMING_SOURCE,
-      callerOpening: scenario.callerOpening,
-      summary: scenario.summary,
-      normativeDurationMin: scenario.durationMin,
-      cardTimerLimitSec: 30,
-      cardTimerSource: 'case-spec преподаватель default 30 сек (живое АРМ порог не указан)',
-      classifier: {
-        groupCode: record.g,
-        priznak1: record.p1,
-        priznak2: record.p2 ? [record.p2] : [],
-        priznak3: record.p3 ? [record.p3] : [],
-        number: String(record.n),
-        row: record.row,
-        finalType: record.t ?? '',
-        mainService: record.m,
-        source: `${classifierRuntime.source.sheet} r${record.row} c05=${record.n} c07=${record.p1} c08=${record.p2} c09=${record.p3} c11=${record.t} c14=${record.m}`,
-      },
-    };
-  }
-  if (scenario.id === 'road-accident' || scenario.code === '112-02') {
-    const record = rowByNumber('2020000');
-    return {
-      scenarioId: scenario.id,
-      scenarioCode: scenario.code,
-      incomingNumber: INCOMING_NUMBER,
-      incomingNumberSource: INCOMING_SOURCE,
-      callerOpening: scenario.callerOpening,
-      summary: scenario.summary,
-      normativeDurationMin: scenario.durationMin,
-      cardTimerLimitSec: 30,
-      cardTimerSource: 'case-spec преподаватель default 30 сек',
-      classifier: {
-        groupCode: record.g,
-        priznak1: record.p1,
-        number: String(record.n),
-        row: record.row,
-        finalType: record.t ?? '',
-        mainService: record.m,
-        source: `${classifierRuntime.source.sheet} r${record.row} c05=${record.n} c07=${record.p1} c11=${record.t} c14=${record.m} (catalog: пострадавший; p2 not stated → parent row without p2)`,
-      },
-    };
-  }
-  const record = rowByNumber('18070000');
+  const classifierId =
+    scenario.classifierNumber ||
+    (scenario.id === 'apartment-fire' || scenario.code === '112-01'
+      ? '1050101'
+      : scenario.id === 'road-accident' || scenario.code === '112-02'
+        ? '2020000'
+        : scenario.services[0] === 'fire'
+          ? '1050101'
+          : scenario.services[0] === 'ambulance' || scenario.services.includes('ambulance')
+            ? '2020000'
+            : '18070000');
+  const record = rowByNumber(classifierId);
   return {
     scenarioId: scenario.id,
     scenarioCode: scenario.code,
@@ -98,6 +61,8 @@ export function trainingBindingFor(scenario: TrainingScenario): TrainingBinding 
     classifier: {
       groupCode: record.g,
       priznak1: record.p1,
+      priznak2: record.p2 ? [record.p2] : [],
+      priznak3: record.p3 ? [record.p3] : [],
       number: String(record.n),
       row: record.row,
       finalType: record.t ?? '',

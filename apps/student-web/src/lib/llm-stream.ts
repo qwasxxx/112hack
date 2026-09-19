@@ -9,10 +9,6 @@ export type LlmStream = {
 };
 
 function llmSocketUrl(): string {
-  const host = window.location.hostname;
-  if (host === 'localhost' || host === '127.0.0.1') {
-    return 'ws://127.0.0.1:8091/ws/llm';
-  }
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}/ws/llm`;
 }
@@ -65,6 +61,11 @@ export function createLlmStream(options: {
         options.onEvent(parsed);
       }
     };
+    live.onclose = () => {
+      if (!stopped && started) {
+        options.onError('Связь с моделью оборвалась.');
+      }
+    };
   }
 
   async function start(): Promise<void> {
@@ -77,8 +78,22 @@ export function createLlmStream(options: {
         reject(new Error('no socket'));
         return;
       }
-      const timer = window.setTimeout(() => reject(new Error('Сервис диалога не отвечает.')), 6000);
+      let settled = false;
+      const timer = window.setTimeout(() => finish(() => reject(new Error('Сервис диалога не отвечает.'))), 20000);
+      const finish = (fn: () => void) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        window.clearTimeout(timer);
+        fn();
+      };
       socket.onopen = () => {
+        if (stopped) {
+          socket?.close();
+          finish(() => reject(new Error('stopped')));
+          return;
+        }
         socket?.send(
           JSON.stringify({
             type: 'start',
@@ -91,8 +106,21 @@ export function createLlmStream(options: {
         );
       };
       socket.onerror = () => {
-        window.clearTimeout(timer);
-        reject(new Error('Сервис диалога недоступен.'));
+        if (stopped) {
+          finish(() => reject(new Error('stopped')));
+          return;
+        }
+        finish(() => reject(new Error('Сервис диалога недоступен.')));
+      };
+      socket.onclose = () => {
+        if (settled) {
+          return;
+        }
+        if (stopped) {
+          finish(() => reject(new Error('stopped')));
+          return;
+        }
+        finish(() => reject(new Error('Сервис диалога недоступен.')));
       };
       socket.onmessage = (message) => {
         if (typeof message.data !== 'string') {
@@ -103,19 +131,17 @@ export function createLlmStream(options: {
           return;
         }
         if (event.type === 'ready') {
-          window.clearTimeout(timer);
           started = true;
           if (socket) {
             listen(socket);
           }
           flushQueue();
-          resolve();
+          finish(() => resolve());
           return;
         }
         if (event.type === 'error') {
-          window.clearTimeout(timer);
           options.onError(event.message);
-          reject(new Error(event.message));
+          finish(() => reject(new Error(event.message)));
         }
       };
     });
@@ -149,20 +175,41 @@ export function createLlmStream(options: {
     }
     stopped = true;
     queue.length = 0;
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
-      started = false;
+    const open = socket;
+    started = false;
+    socket = undefined;
+    if (!open) {
       return;
     }
-    const open = socket;
     try {
-      open.send(JSON.stringify({ type: 'stop' }));
+      if (open.readyState === WebSocket.OPEN) {
+        open.send(JSON.stringify({ type: 'stop' }));
+      }
     } catch {
       undefined;
     }
-    open.close();
-    started = false;
-    socket = undefined;
+    try {
+      open.close();
+    } catch {
+      undefined;
+    }
   }
 
   return { start, kickoff, sendUserFinal, analyze, stop };
+}
+
+export function warmupLesson(options: {
+  conversationRole: 'victim' | 'operator';
+  systemPrompt?: string;
+  opening?: string;
+}): void {
+  void fetch('/api/llm/warmup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      conversation_role: options.conversationRole,
+      system_prompt: options.systemPrompt,
+      opening: options.opening,
+    }),
+  }).catch(() => undefined);
 }

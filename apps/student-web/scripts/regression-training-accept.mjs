@@ -26,15 +26,16 @@ const training = read('src/features/arm112-simulator/screens/arm112-training-pag
 const theory = read('src/features/arm112-simulator/screens/arm112-theory-page.tsx');
 const workspace = read('src/features/arm112-simulator/hooks/use-arm112-workspace.ts');
 
-const codes = ['112-01', '112-02', '112-03'];
-for (const code of codes) {
-  assert.match(scenarios, new RegExp(`code: '${code}'`), `${code} catalog scenario missing`);
-  assert.equal(lessonScreenFor('training'), 'training', `${code}: training must stay on training`);
-  assert.notEqual(lessonScreenFor('training'), 'theory', `${code}: training must not map to theory`);
-  assert.equal(screenAfterIncomingAccept('training'), 'training', `${code}: Принять must not change lesson screen`);
-}
+const tickets = JSON.parse(read('src/data/ags-tickets.json'));
+assert.ok(Array.isArray(tickets) && tickets.length >= 90, 'AGS tickets catalog missing');
+assert.match(scenarios, /AGS_SCENARIOS/);
+assert.doesNotMatch(scenarios, /apartment-fire/);
+assert.doesNotMatch(scenarios, /lost-child/);
 
+assert.equal(lessonScreenFor('training'), 'training', 'training must stay on training');
 assert.equal(lessonScreenFor('theory'), 'theory', 'Theory must remain a separate route');
+assert.notEqual(lessonScreenFor('training'), 'theory', 'training must not map to theory');
+assert.equal(screenAfterIncomingAccept('training'), 'training', 'Принять must not change lesson screen');
 assert.match(routing, /PHASE_AFTER_INCOMING_ACCEPT = 'активный вызов'/);
 assert.match(routing, /if \(section === 'training'\) \{\s*return 'training'/s);
 
@@ -54,7 +55,7 @@ assert.match(workspace, /setPhase\(PHASE_AFTER_INCOMING_ACCEPT\)/);
 assert.doesNotMatch(workspace, /setPhase\('заполнение карточки'\).*accept-call/s);
 assert.doesNotMatch(workspace, /setScreen|Arm112TheoryPage|lessonScreenFor\('theory'\)/);
 
-assert.match(training, /onAcceptCall=\{workspace\.acceptCall\}/);
+assert.match(training, /workspace\.acceptCall\(\)/);
 assert.match(training, /data-lesson="training"/);
 assert.match(training, /mode: 'training'/);
 assert.match(training, /variant="panel"/);
@@ -65,4 +66,12 @@ assert.match(theory, /data-lesson="theory"/);
 assert.match(theory, /mode: 'guided'/);
 assert.match(theory, /Теория/);
 
-console.log('training-accept regression ok: 112-01 112-02 112-03 stay on training; theory route intact');
+const ticketSource = read('src/data/ags-tickets.ts');
+assert.match(ticketSource, /export function assessDifficulty/);
+assert.match(read('src/pages/briefing-page.tsx'), /Легенду билета заранее не показываем/);
+assert.doesNotMatch(read('src/pages/briefing-page.tsx'), /Перед занятием/);
+
+const megafon = tickets.find((item) => /мегафон/i.test(item.situation));
+assert.ok(megafon, 'Megafon ticket missing');
+
+console.log('training-accept regression ok: AGS tickets stay on training; theory route intact');

@@ -183,8 +183,7 @@
 }
 
 .briefing-main {
-  display: grid;
-  grid-template-rows: auto 1fr;
+  display: block;
 }
 
 .briefing-tabs {
