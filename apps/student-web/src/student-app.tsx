@@ -4,6 +4,7 @@ import { AccountBar } from './auth/account-bar';
 import type { TrainingScenario } from './data/scenarios';
 import { Arm112TheoryPage, Arm112TrainingPage } from './features/arm112-simulator';
 import { DdsTrainingPage } from './features/dds-training';
+import { readLearnerTrack, writeLearnerTrack, type LearnerTrack } from './learner-track';
 import { lessonScreenFor, type LessonScreenName } from './lesson-routing';
 import { BriefingPage } from './pages/briefing-page';
 import { CallPage } from './pages/call-page';
@@ -22,12 +23,20 @@ type Props = {
 
 export function StudentApp(props: Props) {
   const [screen, setScreen] = useState<Screen>({ name: 'catalog' });
+  const [track, setTrack] = useState<LearnerTrack>(() => readLearnerTrack());
   const bar = <AccountBar user={props.operator} onLogout={props.onLogout} />;
+
+  function changeTrack(next: LearnerTrack) {
+    setTrack(next);
+    writeLearnerTrack(next);
+    setScreen({ name: 'catalog' });
+  }
 
   if (screen.name === 'briefing') {
     return (
       <BriefingPage
         scenario={screen.scenario}
+        track={track}
         accountBar={bar}
         onBack={() => setScreen({ name: 'catalog' })}
         onStart={(section) =>
@@ -77,6 +86,11 @@ export function StudentApp(props: Props) {
   }
 
   return (
-    <CatalogPage accountBar={bar} onOpen={(scenario) => setScreen({ name: 'briefing', scenario })} />
+    <CatalogPage
+      accountBar={bar}
+      track={track}
+      onTrack={changeTrack}
+      onOpen={(scenario) => setScreen({ name: 'briefing', scenario })}
+    />
   );
 }

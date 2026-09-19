@@ -71,7 +71,11 @@ assert.match(ticketSource, /export function assessDifficulty/);
 assert.match(read('src/pages/briefing-page.tsx'), /Легенду билета заранее не показываем/);
 assert.doesNotMatch(read('src/pages/briefing-page.tsx'), /Перед занятием/);
 
-const megafon = tickets.find((item) => /мегафон/i.test(item.situation));
-assert.ok(megafon, 'Megafon ticket missing');
+assert.match(app, /track={track}/);
+assert.match(app, /onStartDds/);
+assert.match(read('src/pages/briefing-page.tsx'), /диспетчер ДДС/);
+assert.match(read('src/pages/catalog-page.tsx'), /LEARNER_TRACK_LABEL/);
+assert.match(read('src/features/dds-training/incoming-card.ts'), /export function factsFromScenario/);
+assert.doesNotMatch(read('src/pages/briefing-page.tsx'), /index=\{4\}[\s\S]*ДДС/);
 
 console.log('training-accept regression ok: AGS tickets stay on training; theory route intact');

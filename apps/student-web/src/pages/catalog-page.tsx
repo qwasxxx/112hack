@@ -8,10 +8,13 @@ import iconChild from '../assets/catalog/catalog-icon-child.webp';
 import iconCrash from '../assets/catalog/catalog-icon-crash.webp';
 import iconFire from '../assets/catalog/catalog-icon-fire.webp';
 import sidebarBase from '../assets/catalog/catalog-sidebar-base.webp';
+import { LEARNER_TRACK_LABEL, type LearnerTrack } from '../learner-track';
 import { SCENARIOS, DIFFICULTY_LABEL, DIFFICULTY_ORDER, SERVICE_LABEL, type ServiceKind, type TrainingScenario } from '../data/scenarios';
 
 type Props = {
   accountBar: ReactNode;
+  track: LearnerTrack;
+  onTrack: (track: LearnerTrack) => void;
   onOpen: (scenario: TrainingScenario) => void;
 };
 
@@ -26,29 +29,23 @@ const SERVICE_FILTERS: ServiceFilter[] = [
 
 const DIFFICULTY_FILTERS: DifficultyFilter[] = ['all', ...DIFFICULTY_ORDER];
 
-const HERO_POINTS = [
-  {
-    title: 'Реальные ситуации',
-    icon: 'phone' as const,
-    art: heroPhone,
-  },
-  {
-    title: 'Отработка навыков',
-    icon: 'people' as const,
-    art: heroSkills,
-  },
-  {
-    title: 'Подготовка оператора',
-    icon: 'shield' as const,
-    art: heroPrep,
-  },
-];
+const HERO_POINTS: Record<LearnerTrack, Array<{ title: string; icon: 'phone' | 'people' | 'shield'; art: string }>> = {
+  operator112: [
+    { title: 'Звонок заявителя', icon: 'phone', art: heroPhone },
+    { title: 'Заполнение карточки', icon: 'people', art: heroSkills },
+    { title: 'Оператор 112', icon: 'shield', art: heroPrep },
+  ],
+  dds: [
+    { title: 'Готовая карточка', icon: 'phone', art: heroPhone },
+    { title: 'Проверка ошибок', icon: 'people', art: heroSkills },
+    { title: 'Направление служб', icon: 'shield', art: heroPrep },
+  ],
+};
 
-const SIDEBAR_ITEMS = [
-  { id: 'scenarios', label: 'Учебные сценарии', icon: 'book' as const, active: true },
-  { id: 'sessions', label: 'Мои сессии', icon: 'layers' as const, active: false },
-  { id: 'reference', label: 'Справочные материалы', icon: 'bars' as const, active: false },
-  { id: 'settings', label: 'Настройки', icon: 'gear' as const, active: false },
+const SIDEBAR_REST = [
+  { id: 'sessions', label: 'Мои сессии', icon: 'layers' as const },
+  { id: 'reference', label: 'Справочные материалы', icon: 'bars' as const },
+  { id: 'settings', label: 'Настройки', icon: 'gear' as const },
 ];
 
 export function CatalogPage(props: Props) {
@@ -85,13 +82,15 @@ export function CatalogPage(props: Props) {
     <div className={`catalog-screen${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}>
       <StudentSidebar
         collapsed={sidebarCollapsed}
+        track={props.track}
+        onTrack={props.onTrack}
         onToggle={() => setSidebarCollapsed((value) => !value)}
         onReset={resetWorkspace}
       />
       <div className="catalog-shell">
         <CatalogHeader accountBar={props.accountBar} />
         <div className="catalog-body">
-          <CatalogHero />
+          <CatalogHero track={props.track} />
           <ScenarioToolbar
             query={query}
             service={service}
@@ -120,7 +119,12 @@ export function CatalogPage(props: Props) {
                   <li className="scenario-empty">Нет сценариев по текущему запросу.</li>
                 ) : (
                   visible.map((scenario) => (
-                    <ScenarioRow key={scenario.id} scenario={scenario} onOpen={props.onOpen} />
+                    <ScenarioRow
+                      key={scenario.id}
+                      scenario={scenario}
+                      track={props.track}
+                      onOpen={props.onOpen}
+                    />
                   ))
                 )}
               </ul>
@@ -132,7 +136,13 @@ export function CatalogPage(props: Props) {
   );
 }
 
-function StudentSidebar(props: { collapsed: boolean; onToggle: () => void; onReset: () => void }) {
+function StudentSidebar(props: {
+  collapsed: boolean;
+  track: LearnerTrack;
+  onTrack: (track: LearnerTrack) => void;
+  onToggle: () => void;
+  onReset: () => void;
+}) {
   return (
     <aside className="catalog-sidebar" aria-label="Навигация обучающегося">
       <div className="catalog-sidebar-brand">
@@ -143,14 +153,26 @@ function StudentSidebar(props: { collapsed: boolean; onToggle: () => void; onRes
         <CatalogCollapseButton collapsed={props.collapsed} onToggle={props.onToggle} />
       </div>
       <nav className="catalog-nav">
-        {SIDEBAR_ITEMS.map((item) => (
-          <CatalogNavItem
-            key={item.id}
-            label={item.label}
-            icon={item.icon}
-            active={item.active}
-            onActivate={item.active ? props.onReset : undefined}
-          />
+        <CatalogNavItem
+          label={LEARNER_TRACK_LABEL.operator112}
+          icon="phone"
+          active={props.track === 'operator112'}
+          onActivate={() => {
+            props.onTrack('operator112');
+            props.onReset();
+          }}
+        />
+        <CatalogNavItem
+          label={LEARNER_TRACK_LABEL.dds}
+          icon="layers"
+          active={props.track === 'dds'}
+          onActivate={() => {
+            props.onTrack('dds');
+            props.onReset();
+          }}
+        />
+        {SIDEBAR_REST.map((item) => (
+          <CatalogNavItem key={item.id} label={item.label} icon={item.icon} active={false} />
         ))}
       </nav>
       <div className="catalog-sidebar-art" aria-hidden="true">
@@ -162,7 +184,7 @@ function StudentSidebar(props: { collapsed: boolean; onToggle: () => void; onRes
 
 function CatalogNavItem(props: {
   label: string;
-  icon: 'book' | 'layers' | 'bars' | 'gear';
+  icon: 'book' | 'layers' | 'bars' | 'gear' | 'phone';
   active: boolean;
   onActivate?: () => void;
 }) {
@@ -175,7 +197,7 @@ function CatalogNavItem(props: {
       className={`catalog-nav-item catalog-tilt${props.active ? ' is-active' : ''}`}
       title={props.label}
       aria-current={props.active ? 'page' : undefined}
-      aria-disabled={props.active ? undefined : true}
+      aria-disabled={props.onActivate ? undefined : true}
       onClick={() => {
         if (props.onActivate) {
           props.onActivate();
@@ -259,7 +281,7 @@ function CatalogUserControls(props: { children: ReactNode }) {
   );
 }
 
-function CatalogHero() {
+function CatalogHero(props: { track: LearnerTrack }) {
   const groupTilt = useCatalogGroupTilt<HTMLDivElement>({ x: 5.2, y: 5.8 });
 
   return (
@@ -270,11 +292,11 @@ function CatalogHero() {
       </div>
       <div className="catalog-hero-copy">
         <h1 id="catalog-title" className="catalog-title">
-          Учебные сценарии
+          {props.track === 'dds' ? 'Карточки для ДДС' : 'Учебные сценарии'}
         </h1>
         <div ref={groupTilt.ref} className="catalog-highlight-group">
           <ul className="catalog-highlights">
-            {HERO_POINTS.map((item) => (
+            {HERO_POINTS[props.track].map((item) => (
               <CatalogHighlight key={item.title} {...item} />
             ))}
           </ul>
@@ -489,8 +511,16 @@ function ScenarioListShell(props: { children: ReactNode }) {
   return <div className="scenario-list-shell">{props.children}</div>;
 }
 
-function ScenarioRow(props: { scenario: TrainingScenario; onOpen: (scenario: TrainingScenario) => void }) {
+function ScenarioRow(props: {
+  scenario: TrainingScenario;
+  track: LearnerTrack;
+  onOpen: (scenario: TrainingScenario) => void;
+}) {
   const scenario = props.scenario;
+  const description =
+    props.track === 'dds'
+      ? 'Карточка от оператора 112. Проверяете данные и направляете службы.'
+      : scenario.summary;
 
   return (
     <li className="scenario-row">
@@ -499,13 +529,15 @@ function ScenarioRow(props: { scenario: TrainingScenario; onOpen: (scenario: Tra
         <ScenarioPictogram id={scenario.id} services={scenario.services} />
         <div className="scenario-copy">
           <strong className="scenario-title">{scenario.title}</strong>
-          <p className="scenario-desc">{scenario.summary}</p>
+          <p className="scenario-desc">{description}</p>
         </div>
       </div>
       <div className="scenario-services">
-        {scenario.services.map((item) => (
-          <ServiceTag key={item} kind={item} />
-        ))}
+        {props.track === 'dds' ? (
+          <span className="scenario-service is-hidden">По карточке</span>
+        ) : (
+          scenario.services.map((item) => <ServiceTag key={item} kind={item} />)
+        )}
       </div>
       <p className="scenario-time">
         <CatalogGlyph name="clock" />

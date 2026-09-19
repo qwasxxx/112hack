@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { SERVICE_LABEL } from '../../data/scenarios';
 import type { TrainingScenario } from '../../data/scenarios';
 import { DdsCard } from './dds-card';
 import { DdsJournal } from './dds-journal';
@@ -38,31 +39,18 @@ export function DdsTrainingPage(props: Props) {
 
   const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const weekday = `${WEEKDAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
-  const doneCount = session.items.filter((item) => item.state === 'completed').length;
-
-  const summary = useMemo(() => {
-    if (!session.result) {
-      return null;
-    }
-    return session.result;
-  }, [session.result]);
 
   return (
     <div className="dds-page">
       <header className="dds-bar">
         <div>
-          <h1>ДДС · действия с карточкой</h1>
+          <h1>ДДС · проверка карточки</h1>
           <p>
-            Учебная очередь {doneCount}/{session.items.length} · {props.scenario.title} · не диспетчерский контур
+            Поступила карточка оператора 112 · {props.scenario.code} · без звонка заявителю
           </p>
         </div>
         <div>
-          {session.allDone && !session.result ? (
-            <button type="button" onClick={session.finishExercise}>
-              Результат
-            </button>
-          ) : null}
-          {session.view === 'card' ? (
+          {session.view === 'card' && !session.result ? (
             <button type="button" onClick={session.closeCard}>
               К списку
             </button>
@@ -78,58 +66,38 @@ export function DdsTrainingPage(props: Props) {
             query={query}
             onQuery={setQuery}
             items={session.items}
-            activeId={session.active?.card.id ?? null}
+            activeId={null}
             clock={clock}
             weekday={weekday}
-            onOpen={session.openCard}
+            onOpen={() => session.openCard()}
           />
-        ) : session.active ? (
+        ) : (
           <DdsCard
-            card={session.active.card}
-            editing={session.editing}
-            historyOpen={session.historyOpen}
-            draftStatus={session.draftStatus}
-            draftComment={session.draftComment}
-            draftNaryad={session.draftNaryad}
-            onDraftStatus={session.setDraftStatus}
-            onDraftComment={session.setDraftComment}
-            onDraftNaryad={session.setDraftNaryad}
-            onStartEdit={session.startEdit}
-            onCancelEdit={session.cancelEdit}
-            onConfirm={session.confirmStatus}
-            onToggleHistory={() => session.setHistoryOpen((value) => !value)}
+            card={session.card}
+            draft={session.draft}
+            onPatch={session.patch}
+            onToggleService={session.toggleService}
+            onDispatch={session.dispatchCard}
             onClose={session.closeCard}
           />
-        ) : null}
-        {summary ? (
-          <section className="dds-result" aria-label="Результат упражнения">
-            <h2>Отработка карточек завершена</h2>
-            <p>
-              Сценарий {summary.scenarioId} · {Math.round(summary.elapsedMs / 1000)} с · действий {summary.actions.length}
-              {session.learning
-                ? ` · режим ${session.learning.mode} · карточка ${session.learning.cardData?.number ?? '—'}`
-                : ''}
-            </p>
-            <table>
-              <thead>
-                <tr>
-                  <th>Карточка</th>
-                  <th>Статус</th>
-                  <th>Сек.</th>
-                  <th>Комментарии</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.cards.map((card) => (
-                  <tr key={card.cardId}>
-                    <td>{card.number}</td>
-                    <td>{card.finalStatus}</td>
-                    <td>{Math.round(card.elapsedMs / 1000)}</td>
-                    <td>{card.textEntries.join('; ') || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        )}
+        {session.result ? (
+          <section className="dds-result" aria-label="Результат проверки">
+            <h2>{session.result.servicesOk ? 'Службы направлены верно' : 'Есть ошибки в службах'}</h2>
+            <ul>
+              <li>
+                Службы:{' '}
+                {session.result.servicesOk
+                  ? 'совпали с происшествием'
+                  : [
+                      ...session.result.missing.map((item) => `не хватает: ${SERVICE_LABEL[item]}`),
+                      ...session.result.extra.map((item) => `лишняя: ${SERVICE_LABEL[item]}`),
+                    ].join('; ')}
+              </li>
+              <li>Пострадавшие: {session.result.injuredOk ? 'верно' : 'надо было исправить по тексту карточки'}</li>
+              <li>Телефон: {session.result.phoneOk ? 'на месте' : 'в карточке не хватало номера'}</li>
+              <li>Время: {Math.round(session.result.elapsedMs / 1000)} с</li>
+            </ul>
             <p>
               <button type="button" onClick={props.onLeave}>
                 К уроку

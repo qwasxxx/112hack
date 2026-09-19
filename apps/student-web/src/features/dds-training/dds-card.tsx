@@ -1,55 +1,42 @@
-import {
-  DDS_FIRST_RESPONSE_STATUSES,
-  DDS_FOLLOWUP_STATUSES,
-  DDS_TERMINAL_STATUSES,
-  type DdsIncidentCardViewModel,
-  type DdsServiceStatus,
-} from './types';
+import { SERVICE_LABEL, type ServiceKind } from '../../data/scenarios';
+import type { DdsIncidentCardViewModel } from './types';
+import type { DdsDraft } from './incoming-card';
+import { serviceCaption } from './incoming-card';
+
+const KINDS: ServiceKind[] = ['fire', 'ambulance', 'police', 'gas'];
 
 type Props = {
   card: DdsIncidentCardViewModel;
-  editing: boolean;
-  historyOpen: boolean;
-  draftStatus: DdsServiceStatus;
-  draftComment: string;
-  draftNaryad: string;
-  onDraftStatus: (value: DdsServiceStatus) => void;
-  onDraftComment: (value: string) => void;
-  onDraftNaryad: (value: string) => void;
-  onStartEdit: () => void;
-  onCancelEdit: () => void;
-  onConfirm: () => void;
-  onToggleHistory: () => void;
+  draft: DdsDraft;
+  onPatch: (next: Partial<DdsDraft>) => void;
+  onToggleService: (kind: ServiceKind) => void;
+  onDispatch: () => void;
   onClose: () => void;
 };
 
 export function DdsCard(props: Props) {
-  const editable = props.card.services.find((item) => item.editable);
-  const firstWave = !editable || editable.status === 'Добавлена' || editable.status === 'Получена службой';
-  const options = firstWave ? DDS_FIRST_RESPONSE_STATUSES : DDS_FOLLOWUP_STATUSES;
-
   return (
     <div className="dds-card">
       <div className="dds-card-top">
         <div className="dds-tools">
-          <button type="button">Отключение</button>
-          <div>
-            <button type="button">записи звонков</button>
-            <button type="button">список SMS</button>
-          </div>
+          <span className="dds-from">Карточка от оператора 112</span>
         </div>
-        <div className="dds-phone">
+        <label className="dds-phone">
           <span>АОН</span>
-          <div>{props.card.aon || '+7 ( ) - -'}</div>
-        </div>
-        <div className="dds-phone">
+          <input
+            value={props.draft.callerPhone}
+            onChange={(event) => props.onPatch({ callerPhone: event.target.value })}
+            aria-label="Телефон АОН"
+          />
+        </label>
+        <label className="dds-phone">
           <span>предоставленный</span>
-          <div>{props.card.providedPhone || '+7 ( ) - -'}</div>
-        </div>
-        <div className="dds-phone">
-          <span>телефон на место</span>
-          <div>{props.card.phoneOnSite || '+7 ( ) - -'}</div>
-        </div>
+          <input
+            value={props.draft.callerPhone}
+            onChange={(event) => props.onPatch({ callerPhone: event.target.value })}
+            aria-label="Предоставленный телефон"
+          />
+        </label>
         <div className="dds-meta">
           <div className="dds-meta-text">
             <strong>Происшествие {props.card.number}</strong>
@@ -59,139 +46,94 @@ export function DdsCard(props: Props) {
             </div>
           </div>
           <div className="dds-modes">
-            <button type="button" className="is-on">
-              просмотр
-            </button>
-            <button type="button">дополнение</button>
+            <span className="is-on">дополнение</span>
           </div>
         </div>
       </div>
 
       <div className="dds-idrow">
-        <span>ФИО заявителя {props.card.callerName}</span>
+        <label>
+          ФИО заявителя
+          <input
+            value={props.draft.callerName}
+            onChange={(event) => props.onPatch({ callerName: event.target.value })}
+          />
+        </label>
         <div className="dds-flags">
-          <span>Пострадавшие: {props.card.injured === 'Нет' ? 'нет' : props.card.injured}</span>
-          <span>Отказ от скорой: нет</span>
-          <span>Заблокированные: нет</span>
-          <button type="button" title="ЧС">
-            ЧС
-          </button>
-          <button type="button" title="ЧП">
-            ЧП
-          </button>
-          <button type="button" title="Статус службы" onClick={props.onStartEdit}>
-            ✎
-          </button>
+          <label>
+            Пострадавшие
+            <select
+              value={props.draft.injured}
+              onChange={(event) => props.onPatch({ injured: event.target.value })}
+            >
+              <option value="Нет">нет</option>
+              <option value="Есть">есть</option>
+            </select>
+          </label>
         </div>
       </div>
 
       <div className="dds-body">
         <section className="dds-left">
           <h3>Адрес</h3>
-          <div className="dds-addr">{props.card.addressLine || '—'}</div>
-          <p>{props.card.okrug}</p>
-          <div className="dds-note">
-            <div>{props.card.createdAt} 0 УМЦ О n.</div>
-            <div>{props.card.description}</div>
-          </div>
+          <textarea
+            className="dds-addr-input"
+            value={props.draft.address}
+            onChange={(event) => props.onPatch({ address: event.target.value })}
+            rows={3}
+          />
+          <label className="dds-desc-label">
+            Что произошло
+            <textarea
+              value={props.draft.description}
+              onChange={(event) => props.onPatch({ description: event.target.value })}
+              rows={4}
+            />
+          </label>
         </section>
         <section className="dds-right">
-          <div className="dds-type-bar">Происшествие {props.card.typeCode || props.card.typeTitle}</div>
-          <div className="dds-tags">{props.card.tags || '—'}</div>
-          <div className="dds-class">Класс: {props.card.classifierClass || '—'}</div>
-          {props.card.classifierNumber ? (
-            <div className="dds-class">
-              Классификатор Лист1: {props.card.classifierNumber}
-              {props.card.classifierRow ? ` r${props.card.classifierRow}` : ''}
-            </div>
-          ) : null}
-          <div className="dds-class">[ВИС] класс: {props.card.visClass}</div>
+          <div className="dds-type-bar">Направление в службы</div>
+          <p className="dds-hint">Отметьте службы, которые должны получить карточку. Лишние снимите.</p>
+          <div className="dds-pick">
+            {KINDS.map((kind) => {
+              const on = props.draft.services.includes(kind);
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  className={`dds-pick-btn${on ? ' is-on' : ''}`}
+                  onClick={() => props.onToggleService(kind)}
+                >
+                  {serviceCaption(kind)}
+                </button>
+              );
+            })}
+          </div>
         </section>
       </div>
 
       <footer className="dds-footer">
-        {props.card.services.map((chip) => (
-          <button
-            key={chip.id}
-            type="button"
-            className={`dds-chip${chip.editable ? ' is-edit' : ''}${DDS_TERMINAL_STATUSES.includes(chip.status) ? ' is-done' : ''}`}
-            onClick={() => {
-              if (chip.editable) {
-                props.onToggleHistory();
-              }
-            }}
-          >
-            {chip.shortLabel}
-            <small>
-              {chip.statusTime} {chip.status}
-            </small>
-          </button>
-        ))}
-        <button type="button" className="dds-more" aria-label="Ещё службы">
-          ↕
+        {KINDS.map((kind) => {
+          const on = props.draft.services.includes(kind);
+          return (
+            <button
+              key={kind}
+              type="button"
+              className={`dds-chip${on ? ' is-edit' : ''}`}
+              onClick={() => props.onToggleService(kind)}
+            >
+              {SERVICE_LABEL[kind]}
+              <small>{on ? 'Направить' : 'Не направлять'}</small>
+            </button>
+          );
+        })}
+        <button type="button" className="dds-send" onClick={props.onDispatch}>
+          Подтвердить и направить
         </button>
         <button type="button" className="dds-close" onClick={props.onClose} aria-label="Закрыть">
           ×
         </button>
       </footer>
-
-      {props.historyOpen && editable ? (
-        <div className="dds-hist">
-          <header>
-            <strong>{editable.label}</strong>
-            <button type="button" onClick={props.onToggleHistory}>
-              ×
-            </button>
-          </header>
-          <ul>
-            {editable.history.map((event) => (
-              <li key={`${event.at}-${event.status}`}>
-                оп. 0 &gt; {event.at} {event.status}
-                {event.comment ? ` — ${event.comment}` : ''}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {props.editing ? (
-        <form
-          className="dds-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            props.onConfirm();
-          }}
-        >
-          <label>
-            Статус
-            <select value={props.draftStatus} onChange={(event) => props.onDraftStatus(event.target.value as DdsServiceStatus)}>
-              {options.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Номер наряда
-            <input value={props.draftNaryad} onChange={(event) => props.onDraftNaryad(event.target.value)} />
-          </label>
-          <label>
-            Комментарий
-            <input
-              value={props.draftComment}
-              onChange={(event) => props.onDraftComment(event.target.value)}
-              placeholder="Комментарий"
-            />
-          </label>
-          <button type="submit" className="dds-ok" aria-label="Сохранить статус">
-            ✓
-          </button>
-          <button type="button" onClick={props.onCancelEdit} aria-label="Отмена">
-            ×
-          </button>
-        </form>
-      ) : null}
     </div>
   );
 }
