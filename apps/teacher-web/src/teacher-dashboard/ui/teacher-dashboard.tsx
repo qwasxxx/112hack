@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import type { InterventionType } from '@sys112/shared-types';
+import sidebarBase from '../../../../student-web/src/assets/catalog/catalog-sidebar-base.webp';
 import { useTeacherDashboard } from '../application/hooks/use-teacher-dashboard';
 import { MockTeacherDashboardRepository } from '../infrastructure/mock/mock-teacher-dashboard-repository';
 import { ActivePage } from './pages/active-page';
@@ -44,6 +45,7 @@ export function TeacherDashboard({
   const [section, setSection] = useState<Section>('overview');
   const [observedId, setObservedId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const observe = (id: string) => {
     setObservedId(id);
     setSection('active');
@@ -76,7 +78,7 @@ export function TeacherDashboard({
   const observed = state.sessions.find((item) => item.callId === observedId);
 
   return (
-    <div className="td-app">
+    <div className={`td-app ${sidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}>
       <div className="td-sidebar-shell">
         <aside className={`td-sidebar ${menuOpen ? 'is-open' : ''}`}>
           <div className="td-brand">
@@ -105,7 +107,19 @@ export function TeacherDashboard({
             <span className="td-demo-label">DEMO · MOCK DATA</span>
             <p>Данные сбросятся после перезагрузки страницы.</p>
           </div>
+          <div className="td-sidebar-art" aria-hidden="true">
+            <img src={sidebarBase} alt="" />
+          </div>
         </aside>
+        <button
+          type="button"
+          className="td-collapse"
+          onClick={() => setSidebarCollapsed((value) => !value)}
+          aria-label={sidebarCollapsed ? 'Развернуть навигацию' : 'Свернуть навигацию'}
+          aria-expanded={!sidebarCollapsed}
+        >
+          {sidebarCollapsed ? '›' : '‹'}
+        </button>
       </div>
       {menuOpen && (
         <button

@@ -2204,7 +2204,76 @@
   }
 }
 
-/* Collapse control is intentionally removed; only the mobile header menu opens the overlay. */
+/* Match the Student Shell navigation surface and its attached collapse control. */
+.td-sidebar {
+  display: flex;
+  flex-direction: column;
+  background: #16233a;
+}
+
+.td-sidebar-art {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #16233a;
+  order: 3;
+}
+
+.td-sidebar-art img {
+  position: absolute;
+  inset: auto 0 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  object-fit: cover;
+  object-position: 50% 78%;
+  opacity: 1;
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 26%);
+}
+
+.td-sidebar-foot {
+  order: 2;
+}
+.td-sidebar nav {
+  order: 1;
+}
+
 .td-collapse {
-  display: none !important;
+  display: grid !important;
+  position: absolute;
+  top: 18px;
+  right: -14px;
+  left: auto;
+  z-index: 8;
+}
+
+.td-app.is-sidebar-collapsed .td-brand {
+  grid-template-columns: auto;
+  justify-content: center;
+  padding-right: 10px;
+}
+
+.td-app.is-sidebar-collapsed .td-brand div,
+.td-app.is-sidebar-collapsed .td-nav-label,
+.td-app.is-sidebar-collapsed .td-sidebar-foot {
+  display: none;
+}
+
+.td-app.is-sidebar-collapsed .td-sidebar nav button {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+@media (max-width: 900px) {
+  .td-app:not(.is-sidebar-collapsed) .td-sidebar-art {
+    display: block;
+  }
+}
+
+@media (max-width: 640px) {
+  .td-collapse {
+    display: none !important;
+  }
 }
