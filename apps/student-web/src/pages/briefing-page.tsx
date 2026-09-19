@@ -12,6 +12,7 @@ import {
   type LessonSection,
   type TrainingScenario,
 } from '../data/scenarios';
+import { LEARNER_TRACK_LABEL, type LearnerTrack } from '../learner-track';
 import { warmupLesson } from '../lib/llm-stream';
 import { StudentShell } from '../student-shell/student-shell';
 import { useStudentTilt } from '../student-shell/student-tilt';
@@ -19,6 +20,7 @@ import './briefing-page.css';
 
 type Props = {
   scenario: TrainingScenario;
+  track: LearnerTrack;
   accountBar: ReactNode;
   onBack: () => void;
   onStart: (section: LessonSection) => void;
@@ -42,6 +44,13 @@ const COLLECT = [
   'Какие службы направить',
 ];
 
+const DDS_COLLECT = [
+  'Проверить адрес и суть по уже заполненной карточке',
+  'Сверить пострадавших с описанием — оператор 112 мог ошибиться',
+  'Убедиться, что есть телефон для связи',
+  'Выбрать службы, которым нужна эта карточка, и направить',
+];
+
 function heroFor(scenario: TrainingScenario) {
   return HERO_BY_SERVICE[scenario.services[0]] ?? { src: heroFire, position: '78% 42%' };
 }
@@ -51,22 +60,30 @@ const GROUP_TILT = { x: 4.2, y: 4.8 } as const;
 export function BriefingPage(props: Props) {
   const scenario = props.scenario;
   const hero = heroFor(scenario);
+  const isDds = props.track === 'dds';
 
   useEffect(() => {
+    if (isDds) {
+      return;
+    }
     warmupLesson({
       conversationRole: 'victim',
       systemPrompt: buildLessonSystemPrompt(scenario, 'training'),
       opening: scenario.callerOpening,
     });
-  }, [scenario]);
+  }, [isDds, scenario]);
 
   return (
     <StudentShell accountBar={props.accountBar} onCatalog={props.onBack}>
       <div className="briefing-body">
-        <BriefingHero scenario={scenario} hero={hero} onBack={props.onBack} />
+        <BriefingHero scenario={scenario} track={props.track} hero={hero} onBack={props.onBack} />
         <div className="briefing-workspace">
-          <BriefingBrief scenario={scenario} />
-          <BriefingLessons onStart={props.onStart} onStartDds={props.onStartDds} />
+          <BriefingBrief scenario={scenario} track={props.track} />
+          <BriefingLessons
+            track={props.track}
+            onStart={props.onStart}
+            onStartDds={props.onStartDds}
+          />
         </div>
       </div>
     </StudentShell>
@@ -75,11 +92,16 @@ export function BriefingPage(props: Props) {
 
 function BriefingHero(props: {
   scenario: TrainingScenario;
+  track: LearnerTrack;
   hero: { src: string; position: string };
   onBack: () => void;
 }) {
   const scenario = props.scenario;
   const services = scenario.services.map((item) => SERVICE_LABEL[item]).join(', ');
+  const summary =
+    props.track === 'dds'
+      ? 'Вам придёт карточка, которую уже заполнил оператор 112. Разговора нет: проверяете данные и направляете службы.'
+      : scenario.summary;
 
   return (
     <section className="briefing-hero" aria-labelledby="briefing-title">
@@ -94,11 +116,17 @@ function BriefingHero(props: {
         <BackControl onBack={props.onBack} />
         <div className="briefing-hero-text">
           <h1 id="briefing-title">{scenario.title}</h1>
-          <p className="briefing-summary">{scenario.summary}</p>
+          <p className="briefing-summary">{summary}</p>
           <p className="briefing-meta-line">
-            <span>{scenario.code}</span>
+            <span>{LEARNER_TRACK_LABEL[props.track]}</span>
             <span aria-hidden="true">·</span>
-            <span>{services}</span>
+            <span>{scenario.code}</span>
+            {props.track === 'dds' ? null : (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{services}</span>
+              </>
+            )}
             <span aria-hidden="true">·</span>
             <span>{scenario.durationMin} мин</span>
             <span aria-hidden="true">·</span>
@@ -128,14 +156,17 @@ function BackControl(props: { onBack: () => void }) {
   );
 }
 
-function BriefingBrief(props: { scenario: TrainingScenario }) {
+function BriefingBrief(props: { scenario: TrainingScenario; track: LearnerTrack }) {
   const tilt = useStudentTilt<HTMLElement>(GROUP_TILT, 'medium');
-  const note =
-    props.scenario.difficulty === 'сложный'
+  const isDds = props.track === 'dds';
+  const note = isDds
+    ? 'Разговора нет. Работаете только с карточкой: исправляете ошибки оператора 112 и решаете, кому её передать.'
+    : props.scenario.difficulty === 'сложный'
       ? 'Держите линию. Уточняйте по ходу, не сворачивайте опрос из‑за паники заявителя.'
       : props.scenario.difficulty === 'базовый'
         ? 'Спокойный разбор обращения: отделите, есть ли происшествие и нужны ли службы.'
         : 'Снимите обязательные данные и только потом направляйте службы.';
+  const steps = isDds ? DDS_COLLECT : COLLECT;
 
   return (
     <section
@@ -156,8 +187,9 @@ function BriefingBrief(props: { scenario: TrainingScenario }) {
               Задача
             </h3>
             <p>
-              Вы — оператор 112. Легенду билета заранее не показываем: где, что случилось и кому
-              нужна помощь, выясняете сами во время звонка.
+              {isDds
+                ? 'Вы — диспетчер ДДС. Оператор 112 уже принял вызов и заполнил карточку. Ваша проверка: нет ли ошибок и каким службам её передать.'
+                : 'Вы — оператор 112. Легенду билета заранее не показываем: где, что случилось и кому нужна помощь, выясняете сами во время звонка.'}
             </p>
           </article>
           <article className="briefing-block">
@@ -165,10 +197,10 @@ function BriefingBrief(props: { scenario: TrainingScenario }) {
               <span className="briefing-block-icon is-situation">
                 <img src={iconGoals} alt="" />
               </span>
-              Что снять на линии
+              {isDds ? 'Что сделать с карточкой' : 'Что снять на линии'}
             </h3>
             <ol className="briefing-steps">
-              {COLLECT.map((item, index) => (
+              {steps.map((item, index) => (
                 <li key={item}>
                   <span>{String(index + 1).padStart(2, '0')}</span>
                   {item}
@@ -189,8 +221,30 @@ function BriefingBrief(props: { scenario: TrainingScenario }) {
   );
 }
 
-function BriefingLessons(props: { onStart: (section: LessonSection) => void; onStartDds: () => void }) {
+function BriefingLessons(props: {
+  track: LearnerTrack;
+  onStart: (section: LessonSection) => void;
+  onStartDds: () => void;
+}) {
   const tilt = useStudentTilt<HTMLElement>(GROUP_TILT, 'medium');
+  const lessons =
+    props.track === 'dds'
+      ? [
+          {
+            icon: 'dds' as LessonIcon,
+            title: 'Обработка карточки',
+            youAre: 'Вы — диспетчер ДДС',
+            enabled: true,
+            onStart: props.onStartDds,
+          },
+        ]
+      : LESSON_SECTIONS.map((section) => ({
+          icon: section.id as LessonIcon,
+          title: section.title,
+          youAre: section.youAre,
+          enabled: section.enabled,
+          onStart: () => props.onStart(section.id),
+        }));
 
   return (
     <aside
@@ -203,25 +257,17 @@ function BriefingLessons(props: { onStart: (section: LessonSection) => void; onS
     >
       <h2 id="briefing-lessons-title">Разделы урока</h2>
       <div className="briefing-lesson-list">
-        {LESSON_SECTIONS.map((section, index) => (
+        {lessons.map((lesson, index) => (
           <LessonCard
-            key={section.id}
-            icon={section.id}
+            key={lesson.title}
+            icon={lesson.icon}
             index={index + 1}
-            title={section.title}
-            youAre={section.youAre}
-            enabled={section.enabled}
-            onStart={() => props.onStart(section.id)}
+            title={lesson.title}
+            youAre={lesson.youAre}
+            enabled={lesson.enabled}
+            onStart={lesson.onStart}
           />
         ))}
-        <LessonCard
-          icon="dds"
-          index={4}
-          title="ДДС"
-          youAre="Действия с карточкой"
-          enabled={true}
-          onStart={props.onStartDds}
-        />
       </div>
     </aside>
   );

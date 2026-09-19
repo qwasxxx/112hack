@@ -1123,6 +1123,12 @@
   opacity: 1;
 }
 
+.scenario-service.is-hidden {
+  background: #eef3f8;
+  color: #5d6b7a;
+  font-weight: 600;
+}
+
 .scenario-service.is-fire {
   background: #fdecea;
   color: #b42318;

@@ -63,7 +63,7 @@ export function DdsJournal(props: Props) {
         </div>
         {visible.map((item) => {
           const time = journalTime(item.card);
-          const service = item.card.services.find((chip) => chip.editable);
+          const service = item.card.services.find((chip) => chip.status === 'Добавлена');
           return (
             <article key={item.card.id} className="dds-row-block">
               <button
