@@ -1,11 +1,21 @@
 import { useEffect, useState } from 'react';
 import type { InterventionType } from '@sys112/shared-types';
+import { TeacherDashboard } from '../../../teacher-web/src/teacher-dashboard';
+import '../../../teacher-web/src/app.css';
 import type { Session } from '../auth/accounts';
 import { AccountBar } from '../auth/account-bar';
 
 const EXAM_ACTIONS: Array<{ type: InterventionType; label: string; hint: string }> = [
-  { type: 'set_emotional_state', label: 'Негативные эмоции', hint: 'Паника, злость, растерянность' },
-  { type: 'add_circumstance', label: 'Новое обстоятельство', hint: 'Дым усилился, появился пострадавший' },
+  {
+    type: 'set_emotional_state',
+    label: 'Негативные эмоции',
+    hint: 'Паника, злость, растерянность',
+  },
+  {
+    type: 'add_circumstance',
+    label: 'Новое обстоятельство',
+    hint: 'Дым усилился, появился пострадавший',
+  },
   { type: 'inject_event', label: 'Внезапное событие', hint: 'Слышен удар, связь прерывается' },
   { type: 'adjust_difficulty', label: 'Усложнить диалог', hint: 'Заявитель путает адрес и факты' },
 ];
@@ -14,6 +24,16 @@ type Props = {
   operator: Session;
   onLogout: () => void;
 };
+
+function Dot(props: { tone: 'ok' | 'warn' | 'bad'; label: string }) {
+  const color = props.tone === 'ok' ? '#3dcc8a' : props.tone === 'warn' ? '#e0b341' : '#e35d6a';
+  return (
+    <span className="dot">
+      <span style={{ background: color }} />
+      {props.label}
+    </span>
+  );
+}
 
 export function TeacherApp(props: Props) {
   const [apiStatus, setApiStatus] = useState<'ok' | 'bad' | 'pending'>('pending');
@@ -26,18 +46,13 @@ export function TeacherApp(props: Props) {
 
     let cancelled = false;
     let disconnect: (() => void) | undefined;
-
     void import('@sys112/api-client')
       .then(({ RealtimeClient }) => {
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
         const realtime = new RealtimeClient(window.location.origin);
         realtime.connect();
         const off = realtime.onEvent((event) => {
-          if (event.type === 'ConnectionEstablished') {
-            setRealtimeStatus('ok');
-          }
+          if (event.type === 'ConnectionEstablished') setRealtimeStatus('ok');
         });
         disconnect = () => {
           off();
@@ -45,9 +60,7 @@ export function TeacherApp(props: Props) {
         };
       })
       .catch(() => {
-        if (!cancelled) {
-          setRealtimeStatus('bad');
-        }
+        if (!cancelled) setRealtimeStatus('bad');
       });
 
     return () => {
@@ -57,48 +70,47 @@ export function TeacherApp(props: Props) {
   }, []);
 
   return (
-    <div className="page">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">112</span>
-          <div>
-            <p className="brand-title">Панель преподавателя</p>
-            <p className="brand-sub">Мониторинг занятия и экзамена</p>
-          </div>
+    <TeacherDashboard
+      apiStatus={apiStatus}
+      realtimeStatus={realtimeStatus}
+      examActions={EXAM_ACTIONS}
+      accountBar={<AccountBar user={props.operator} onLogout={props.onLogout} />}
+      legacyStatus={
+        <div className="status">
+          <Dot
+            tone={apiStatus === 'ok' ? 'ok' : apiStatus === 'pending' ? 'warn' : 'bad'}
+            label={`API ${apiStatus}`}
+          />
+          <Dot
+            tone={realtimeStatus === 'ok' ? 'ok' : realtimeStatus === 'pending' ? 'warn' : 'bad'}
+            label={`Realtime ${realtimeStatus}`}
+          />
         </div>
-        <AccountBar user={props.operator} onLogout={props.onLogout} />
-      </header>
-
-      <section className="stats">
-        <article className="panel stat">
-          <span>API</span>
-          <strong>{apiStatus === 'ok' ? 'ок' : apiStatus === 'pending' ? '…' : 'нет'}</strong>
-        </article>
-        <article className="panel stat">
-          <span>Realtime</span>
-          <strong>
-            {realtimeStatus === 'ok' ? 'ок' : realtimeStatus === 'pending' ? '…' : 'нет'}
-          </strong>
-        </article>
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <h1>Экзамен</h1>
-          <p>
-            Преподаватель видит ход экзамена и может вмешаться в разговор. Команды пока размечены,
-            диалоговый сервис ответит not_implemented.
+      }
+      examPanel={
+        <section className="exam td-legacy-exam">
+          <h2>Экзамен</h2>
+          <p className="muted">
+            На экзамене преподаватель сможет вмешиваться в разговор: эмоции, новые обстоятельства,
+            внезапные события. Пока команды только размечены — сервис диалога отвечает{' '}
+            <code>not_implemented</code>.
           </p>
-        </div>
-        <div className="stack">
-          {EXAM_ACTIONS.map((action) => (
-            <button key={action.type} type="button" className="btn" disabled>
-              <strong>{action.label}</strong>
-              <span className="row-sub"> — {action.hint}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-    </div>
+          <div className="exam-actions">
+            {EXAM_ACTIONS.map((action) => (
+              <button
+                key={action.type}
+                type="button"
+                className="exam-btn"
+                disabled
+                title={action.hint}
+              >
+                <strong>{action.label}</strong>
+                <span>{action.hint}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      }
+    />
   );
 }

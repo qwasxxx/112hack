@@ -1,11 +1,20 @@
 import { useEffect, useState } from 'react';
 import type { InterventionType } from '@sys112/shared-types';
+import { TeacherDashboard } from './teacher-dashboard';
 
 const tones = { ok: '#3dcc8a', warn: '#e0b341', bad: '#e35d6a' } as const;
 
 const EXAM_ACTIONS: Array<{ type: InterventionType; label: string; hint: string }> = [
-  { type: 'set_emotional_state', label: 'Негативные эмоции', hint: 'Паника, злость, растерянность' },
-  { type: 'add_circumstance', label: 'Новое обстоятельство', hint: 'Дым усилился, появился пострадавший' },
+  {
+    type: 'set_emotional_state',
+    label: 'Негативные эмоции',
+    hint: 'Паника, злость, растерянность',
+  },
+  {
+    type: 'add_circumstance',
+    label: 'Новое обстоятельство',
+    hint: 'Дым усилился, появился пострадавший',
+  },
   { type: 'inject_event', label: 'Внезапное событие', hint: 'Слышен удар, связь прерывается' },
   { type: 'adjust_difficulty', label: 'Усложнить диалог', hint: 'Заявитель путает адрес и факты' },
 ];
@@ -61,35 +70,46 @@ export function App() {
   }, []);
 
   return (
-    <main className="shell">
-      <p className="eyebrow">Teacher Web</p>
-      <h1>Мониторинг и управление сценарием</h1>
-      <p className="lead">
-        Отдельное приложение преподавателя. Intervention уходит доменной командой, не в параметры модели.
-      </p>
-      <div className="status">
-        <Dot tone={apiStatus === 'ok' ? 'ok' : apiStatus === 'pending' ? 'warn' : 'bad'} label={`API ${apiStatus}`} />
-        <Dot
-          tone={realtimeStatus === 'ok' ? 'ok' : realtimeStatus === 'pending' ? 'warn' : 'bad'}
-          label={`Realtime ${realtimeStatus}`}
-        />
-      </div>
-
-      <section className="exam">
-        <h2>Экзамен</h2>
-        <p className="muted">
-          На экзамене преподаватель сможет вмешиваться в разговор: эмоции, новые обстоятельства, внезапные события.
-          Пока команды только размечены — сервис диалога отвечает <code>not_implemented</code>.
-        </p>
-        <div className="exam-actions">
-          {EXAM_ACTIONS.map((action) => (
-            <button key={action.type} type="button" className="exam-btn" disabled title={action.hint}>
-              <strong>{action.label}</strong>
-              <span>{action.hint}</span>
-            </button>
-          ))}
+    <TeacherDashboard
+      apiStatus={apiStatus}
+      realtimeStatus={realtimeStatus}
+      examActions={EXAM_ACTIONS}
+      legacyStatus={
+        <div className="status">
+          <Dot
+            tone={apiStatus === 'ok' ? 'ok' : apiStatus === 'pending' ? 'warn' : 'bad'}
+            label={`API ${apiStatus}`}
+          />
+          <Dot
+            tone={realtimeStatus === 'ok' ? 'ok' : realtimeStatus === 'pending' ? 'warn' : 'bad'}
+            label={`Realtime ${realtimeStatus}`}
+          />
         </div>
-      </section>
-    </main>
+      }
+      examPanel={
+        <section className="exam td-legacy-exam">
+          <h2>Экзамен</h2>
+          <p className="muted">
+            На экзамене преподаватель сможет вмешиваться в разговор: эмоции, новые обстоятельства,
+            внезапные события. Пока команды только размечены — сервис диалога отвечает{' '}
+            <code>not_implemented</code>.
+          </p>
+          <div className="exam-actions">
+            {EXAM_ACTIONS.map((action) => (
+              <button
+                key={action.type}
+                type="button"
+                className="exam-btn"
+                disabled
+                title={action.hint}
+              >
+                <strong>{action.label}</strong>
+                <span>{action.hint}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      }
+    />
   );
 }
