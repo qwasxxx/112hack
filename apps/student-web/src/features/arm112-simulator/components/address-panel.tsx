@@ -51,13 +51,14 @@ export function AddressPanel(props: Props) {
         <input
           className="arm112-underline"
           aria-label="Адрес"
+          placeholder="введите адрес"
           value={a.searchLine}
           onChange={(event) => set('searchLine', event.target.value)}
         />
-        <button type="button" className="arm112-icon-btn" onClick={props.onOpenMap} aria-label="Карта">
+        <button type="button" className="arm112-icon-btn arm112-map-btn" onClick={props.onOpenMap} aria-label="Карта">
           ⌖
         </button>
-        <button type="button" className="arm112-icon-btn" aria-label="Закрыть адрес">
+        <button type="button" className="arm112-icon-btn" onClick={clear} aria-label="Закрыть адрес">
           ×
         </button>
       </div>
@@ -110,7 +111,7 @@ export function AddressPanel(props: Props) {
           <input className="arm112-underline" value={a.corpus} onChange={(event) => set('corpus', event.target.value)} />
         </label>
       </div>
-      <div className="arm112-grid-4">
+      <div className="arm112-grid-5">
         <label className="arm112-field">
           <span className="arm112-label">Стр/соор:</span>
           <input className="arm112-underline" value={a.stroenie} onChange={(event) => set('stroenie', event.target.value)} />
@@ -127,11 +128,11 @@ export function AddressPanel(props: Props) {
           <span className="arm112-label">Этаж:</span>
           <input className="arm112-underline" value={a.floor} onChange={(event) => set('floor', event.target.value)} />
         </label>
+        <label className="arm112-field">
+          <span className="arm112-label">Код:</span>
+          <input className="arm112-underline" value={a.code} onChange={(event) => set('code', event.target.value)} />
+        </label>
       </div>
-      <label className="arm112-field" style={{ marginTop: 8, maxWidth: 160 }}>
-        <span className="arm112-label">Код:</span>
-        <input className="arm112-underline" value={a.code} onChange={(event) => set('code', event.target.value)} />
-      </label>
       <label className="arm112-field" style={{ marginTop: 10 }}>
         <span className="arm112-label">Описательный адрес:</span>
         <input
@@ -142,9 +143,6 @@ export function AddressPanel(props: Props) {
       </label>
       <button type="button" className="arm112-clear-address" onClick={clear}>
         очистить адрес
-      </button>
-      <button type="button" className="arm112-orange-outline" style={{ position: 'absolute', right: 10, bottom: 116 }}>
-        совпадение
       </button>
     </section>
   );

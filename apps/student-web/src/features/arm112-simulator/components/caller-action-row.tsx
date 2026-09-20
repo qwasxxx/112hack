@@ -8,7 +8,6 @@ type Props = {
   onFio: (value: string) => void;
   onStatus: (value: string) => void;
   onChannel: (value: string) => void;
-  onForeignLanguage: (value: boolean) => void;
   onInjured: () => void;
   onToggleNotOnScene: () => void;
   onToggleNoAccess: () => void;
@@ -26,7 +25,7 @@ export function CallerActionRow(props: Props) {
       data-arm-region={caller['data-arm-region']}
       onClick={caller.onClick}
     >
-      <label className="arm112-field">
+      <label className="arm112-field arm112-caller-fio">
         <span className="arm112-label">Фамилия и имя заявителя</span>
         <input
           className="arm112-underline"
@@ -50,27 +49,19 @@ export function CallerActionRow(props: Props) {
         </select>
       </label>
       <label className="arm112-field">
-        <span className="arm112-label">канал связи</span>
+        <span className="arm112-label">&nbsp;</span>
         <select
           className="arm112-underline"
           value={card.caller.communicationChannel}
           onChange={(event) => props.onChannel(event.target.value)}
         >
-          <option value="" />
+          <option value="">выберите статус</option>
           {COMMUNICATION_CHANNELS.map((item) => (
             <option key={item} value={item}>
               {item}
             </option>
           ))}
         </select>
-      </label>
-      <label className="arm112-label" style={{ alignSelf: 'center' }}>
-        <input
-          type="checkbox"
-          checked={card.caller.foreignLanguageCall}
-          onChange={(event) => props.onForeignLanguage(event.target.checked)}
-        />{' '}
-        вызов на иностранном языке
       </label>
       <div
         className={mergeClassName('arm112-flag-row', quick.className)}

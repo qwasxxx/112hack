@@ -1,5 +1,5 @@
 import type { EvidencedQuestion, EvidencedQuestionnaire } from '../data/evidenced-questionnaires';
-import { useArmRegionProps } from '../guided/arm-region';
+import { mergeClassName, useArmRegionProps } from '../guided/arm-region';
 import type { QuestionnaireAnswer, ClassifierPath } from '../model/arm112-models';
 import { displayTypeTitle } from '../data/questionnaire-lookup';
 
@@ -94,13 +94,12 @@ export function QuestionnairePanel(props: Props) {
   return (
     <section
       aria-label="ДОБАВИТЬ ТИП ПРОИСШЕСТВИЯ"
-      className={region.className}
+      className={mergeClassName('arm112-what', region.className)}
       data-arm-region={region['data-arm-region']}
       onClick={region.onClick}
     >
       <div className="arm112-q-head">
-        <span>ДОБАВИТЬ ТИП ПРОИСШЕСТВИЯ</span>
-        <span className="arm112-label">{props.matchedCount} записей классификатора</span>
+        <span>добавить тип происшествия</span>
       </div>
       <label className="arm112-field" style={{ background: '#fff', padding: '6px 8px', marginBottom: 8 }}>
         <input
@@ -119,25 +118,29 @@ export function QuestionnairePanel(props: Props) {
           ))}
         </div>
       ) : null}
-      {props.items.map((item) => (
-        <article key={item.type} className="arm112-q-card">
-          <header className="arm112-q-title">
-            <span>{item.q.title || displayTypeTitle(item.type)}</span>
-            <button type="button" onClick={() => props.onRemoveType(item.type)} aria-label="Удалить">
-              ×
-            </button>
-          </header>
-          {item.q.questions.map((question, index) => (
-            <QuestionRow
-              key={`${item.type}-${question.label}-${index}`}
-              question={question}
-              values={selectedValues(props.answersByType[item.type], question.label)}
-              onToggle={(value, exclusive) => props.onToggle(item.type, question.label, value, exclusive)}
-              onFreeText={(value) => props.onFreeText(item.type, question.label, value)}
-            />
-          ))}
-        </article>
-      ))}
+      {props.items.map((item) => {
+        const title = item.q.title || displayTypeTitle(item.type);
+        return (
+          <article key={item.type} className="arm112-q-card">
+            <span className="arm112-type-chip">{title}</span>
+            <header className="arm112-q-title">
+              <span>{title}</span>
+              <button type="button" onClick={() => props.onRemoveType(item.type)} aria-label="Удалить">
+                ×
+              </button>
+            </header>
+            {item.q.questions.map((question, index) => (
+              <QuestionRow
+                key={`${item.type}-${question.label}-${index}`}
+                question={question}
+                values={selectedValues(props.answersByType[item.type], question.label)}
+                onToggle={(value, exclusive) => props.onToggle(item.type, question.label, value, exclusive)}
+                onFreeText={(value) => props.onFreeText(item.type, question.label, value)}
+              />
+            ))}
+          </article>
+        );
+      })}
       {props.selectedTypes
         .filter((type) => !props.items.some((item) => item.type === type))
         .map((type) => (

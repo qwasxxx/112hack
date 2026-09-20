@@ -66,10 +66,12 @@ export function Arm112TrainingPage(props: Props) {
         {showCard ? (
           <div className={showConversation ? 'arm112-live' : undefined}>
             <div className="arm112-live-main">
-              <div className="arm112-script" aria-label="Реплика заявителя">
-                <span>Реплика заявителя</span>
-                <p>{binding.callerOpening}</p>
-              </div>
+              {showConversation ? null : (
+                <div className="arm112-script" aria-label="Реплика заявителя">
+                  <span>Реплика заявителя</span>
+                  <p>{binding.callerOpening}</p>
+                </div>
+              )}
               <CardCreateScreen workspace={workspace} onClose={() => workspace.setPhase('ожидание')} />
             </div>
             {showConversation ? (

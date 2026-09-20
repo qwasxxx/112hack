@@ -52,7 +52,7 @@ export function MapWindow(props: Props) {
         </select>
       </div>
       <div className="arm112-map-canvas">
-        <div className="arm112-map-pin" />
+        <div className="arm112-map-canvas-pin" />
       </div>
     </div>
   );

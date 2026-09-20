@@ -47,22 +47,6 @@ export function PhoneHeader(props: Props) {
             onChange={(event) => props.onAon(event.target.value)}
           />
         </div>
-        <label className="arm112-label">
-          <input
-            type="checkbox"
-            checked={card.caller.foreignNumber}
-            onChange={(event) => props.onForeignNumber(event.target.checked)}
-          />{' '}
-          зарубежный номер
-        </label>
-        <label className="arm112-label">
-          <input
-            type="checkbox"
-            checked={card.caller.noSimCard}
-            onChange={(event) => props.onNoSim(event.target.checked)}
-          />{' '}
-          без SIM-карты
-        </label>
       </div>
       <div className="arm112-phone-cell">
         <div className="arm112-phone-top">☎ предоставленный</div>

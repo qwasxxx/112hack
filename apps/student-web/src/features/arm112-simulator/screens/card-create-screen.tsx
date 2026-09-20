@@ -46,7 +46,6 @@ export function CardCreateScreen(props: Props) {
           })
         }
         onChannel={(value) => w.setCard({ ...card, caller: { ...card.caller, communicationChannel: value } })}
-        onForeignLanguage={(value) => w.setCard({ ...card, caller: { ...card.caller, foreignLanguageCall: value } })}
         onInjured={() => w.setModal('injured')}
         onToggleNotOnScene={() => w.toggleFlag('notOnSceneOrAmbulanceRefusal')}
         onToggleNoAccess={() => w.toggleFlag('noAccessOrBlocked')}
@@ -66,10 +65,15 @@ export function CardCreateScreen(props: Props) {
             onChange={(address) => w.setCard({ ...card, address })}
             onOpenMap={() => w.setMapOpen(true)}
           />
-          <SubscriberDataPanel
-            data={card.caller.subscriberData}
-            onChange={(subscriberData) => w.setCard({ ...card, caller: { ...card.caller, subscriberData } })}
-          />
+          {card.caller.subscriberData?.fioAbonenta ||
+          card.caller.subscriberData?.adresAbonenta ||
+          card.caller.subscriberData?.operatorSvyazi ||
+          card.caller.subscriberData?.receivedAt ? (
+            <SubscriberDataPanel
+              data={card.caller.subscriberData}
+              onChange={(subscriberData) => w.setCard({ ...card, caller: { ...card.caller, subscriberData } })}
+            />
+          ) : null}
           <DescriptionPanel
             value={card.descriptionFromCaller}
             limit={card.descriptionCharLimit}
