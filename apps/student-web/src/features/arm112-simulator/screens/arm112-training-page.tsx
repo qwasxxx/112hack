@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { TrainingScenario } from '../../../data/scenarios';
 import { JournalScreen } from '../components/journal-screen';
 import { useArm112Workspace } from '../hooks/use-arm112-workspace';
@@ -7,11 +8,13 @@ import '../styles/arm112.css';
 import { CardCreateScreen } from './card-create-screen';
 import { CardViewScreen } from './card-view-screen';
 import { TrainingResultPanel } from '../components/training-result-panel';
+import type { Arm112PracticalResult } from '../model/training-result';
 
 type Props = {
   scenario: TrainingScenario;
   operatorName: string;
   onLeave: () => void;
+  onCompleted?: (result: Arm112PracticalResult) => void;
 };
 
 export function Arm112TrainingPage(props: Props) {
@@ -20,6 +23,15 @@ export function Arm112TrainingPage(props: Props) {
     operatorName: props.operatorName,
     mode: 'training',
   });
+  const reported = useRef(false);
+  const onCompleted = props.onCompleted;
+  useEffect(() => {
+    if (!workspace.result || reported.current) {
+      return;
+    }
+    reported.current = true;
+    onCompleted?.(workspace.result);
+  }, [onCompleted, workspace.result]);
   const binding = workspace.binding;
   const showCard = workspace.phase === 'заполнение карточки' || workspace.phase === 'активный вызов';
   const showView = workspace.phase === 'просмотр карточки' || workspace.phase === 'завершена';

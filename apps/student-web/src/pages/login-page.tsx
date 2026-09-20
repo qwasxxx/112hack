@@ -1,11 +1,25 @@
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from 'react';
-import { DEMO_PASSWORD, SEED_ACCOUNTS, ROLE_LABEL } from '../auth/accounts';
+import {
+  DEMO_PASSWORD,
+  ROLE_LABEL,
+  SEED_ACCOUNTS,
+  type AccountAvatar,
+  type FieldErrors,
+  type RegistrationInput,
+} from '../auth/accounts';
+import { BUILTIN_AVATARS, FEMALE_AVATAR_IDS, MALE_AVATAR_IDS } from '../auth/avatars';
+import { compressProfileImage } from '../auth/profile-image';
 import loginCommandCenterBg from '../assets/login-command-center-background.webp';
 import './login-page.css';
 
+type AuthMode = 'login' | 'register';
+
 type Props = {
   error?: string;
-  onSubmit: (login: string, password: string) => void;
+  fieldErrors?: FieldErrors;
+  onSubmit: (login: string, password: string) => void | Promise<void>;
+  onRegister: (input: RegistrationInput) => boolean | Promise<boolean>;
+  onClearError?: () => void;
 };
 
 const HIGHLIGHTS = [
@@ -22,19 +36,81 @@ const SCENE_SERVICES = [
 ] as const;
 
 export function LoginPage(props: Props) {
+  const [mode, setMode] = useState<AuthMode>('login');
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [demoOpen, setDemoOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [paneAnimated, setPaneAnimated] = useState(false);
+  const [registerSuccess, setRegisterSuccess] = useState(false);
+  const pendingRef = useRef(false);
+  const mountedRef = useRef(true);
   const errorId = 'login-auth-error';
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  function switchMode(next: AuthMode) {
+    if (next === mode || pendingRef.current) {
+      return;
+    }
+    setPaneAnimated(true);
+    setRegisterSuccess(false);
+    setMode(next);
+    setDemoOpen(false);
+    props.onClearError?.();
+  }
+
+  async function completeRegistration(input: RegistrationInput) {
+    const ok = await props.onRegister(input);
+    if (!ok || !mountedRef.current) {
+      return;
+    }
+    setRegisterSuccess(true);
+    setLogin(input.email.trim());
+    setPassword('');
+    await wait(1300);
+    if (!mountedRef.current) {
+      return;
+    }
+    setRegisterSuccess(false);
+    setPaneAnimated(true);
+    setMode('login');
+    setDemoOpen(false);
+    props.onClearError?.();
+  }
+
+  async function runExclusive(task: () => Promise<void>) {
+    if (pendingRef.current) {
+      return;
+    }
+    pendingRef.current = true;
+    setPending(true);
+    try {
+      await task();
+    } finally {
+      pendingRef.current = false;
+      setPending(false);
+    }
+  }
 
   return (
     <div className="login-screen">
       <div className="login-atmosphere" aria-hidden="true">
-        <div
+        <img
           className="login-atmosphere-photo"
-          style={{ backgroundImage: `url(${loginCommandCenterBg})` }}
+          src={loginCommandCenterBg}
+          alt=""
+          decoding="async"
+          fetchPriority="high"
         />
         <div className="login-atmosphere-tint" />
+        <div className="login-atmosphere-vignette" />
+        <div className="login-atmosphere-frost" />
         <div className="login-atmosphere-center" />
       </div>
 
@@ -78,9 +154,14 @@ export function LoginPage(props: Props) {
       </header>
 
       <main className="login-main">
-        <LoginTilt labelledBy="login-auth-title">
-          <div className="login-shell-body">
-            <section className="login-info-side" aria-labelledby="login-info-title">
+        <LoginTilt labelledBy="login-auth-title" className={mode === 'register' ? 'is-register' : undefined}>
+          <div className={`login-shell-body${mode === 'register' ? ' is-register' : ''}`}>
+            <section
+              className="login-info-side"
+              aria-labelledby="login-info-title"
+              aria-hidden={mode === 'register' ? true : undefined}
+              inert={mode === 'register' ? true : undefined}
+            >
               <p className="login-kicker">Учебный комплекс</p>
               <h2 id="login-info-title" className="login-info-title">
                 Система подготовки оператора АРМ-112
@@ -98,80 +179,499 @@ export function LoginPage(props: Props) {
 
             <section className="login-auth-side" aria-labelledby="login-auth-title">
               <p className="login-kicker">Авторизация</p>
-              <h1 id="login-auth-title" className="login-auth-title">
-                Вход в систему
-              </h1>
-              <p className="login-auth-sub">Введите данные учебной учётной записи</p>
-              <form
-                className="login-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  props.onSubmit(login, password);
-                }}
+              <AuthModeTabs mode={mode} disabled={pending} onChange={switchMode} />
+              <div
+                className={`login-auth-pane is-${mode}${paneAnimated ? ' is-animated' : ''}${registerSuccess ? ' is-success' : ''}`}
+                key={registerSuccess ? 'register-success' : mode}
               >
-                <label className="login-field" htmlFor="login-username">
-                  <span>Логин</span>
-                  <input
-                    id="login-username"
-                    name="username"
-                    autoComplete="username"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    placeholder="Учётная запись"
-                    value={login}
-                    aria-invalid={props.error ? true : undefined}
-                    aria-describedby={props.error ? errorId : undefined}
-                    onChange={(event) => setLogin(event.target.value)}
+                {registerSuccess ? (
+                  <RegisterSuccess />
+                ) : (
+                  <>
+                <h1 id="login-auth-title" className="login-auth-title">
+                  {mode === 'login' ? 'Вход в систему' : 'Создать аккаунт'}
+                </h1>
+                <p className="login-auth-sub">
+                  {mode === 'login'
+                    ? 'Введите данные учебной учётной записи'
+                    : 'Новая учётная запись создаётся с ролью «Обучающийся».'}
+                </p>
+                {mode === 'login' ? (
+                  <form
+                    className="login-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void runExclusive(() => Promise.resolve(props.onSubmit(login, password)));
+                    }}
+                  >
+                    <label className="login-field" htmlFor="login-username">
+                      <span>Логин</span>
+                      <input
+                        id="login-username"
+                        name="username"
+                        autoComplete="username"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        placeholder="Логин или почта"
+                        value={login}
+                        aria-invalid={props.error ? true : undefined}
+                        aria-describedby={props.error ? errorId : undefined}
+                        onChange={(event) => setLogin(event.target.value)}
+                      />
+                    </label>
+                    <label className="login-field" htmlFor="login-password">
+                      <span>Пароль</span>
+                      <input
+                        id="login-password"
+                        name="password"
+                        type="password"
+                        autoComplete="current-password"
+                        placeholder="Пароль"
+                        value={password}
+                        aria-invalid={props.error ? true : undefined}
+                        aria-describedby={props.error ? errorId : undefined}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                    </label>
+                    {props.error ? (
+                      <p id={errorId} className="login-error" role="alert">
+                        {props.error}
+                      </p>
+                    ) : null}
+                    <LoginSubmit label="Войти" disabled={pending} />
+                  </form>
+                ) : (
+                  <RegisterForm
+                    error={props.error}
+                    fieldErrors={props.fieldErrors}
+                    pending={pending}
+                    errorId={errorId}
+                    onSubmit={(input) => runExclusive(() => completeRegistration(input))}
                   />
-                </label>
-                <label className="login-field" htmlFor="login-password">
-                  <span>Пароль</span>
-                  <input
-                    id="login-password"
-                    name="password"
-                    type="password"
-                    autoComplete="current-password"
-                    placeholder="Пароль"
-                    value={password}
-                    aria-invalid={props.error ? true : undefined}
-                    aria-describedby={props.error ? errorId : undefined}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
-                </label>
-                {props.error ? (
-                  <p id={errorId} className="login-error" role="alert">
-                    {props.error}
-                  </p>
-                ) : null}
-                <LoginSubmit />
-              </form>
-              <p className="login-auth-foot">Учебный контур · роль определяется автоматически</p>
+                )}
+                {mode === 'login' ? (
+                  <p className="login-auth-foot">Учебный контур · роль определяется автоматически</p>
+                ) : (
+                  <p className="login-auth-foot">Локальная учебная среда · без подтверждения почты</p>
+                )}
+                  </>
+                )}
+              </div>
             </section>
           </div>
 
-          <section className="login-demo" aria-labelledby="login-demo-title">
-            <LoginDemoToggle open={demoOpen} onToggle={() => setDemoOpen((open) => !open)} />
-            {demoOpen ? (
-              <div id="login-demo-panel" className="login-demo-panel">
-                <ul className="login-demo-list">
-                  {SEED_ACCOUNTS.map((account) => (
-                    <LoginDemoCard
-                      key={account.id}
-                      login={account.login}
-                      role={ROLE_LABEL[account.role]}
-                    />
-                  ))}
-                </ul>
-                <p className="login-demo-pass">
-                  Пароль: <span className="login-mono">{DEMO_PASSWORD}</span>
-                </p>
-              </div>
-            ) : null}
-          </section>
+          {mode === 'login' ? (
+            <section className="login-demo" aria-labelledby="login-demo-title">
+              <LoginDemoToggle open={demoOpen} onToggle={() => setDemoOpen((open) => !open)} />
+              {demoOpen ? (
+                <div id="login-demo-panel" className="login-demo-panel">
+                  <ul className="login-demo-list">
+                    {SEED_ACCOUNTS.map((account) => (
+                      <LoginDemoCard
+                        key={account.id}
+                        login={account.login}
+                        role={ROLE_LABEL[account.role]}
+                      />
+                    ))}
+                  </ul>
+                  <p className="login-demo-pass">
+                    Пароль: <span className="login-mono">{DEMO_PASSWORD}</span>
+                  </p>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
         </LoginTilt>
       </main>
     </div>
+  );
+}
+
+function AuthModeTabs(props: {
+  mode: AuthMode;
+  disabled?: boolean;
+  onChange: (mode: AuthMode) => void;
+}) {
+  return (
+    <div className={`login-auth-tabs is-${props.mode}`} role="tablist" aria-label="Режим авторизации">
+      <span className="login-auth-tab-pill" aria-hidden="true" />
+      <AuthModeTab
+        selected={props.mode === 'login'}
+        disabled={props.disabled}
+        onSelect={() => props.onChange('login')}
+      >
+        Вход
+      </AuthModeTab>
+      <AuthModeTab
+        selected={props.mode === 'register'}
+        disabled={props.disabled}
+        onSelect={() => props.onChange('register')}
+      >
+        Создать аккаунт
+      </AuthModeTab>
+    </div>
+  );
+}
+
+function AuthModeTab(props: {
+  selected: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+  children: ReactNode;
+}) {
+  const tilt = useLoginSurfaceTilt<HTMLButtonElement>('tab', { x: 5.4, y: 6 });
+
+  return (
+    <button
+      ref={tilt.ref}
+      type="button"
+      role="tab"
+      aria-selected={props.selected}
+      disabled={props.disabled}
+      className={`login-auth-tab${props.selected ? ' is-active' : ''}`}
+      onPointerDown={(event) => {
+        if (props.disabled || event.button !== 0) {
+          return;
+        }
+        playLoginPressFeedback(tilt.ref.current, 'soft');
+      }}
+      onClick={() => {
+        if (!props.disabled) {
+          props.onSelect();
+        }
+      }}
+      onPointerMove={tilt.onPointerMove}
+      onPointerLeave={tilt.onPointerLeave}
+      onPointerCancel={tilt.onPointerLeave}
+    >
+      {props.children}
+    </button>
+  );
+}
+
+function RegisterSuccess() {
+  return (
+    <div className="login-success" role="status" aria-live="polite">
+      <span className="login-success-mark" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <path
+            d="M5 11.4l4 4.1L17 7.2"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+      <h1 id="login-auth-title" className="login-success-title">
+        Аккаунт успешно создан
+      </h1>
+      <p className="login-success-sub">Теперь вы можете войти в систему.</p>
+    </div>
+  );
+}
+
+function RegisterForm(props: {
+  error?: string;
+  fieldErrors?: FieldErrors;
+  pending: boolean;
+  errorId: string;
+  onSubmit: (input: RegistrationInput) => Promise<void>;
+}) {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [middleName, setMiddleName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [avatar, setAvatar] = useState<AccountAvatar | null>(null);
+  const [localError, setLocalError] = useState<string>();
+  const errors = props.fieldErrors;
+
+  return (
+    <form
+      className="login-form login-form-register"
+      onSubmit={(event) => {
+        event.preventDefault();
+        setLocalError(undefined);
+        void props.onSubmit({
+          firstName,
+          lastName,
+          middleName,
+          email,
+          password,
+          passwordConfirm,
+          avatar,
+        });
+      }}
+    >
+      <div className="login-name-row">
+        <AuthField
+          id="register-first-name"
+          label="Имя"
+          value={firstName}
+          autoComplete="given-name"
+          error={errors?.firstName}
+          onChange={setFirstName}
+        />
+        <AuthField
+          id="register-last-name"
+          label="Фамилия"
+          value={lastName}
+          autoComplete="family-name"
+          error={errors?.lastName}
+          onChange={setLastName}
+        />
+        <AuthField
+          id="register-middle-name"
+          label="Отчество"
+          value={middleName}
+          autoComplete="additional-name"
+          optional
+          error={errors?.middleName}
+          onChange={setMiddleName}
+        />
+      </div>
+      <AuthField
+        id="register-email"
+        label="Электронная почта"
+        value={email}
+        autoComplete="email"
+        inputMode="email"
+        error={errors?.email}
+        onChange={setEmail}
+      />
+      <div className="login-password-row">
+        <AuthField
+          id="register-password"
+          label="Пароль"
+          value={password}
+          type="password"
+          autoComplete="new-password"
+          error={errors?.password}
+          onChange={setPassword}
+        />
+        <AuthField
+          id="register-password-confirm"
+          label="Повторите пароль"
+          value={passwordConfirm}
+          type="password"
+          autoComplete="new-password"
+          error={errors?.passwordConfirm}
+          onChange={setPasswordConfirm}
+        />
+      </div>
+      <AvatarPicker
+        value={avatar}
+        error={errors?.avatar ?? localError}
+        onChange={(next) => {
+          setLocalError(undefined);
+          setAvatar(next);
+        }}
+        onError={setLocalError}
+      />
+      {props.error ? (
+        <p id={props.errorId} className="login-error" role="alert">
+          {props.error}
+        </p>
+      ) : null}
+      <LoginSubmit
+        label={props.pending ? 'Создаём аккаунт...' : 'Создать аккаунт'}
+        disabled={props.pending}
+        busy={props.pending}
+      />
+    </form>
+  );
+}
+
+function AuthField(props: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  autoComplete?: string;
+  inputMode?: 'email' | 'text';
+  optional?: boolean;
+  error?: string;
+}) {
+  const errorId = `${props.id}-error`;
+  return (
+    <label className="login-field" htmlFor={props.id}>
+      <span>
+        {props.label}
+        {props.optional ? <em>необязательно</em> : null}
+      </span>
+      <input
+        id={props.id}
+        name={props.id}
+        type={props.type ?? 'text'}
+        autoComplete={props.autoComplete}
+        inputMode={props.inputMode}
+        autoCapitalize={props.type === 'password' || props.inputMode === 'email' ? 'none' : 'words'}
+        autoCorrect="off"
+        spellCheck={false}
+        value={props.value}
+        aria-invalid={props.error ? true : undefined}
+        aria-describedby={props.error ? errorId : undefined}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+      {props.error ? (
+        <p id={errorId} className="login-field-error">
+          {props.error}
+        </p>
+      ) : null}
+    </label>
+  );
+}
+
+function AvatarPicker(props: {
+  value: AccountAvatar | null;
+  error?: string;
+  onChange: (value: AccountAvatar) => void;
+  onError: (message: string) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const uploadPreview = props.value?.kind === 'upload' ? props.value.dataUrl : undefined;
+
+  async function onFile(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+    try {
+      const dataUrl = await compressProfileImage(file);
+      props.onChange({ kind: 'upload', dataUrl });
+    } catch (error) {
+      props.onError(error instanceof Error ? error.message : 'Не удалось загрузить изображение.');
+      if (fileRef.current) {
+        fileRef.current.value = '';
+      }
+    }
+  }
+
+  return (
+    <fieldset className="login-avatar-field">
+      <legend>Фото профиля</legend>
+      <div className="login-avatar-grid">
+        <div className="login-avatar-group" aria-label="Женские аватары">
+          {FEMALE_AVATAR_IDS.map((id) => (
+            <AvatarOption
+              key={id}
+              selected={props.value?.kind === 'builtin' && props.value.id === id}
+              src={BUILTIN_AVATARS[id]}
+              label={`Аватар ${id.slice(-2)}`}
+              onSelect={() => props.onChange({ kind: 'builtin', id })}
+            />
+          ))}
+        </div>
+        <AvatarUpload
+          preview={uploadPreview}
+          active={props.value?.kind === 'upload'}
+          fileRef={fileRef}
+          onFile={(file) => {
+            void onFile(file);
+          }}
+        />
+        <div className="login-avatar-group" aria-label="Мужские аватары">
+          {MALE_AVATAR_IDS.map((id) => (
+            <AvatarOption
+              key={id}
+              selected={props.value?.kind === 'builtin' && props.value.id === id}
+              src={BUILTIN_AVATARS[id]}
+              label={`Аватар ${id.slice(-2)}`}
+              onSelect={() => props.onChange({ kind: 'builtin', id })}
+            />
+          ))}
+        </div>
+      </div>
+      {props.error ? <p className="login-field-error">{props.error}</p> : null}
+    </fieldset>
+  );
+}
+
+function AvatarUpload(props: {
+  preview?: string;
+  active: boolean;
+  fileRef: { current: HTMLInputElement | null };
+  onFile: (file: File | undefined) => void;
+}) {
+  const tilt = useLoginSurfaceTilt<HTMLLabelElement>('avatar', { x: 7.2, y: 7.8 });
+
+  return (
+    <label
+      ref={tilt.ref}
+      className={`login-avatar-upload${props.active ? ' is-active' : ''}`}
+      aria-label="Загрузить фото"
+      onPointerMove={tilt.onPointerMove}
+      onPointerLeave={tilt.onPointerLeave}
+      onPointerCancel={tilt.onPointerLeave}
+    >
+      <input
+        ref={props.fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        onChange={(event) => props.onFile(event.target.files?.[0])}
+      />
+      <span className="login-avatar-upload-mark" aria-hidden="true">
+        {props.preview ? (
+          <img src={props.preview} alt="" />
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M8 2.6v10.8M2.6 8h10.8"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+            />
+          </svg>
+        )}
+      </span>
+      <span className="login-avatar-upload-label">Загрузить</span>
+    </label>
+  );
+}
+
+function AvatarOption(props: {
+  selected: boolean;
+  src: string;
+  label: string;
+  onSelect: () => void;
+}) {
+  const tilt = useLoginSurfaceTilt<HTMLButtonElement>('avatar', { x: 7.2, y: 7.8 });
+
+  return (
+    <button
+      ref={tilt.ref}
+      type="button"
+      className={`login-avatar-option${props.selected ? ' is-active' : ''}`}
+      aria-pressed={props.selected}
+      aria-label={props.label}
+      onPointerDown={(event) => {
+        if (event.button === 0) {
+          playLoginPressFeedback(tilt.ref.current, 'soft');
+        }
+      }}
+      onClick={props.onSelect}
+      onPointerMove={tilt.onPointerMove}
+      onPointerLeave={tilt.onPointerLeave}
+      onPointerCancel={tilt.onPointerLeave}
+    >
+      <img src={props.src} alt="" />
+      {props.selected ? (
+        <span className="login-avatar-check" aria-hidden="true">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <path
+              d="M2 5.2l2.1 2.1L8.2 3"
+              stroke="#fff"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      ) : null}
+    </button>
   );
 }
 
@@ -273,7 +773,7 @@ function SceneServiceIcon(props: { name: (typeof SCENE_SERVICES)[number]['icon']
   );
 }
 
-function LoginSubmit() {
+function LoginSubmit(props: { label: string; disabled?: boolean; busy?: boolean }) {
   const ref = useRef<HTMLButtonElement>(null);
   const reducedRef = useRef(false);
   const hoverRef = useRef(false);
@@ -369,25 +869,30 @@ function LoginSubmit() {
     <button
       ref={ref}
       type="submit"
-      className="login-submit"
+      className={`login-submit${props.busy ? ' is-busy' : ''}`}
+      disabled={props.disabled}
+      aria-busy={props.busy ? true : undefined}
       onPointerDown={(event) => {
-        if (event.button === 0) {
+        if (event.button === 0 && !props.disabled) {
           playLoginPressFeedback(ref.current, 'strong');
         }
       }}
       onClick={() => {
-        playLoginPressFeedback(ref.current, 'strong');
+        if (!props.disabled) {
+          playLoginPressFeedback(ref.current, 'strong');
+        }
       }}
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
       onPointerCancel={onPointerLeave}
     >
-      Войти
+      {props.busy ? <span className="login-submit-spinner" aria-hidden="true" /> : null}
+      <span>{props.label}</span>
     </button>
   );
 }
 
-function LoginTilt(props: { labelledBy: string; children: ReactNode }) {
+function LoginTilt(props: { labelledBy: string; className?: string; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const reducedRef = useRef(false);
   const hoverRef = useRef(false);
@@ -482,7 +987,7 @@ function LoginTilt(props: { labelledBy: string; children: ReactNode }) {
   return (
     <div
       ref={ref}
-      className="login-shell"
+      className={props.className ? `login-shell ${props.className}` : 'login-shell'}
       aria-labelledby={props.labelledBy}
       onPointerMove={onPointerMove}
       onPointerLeave={onPointerLeave}
@@ -497,8 +1002,14 @@ function clamp(value: number) {
   return Math.min(1, Math.max(0, value));
 }
 
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
 function useLoginSurfaceTilt<T extends HTMLElement>(
-  prefix: 'row' | 'card' | 'chip' | 'demo',
+  prefix: 'row' | 'card' | 'chip' | 'demo' | 'avatar' | 'tab',
   rotation: { x: number; y: number },
 ) {
   const ref = useRef<T>(null);

@@ -176,7 +176,7 @@ async function playTtsResponse(response: Response, token: number): Promise<void>
 
 async function playStream(body: ReadableStream<Uint8Array>, token: number): Promise<void> {
   const reader = body.getReader();
-  let buffer = new Uint8Array(0);
+  let buffer: Uint8Array = new Uint8Array(0);
   const plays: Promise<void>[] = [];
   try {
     while (token === playToken) {
@@ -222,7 +222,7 @@ async function decodeChunk(chunk: Uint8Array, token: number): Promise<AudioBuffe
       await ctx.resume();
     }
     const copy = chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength);
-    return await ctx.decodeAudioData(copy);
+    return await ctx.decodeAudioData(copy as ArrayBuffer);
   } catch {
     return undefined;
   }

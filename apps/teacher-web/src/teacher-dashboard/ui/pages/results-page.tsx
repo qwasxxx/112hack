@@ -1,7 +1,17 @@
-import { useMemo, useState } from 'react';
-import type { AuditRecord, CompletedResult, TrainingGroup } from '../../domain/entities';
+import { useMemo, useState, type ReactNode } from 'react';
+import type {
+  AuditRecord,
+  CompletedResult,
+  DashboardSnapshot,
+  TrainingGroup,
+} from '../../domain/entities';
 import { formatDateTime, formatDuration } from '../../domain/value-objects';
 import { StatusBadge } from '../components/common';
+import {
+  TeacherAnalyticsPanels,
+  TeacherSystemStatuses,
+} from '../components/teacher-analytics-panels';
+import { TeacherFilterBar, TeacherFilterMenu } from '../components/teacher-filter-menu';
 
 function ResultDetail({
   result,
@@ -177,13 +187,17 @@ function ResultDetail({
 export function ResultsPage({
   results,
   groups,
+  snapshot,
   audit,
+  systemStatus,
   onSaveComment,
   onAdjustScore,
 }: {
   results: CompletedResult[];
   groups: TrainingGroup[];
+  snapshot: DashboardSnapshot;
   audit: AuditRecord[];
+  systemStatus: ReactNode;
   onSaveComment: (id: string, value: string) => Promise<void>;
   onAdjustScore: (id: string, score: number, reason: string) => Promise<void>;
 }) {
@@ -193,6 +207,7 @@ export function ResultsPage({
   const [scenario, setScenario] = useState('');
   const [period, setPeriod] = useState('all');
   const [outcome, setOutcome] = useState('');
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const visible = useMemo(
     () =>
       results.filter(
@@ -218,56 +233,74 @@ export function ResultsPage({
           {Math.round(results.reduce((sum, item) => sum + item.finalScore, 0) / results.length)}%
         </StatusBadge>
       </header>
-      <section className="td-filters" aria-label="Фильтры результатов">
-        <label>
-          Группа
-          <select value={group} onChange={(e) => setGroup(e.target.value)}>
-            <option value="">Все</option>
-            {groups.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Обучающийся
-          <select value={student} onChange={(e) => setStudent(e.target.value)}>
-            <option value="">Все</option>
-            {results.map((item) => (
-              <option key={item.student.id} value={item.student.id}>
-                {item.student.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Сценарий
-          <select value={scenario} onChange={(e) => setScenario(e.target.value)}>
-            <option value="">Все</option>
-            {[...new Map(results.map((item) => [item.scenarioId, item])).values()].map((item) => (
-              <option key={item.scenarioId} value={item.scenarioId}>
-                {item.scenarioTitle}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Период
-          <select value={period} onChange={(e) => setPeriod(e.target.value)}>
-            <option value="all">Всё время</option>
-            <option value="week">Последние 7 дней</option>
-          </select>
-        </label>
-        <label>
-          Результат
-          <select value={outcome} onChange={(e) => setOutcome(e.target.value)}>
-            <option value="">Все</option>
-            <option value="true">Пройдено</option>
-            <option value="false">Не пройдено</option>
-          </select>
-        </label>
-      </section>
+      <TeacherFilterBar label="Фильтры результатов">
+        <TeacherFilterMenu
+          label="Группа"
+          icon="people"
+          value={group}
+          open={openMenu === 'group'}
+          onOpenChange={(open) => setOpenMenu(open ? 'group' : null)}
+          onChange={setGroup}
+          options={[
+            { value: '', label: 'Все' },
+            ...groups.map((item) => ({ value: item.id, label: item.name })),
+          ]}
+        />
+        <TeacherFilterMenu
+          label="Обучающийся"
+          icon="people"
+          value={student}
+          open={openMenu === 'student'}
+          onOpenChange={(open) => setOpenMenu(open ? 'student' : null)}
+          onChange={setStudent}
+          options={[
+            { value: '', label: 'Все' },
+            ...[...new Map(results.map((item) => [item.student.id, item.student])).values()].map(
+              (item) => ({ value: item.id, label: item.name }),
+            ),
+          ]}
+        />
+        <TeacherFilterMenu
+          label="Сценарий"
+          icon="book"
+          value={scenario}
+          open={openMenu === 'scenario'}
+          onOpenChange={(open) => setOpenMenu(open ? 'scenario' : null)}
+          onChange={setScenario}
+          options={[
+            { value: '', label: 'Все' },
+            ...[...new Map(results.map((item) => [item.scenarioId, item])).values()].map((item) => ({
+              value: item.scenarioId,
+              label: item.scenarioTitle,
+            })),
+          ]}
+        />
+        <TeacherFilterMenu
+          label="Период"
+          icon="clock"
+          value={period}
+          open={openMenu === 'period'}
+          onOpenChange={(open) => setOpenMenu(open ? 'period' : null)}
+          onChange={setPeriod}
+          options={[
+            { value: 'all', label: 'Всё время' },
+            { value: 'week', label: 'Последние 7 дней' },
+          ]}
+        />
+        <TeacherFilterMenu
+          label="Результат"
+          icon="shield"
+          value={outcome}
+          open={openMenu === 'outcome'}
+          onOpenChange={(open) => setOpenMenu(open ? 'outcome' : null)}
+          onChange={setOutcome}
+          options={[
+            { value: '', label: 'Все' },
+            { value: 'true', label: 'Пройдено' },
+            { value: 'false', label: 'Не пройдено' },
+          ]}
+        />
+      </TeacherFilterBar>
       {selected && (
         <ResultDetail
           result={selected}
@@ -324,6 +357,8 @@ export function ResultsPage({
           </table>
         </div>
       </section>
+      <TeacherAnalyticsPanels snapshot={snapshot} results={visible} />
+      <TeacherSystemStatuses>{systemStatus}</TeacherSystemStatuses>
     </div>
   );
 }

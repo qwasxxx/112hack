@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node scripts/regression-training-accept.mjs",
+    "test": "node scripts/regression-training-accept.mjs && node scripts/regression-admin-contour.mjs",
     "lint": "echo \"lint: student-web skipped\"",
     "classifier:generate": "python3 scripts/generate-classifier-runtime.py",
     "classifier:verify": "node scripts/verify-classifier-runtime.mjs"

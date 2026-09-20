@@ -1,13 +1,15 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { InterventionType } from '@sys112/shared-types';
 import sidebarBase from '../../../../student-web/src/assets/catalog/catalog-sidebar-base.webp';
 import { useTeacherDashboard } from '../application/hooks/use-teacher-dashboard';
 import { MockTeacherDashboardRepository } from '../infrastructure/mock/mock-teacher-dashboard-repository';
+import { TeacherSystemStatuses } from './components/teacher-analytics-panels';
 import { ActivePage } from './pages/active-page';
 import { ObservationPage } from './pages/observation-page';
 import { OverviewPage } from './pages/overview-page';
 import { ResultsPage } from './pages/results-page';
 import { ScenariosPage } from './pages/scenarios-page';
+import { bindTeacherDashboardTilt, playTeacherPress, useTeacherTilt } from './teacher-tilt';
 
 type Section = 'overview' | 'active' | 'scenarios' | 'results';
 type ConnectionStatus = 'ok' | 'bad' | 'pending';
@@ -46,6 +48,32 @@ export function TeacherDashboard({
   const [observedId, setObservedId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [overlayNav, setOverlayNav] = useState(false);
+  const contentRef = useRef<HTMLElement>(null);
+  const collapseTilt = useTeacherTilt<HTMLButtonElement>({ x: 3.8, y: 4.2 }, 'button');
+  const collapsePress = useRef(0);
+
+  useLayoutEffect(
+    () => bindTeacherDashboardTilt(contentRef.current),
+    [section, observedId, state.snapshot],
+  );
+  useEffect(() => () => cancelAnimationFrame(collapsePress.current), []);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)');
+    const sync = () => setOverlayNav(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
+
+  const navOpen = overlayNav ? menuOpen : !sidebarCollapsed;
+  const toggleSidebar = () => {
+    if (overlayNav) {
+      setMenuOpen((value) => !value);
+      return;
+    }
+    setSidebarCollapsed((value) => !value);
+  };
   const observe = (id: string) => {
     setObservedId(id);
     setSection('active');
@@ -87,6 +115,27 @@ export function TeacherDashboard({
               <strong>SYS112</strong>
               <small>Учебный центр</small>
             </div>
+            <button
+              ref={collapseTilt.ref}
+              type="button"
+              className="td-collapse td-tilt td-tilt--button"
+              onClick={() => {
+                playTeacherPress(collapseTilt.ref.current, collapsePress);
+                toggleSidebar();
+              }}
+              onPointerDown={(event) => {
+                if (event.button === 0) {
+                  playTeacherPress(collapseTilt.ref.current, collapsePress);
+                }
+              }}
+              onPointerMove={collapseTilt.onPointerMove}
+              onPointerLeave={collapseTilt.onPointerLeave}
+              onPointerCancel={collapseTilt.onPointerLeave}
+              aria-label={navOpen ? 'Свернуть навигацию' : 'Развернуть навигацию'}
+              aria-expanded={navOpen}
+            >
+              <TeacherNavGlyph name={navOpen ? 'collapse' : 'expand'} />
+            </button>
           </div>
           <nav aria-label="Разделы преподавательской панели">
             {navigation.map((item) => (
@@ -111,15 +160,6 @@ export function TeacherDashboard({
             <img src={sidebarBase} alt="" />
           </div>
         </aside>
-        <button
-          type="button"
-          className="td-collapse"
-          onClick={() => setSidebarCollapsed((value) => !value)}
-          aria-label={sidebarCollapsed ? 'Развернуть навигацию' : 'Свернуть навигацию'}
-          aria-expanded={!sidebarCollapsed}
-        >
-          {sidebarCollapsed ? '›' : '‹'}
-        </button>
       </div>
       {menuOpen && (
         <button
@@ -172,7 +212,7 @@ export function TeacherDashboard({
             )}
           </div>
         </header>
-        <main className="td-content">
+        <main ref={contentRef} className="td-content">
           {observed ? (
             <ObservationPage
               session={observed}
@@ -188,13 +228,7 @@ export function TeacherDashboard({
                 results={state.results}
                 onObserve={observe}
               />
-              <section className="td-panel td-legacy-status">
-                <div>
-                  <h3>Системные статусы</h3>
-                  <span className="td-help">Исходные индикаторы teacher-приложения</span>
-                </div>
-                {legacyStatus}
-              </section>
+              <TeacherSystemStatuses>{legacyStatus}</TeacherSystemStatuses>
               {examPanel}
             </>
           ) : section === 'active' ? (
@@ -214,7 +248,9 @@ export function TeacherDashboard({
             <ResultsPage
               results={state.results}
               groups={state.snapshot.groups}
+              snapshot={state.snapshot}
               audit={state.audit}
+              systemStatus={legacyStatus}
               onSaveComment={saveComment}
               onAdjustScore={adjustScore}
             />
@@ -227,5 +263,29 @@ export function TeacherDashboard({
         </div>
       )}
     </div>
+  );
+}
+
+function TeacherNavGlyph(props: { name: 'collapse' | 'expand' }) {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      {props.name === 'collapse' ? (
+        <path
+          d="M14.6 5.2 9.2 12l5.4 6.8"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      ) : (
+        <path
+          d="M9.4 5.2 14.8 12l-5.4 6.8"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
+    </svg>
   );
 }

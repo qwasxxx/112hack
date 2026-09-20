@@ -29,7 +29,14 @@
   overflow: hidden;
   background: var(--catalog-canvas);
   color: var(--catalog-ink);
-  font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  font-family:
+    'Segoe UI Variable Text',
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    Arial,
+    sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -189,12 +196,17 @@
 }
 
 .catalog-sidebar-art::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: linear-gradient(180deg, var(--catalog-sidebar) 0%, rgba(22, 35, 58, 0.22) 10%, transparent 28%);
+  background: linear-gradient(
+    180deg,
+    var(--catalog-sidebar) 0%,
+    rgba(22, 35, 58, 0.22) 10%,
+    transparent 28%
+  );
 }
 
 .catalog-screen.is-sidebar-collapsed .catalog-sidebar-brand {
@@ -389,7 +401,7 @@
 .catalog-user .operator-role::before,
 .catalog-user .operator > span:nth-child(2)::before,
 .catalog-user .operator .link::before {
-  content: "";
+  content: '';
   width: 15px;
   height: 15px;
   background: currentColor;
@@ -529,7 +541,7 @@
 }
 
 .catalog-highlight-group::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -707,7 +719,7 @@
 }
 
 .catalog-filter::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 2px;
   z-index: 0;
@@ -825,7 +837,7 @@
 }
 
 .catalog-found::before {
-  content: "";
+  content: '';
   display: block;
   width: 1px;
   height: 18px;
@@ -967,7 +979,7 @@
 }
 
 .catalog-tilt::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -1026,7 +1038,7 @@
   min-height: 42px;
   margin: 0;
   padding: 0 2px 0 4px;
-  font-family: Consolas, "Courier New", monospace;
+  font-family: Consolas, 'Courier New', monospace;
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.01em;
@@ -1072,9 +1084,45 @@
   color: #4d6a88;
 }
 
-.scenario-pictogram.is-child {
+.scenario-pictogram.is-child,
+.scenario-pictogram.is-search {
   background: #e4f3ec;
   color: #3d8a6d;
+}
+
+.scenario-pictogram.is-medical {
+  background: #f8e6e6;
+  color: #c45a48;
+}
+
+.scenario-pictogram.is-police {
+  background: #e4eaf4;
+  color: #4d6a88;
+}
+
+.scenario-pictogram.is-household {
+  background: #eeeae3;
+  color: #8a7354;
+}
+
+.scenario-pictogram.is-water {
+  background: #e2eef3;
+  color: #4d6a88;
+}
+
+.scenario-pictogram.is-threat {
+  background: #f4eee4;
+  color: #b07a3a;
+}
+
+.scenario-pictogram.is-theft {
+  background: #e6eaee;
+  color: #4d6a88;
+}
+
+.scenario-pictogram.is-gas {
+  background: #eef4e6;
+  color: #6a8a3d;
 }
 
 .scenario-title {
@@ -1205,7 +1253,7 @@
 }
 
 .scenario-action::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -1216,7 +1264,7 @@
 }
 
 .scenario-action.catalog-tilt::after {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   z-index: 0;

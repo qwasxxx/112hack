@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SERVICE_LABEL } from '../../data/scenarios';
 import type { TrainingScenario } from '../../data/scenarios';
 import { DdsCard } from './dds-card';
 import { DdsJournal } from './dds-journal';
-import { useDdsSession } from './use-dds-session';
+import { useDdsSession, type DdsCheckResult } from './use-dds-session';
 import './dds-training.css';
 
 type Props = {
   scenario: TrainingScenario;
   onLeave: () => void;
+  onCompleted?: (result: DdsCheckResult) => void;
 };
 
 const WEEKDAYS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
@@ -31,11 +32,20 @@ export function DdsTrainingPage(props: Props) {
   const session = useDdsSession(props.scenario);
   const [query, setQuery] = useState('');
   const [now, setNow] = useState(() => new Date());
+  const reported = useRef(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!session.result || reported.current) {
+      return;
+    }
+    reported.current = true;
+    props.onCompleted?.(session.result);
+  }, [props.onCompleted, session.result]);
 
   const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const weekday = `${WEEKDAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;

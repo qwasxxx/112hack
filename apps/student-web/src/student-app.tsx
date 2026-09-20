@@ -3,7 +3,9 @@ import type { Session } from './auth/accounts';
 import { AccountBar } from './auth/account-bar';
 import type { TrainingScenario } from './data/scenarios';
 import { Arm112TheoryPage, Arm112TrainingPage } from './features/arm112-simulator';
+import type { Arm112PracticalResult } from './features/arm112-simulator/model/training-result';
 import { DdsTrainingPage } from './features/dds-training';
+import type { DdsCheckResult } from './features/dds-training/use-dds-session';
 import { readLearnerTrack, writeLearnerTrack, type LearnerTrack } from './learner-track';
 import { lessonScreenFor, type LessonScreenName } from './lesson-routing';
 import { BriefingPage } from './pages/briefing-page';
@@ -19,6 +21,11 @@ type Screen =
 type Props = {
   operator: Session;
   onLogout: () => void;
+  onArmTrainingComplete?: (result: Arm112PracticalResult) => void;
+  onDdsTrainingComplete?: (
+    result: DdsCheckResult,
+    scenario: TrainingScenario,
+  ) => void;
 };
 
 export function StudentApp(props: Props) {
@@ -52,6 +59,11 @@ export function StudentApp(props: Props) {
       <DdsTrainingPage
         scenario={screen.scenario}
         onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
+        onCompleted={
+          props.onDdsTrainingComplete
+            ? (result) => props.onDdsTrainingComplete?.(result, screen.scenario)
+            : undefined
+        }
       />
     );
   }
@@ -71,6 +83,7 @@ export function StudentApp(props: Props) {
         scenario={screen.scenario}
         operatorName={props.operator.name}
         onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
+        onCompleted={props.onArmTrainingComplete}
       />
     );
   }

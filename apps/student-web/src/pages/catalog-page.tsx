@@ -4,12 +4,17 @@ import dispatchCenter from '../assets/catalog/catalog-dispatch-center.webp';
 import heroPhone from '../assets/catalog/catalog-hero-phone.webp';
 import heroPrep from '../assets/catalog/catalog-hero-prep.webp';
 import heroSkills from '../assets/catalog/catalog-hero-skills.webp';
-import iconChild from '../assets/catalog/catalog-icon-child.webp';
-import iconCrash from '../assets/catalog/catalog-icon-crash.webp';
-import iconFire from '../assets/catalog/catalog-icon-fire.webp';
 import sidebarBase from '../assets/catalog/catalog-sidebar-base.webp';
+import { pictogramVisualFor } from '../data/scenario-visuals';
 import { LEARNER_TRACK_LABEL, type LearnerTrack } from '../learner-track';
-import { SCENARIOS, DIFFICULTY_LABEL, DIFFICULTY_ORDER, SERVICE_LABEL, type ServiceKind, type TrainingScenario } from '../data/scenarios';
+import {
+  SCENARIOS,
+  DIFFICULTY_LABEL,
+  DIFFICULTY_ORDER,
+  SERVICE_LABEL,
+  type ServiceKind,
+  type TrainingScenario,
+} from '../data/scenarios';
 
 type Props = {
   accountBar: ReactNode;
@@ -29,7 +34,10 @@ const SERVICE_FILTERS: ServiceFilter[] = [
 
 const DIFFICULTY_FILTERS: DifficultyFilter[] = ['all', ...DIFFICULTY_ORDER];
 
-const HERO_POINTS: Record<LearnerTrack, Array<{ title: string; icon: 'phone' | 'people' | 'shield'; art: string }>> = {
+const HERO_POINTS: Record<
+  LearnerTrack,
+  Array<{ title: string; icon: 'phone' | 'people' | 'shield'; art: string }>
+> = {
   operator112: [
     { title: 'Звонок заявителя', icon: 'phone', art: heroPhone },
     { title: 'Заполнение карточки', icon: 'people', art: heroSkills },
@@ -409,7 +417,8 @@ function CatalogMenu(props: {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const pressFrame = useRef(0);
-  const selected = props.options.find((option) => option.value === props.value)?.label ?? props.label;
+  const selected =
+    props.options.find((option) => option.value === props.value)?.label ?? props.label;
   const selectedIndex = Math.max(
     0,
     props.options.findIndex((option) => option.value === props.value),
@@ -526,7 +535,7 @@ function ScenarioRow(props: {
     <li className="scenario-row">
       <div className="scenario-lead">
         <p className="scenario-code">{scenario.code}</p>
-        <ScenarioPictogram id={scenario.id} services={scenario.services} />
+        <ScenarioPictogram scenario={scenario} />
         <div className="scenario-copy">
           <strong className="scenario-title">{scenario.title}</strong>
           <p className="scenario-desc">{description}</p>
@@ -554,17 +563,11 @@ function ScenarioRow(props: {
   );
 }
 
-function ScenarioPictogram(props: { id: string; services: ServiceKind[] }) {
-  const kind =
-    props.services[0] === 'fire' || props.services[0] === 'gas'
-      ? 'fire'
-      : props.services[0] === 'ambulance'
-        ? 'crash'
-        : 'child';
-  const src = kind === 'fire' ? iconFire : kind === 'crash' ? iconCrash : iconChild;
+function ScenarioPictogram(props: { scenario: TrainingScenario }) {
+  const pictogram = pictogramVisualFor(props.scenario);
   return (
-    <span className={`scenario-pictogram is-${kind}`} aria-hidden="true">
-      <img src={src} alt="" />
+    <span className={`scenario-pictogram is-${pictogram.kind}`} aria-hidden="true">
+      <img src={pictogram.src} alt="" />
     </span>
   );
 }
@@ -580,30 +583,55 @@ function ServiceTag(props: { kind: ServiceKind }) {
 
 function ServiceMark(props: { kind: ServiceKind }) {
   return (
-    <svg className="scenario-service-mark" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+    <svg
+      className="scenario-service-mark"
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
       {props.kind === 'fire' ? (
         <>
           <path
             fill="currentColor"
             d="M8.1 1.1c.35 2.05 2.55 3.15 2.55 5.45 0 1.05-.4 1.9-1.05 2.5.85-.15 1.55-1.05 1.85-2.15.7 1.25.85 2.7.85 3.55A4.3 4.3 0 1 1 5.05 6.3C6.1 5.05 7.15 3.5 8.1 1.1z"
           />
-          <path fill="currentColor" opacity="0.42" d="M8 8.05c.85 0 1.45.7 1.45 1.7 0 1.2-.7 2.45-1.45 2.45S6.55 10.95 6.55 9.75c0-1 .6-1.7 1.45-1.7z" />
+          <path
+            fill="currentColor"
+            opacity="0.42"
+            d="M8 8.05c.85 0 1.45.7 1.45 1.7 0 1.2-.7 2.45-1.45 2.45S6.55 10.95 6.55 9.75c0-1 .6-1.7 1.45-1.7z"
+          />
         </>
       ) : null}
       {props.kind === 'ambulance' ? (
         <>
           <circle cx="8" cy="8" r="6.05" fill="none" stroke="currentColor" strokeWidth="1.55" />
-          <path fill="currentColor" d="M7.15 4.2h1.7v2.95h2.95v1.7H8.85v2.95h-1.7V8.85H4.2v-1.7h2.95z" />
+          <path
+            fill="currentColor"
+            d="M7.15 4.2h1.7v2.95h2.95v1.7H8.85v2.95h-1.7V8.85H4.2v-1.7h2.95z"
+          />
         </>
       ) : null}
       {props.kind === 'police' ? (
         <>
-          <path fill="currentColor" d="M8 1.35 13.15 3.2v3.45c0 3.05-2.2 5.45-5.15 6.7C5.05 12.1 2.85 9.7 2.85 6.65V3.2L8 1.35z" />
-          <path fill="none" stroke="#fff" strokeOpacity="0.35" strokeWidth="1.1" d="M8 3.15 11.55 4.35v2.45c0 2.05-1.5 3.65-3.55 4.5-2.05-.85-3.55-2.45-3.55-4.5V4.35L8 3.15z" />
+          <path
+            fill="currentColor"
+            d="M8 1.35 13.15 3.2v3.45c0 3.05-2.2 5.45-5.15 6.7C5.05 12.1 2.85 9.7 2.85 6.65V3.2L8 1.35z"
+          />
+          <path
+            fill="none"
+            stroke="#fff"
+            strokeOpacity="0.35"
+            strokeWidth="1.1"
+            d="M8 3.15 11.55 4.35v2.45c0 2.05-1.5 3.65-3.55 4.5-2.05-.85-3.55-2.45-3.55-4.5V4.35L8 3.15z"
+          />
         </>
       ) : null}
       {props.kind === 'gas' ? (
-        <path fill="currentColor" d="M8 1.4c2.15 2.25 3.45 3.9 3.45 5.85A3.45 3.45 0 1 1 4.55 7.25C4.55 5.3 5.85 3.65 8 1.4z" />
+        <path
+          fill="currentColor"
+          d="M8 1.4c2.15 2.25 3.45 3.9 3.45 5.85A3.45 3.45 0 1 1 4.55 7.25C4.55 5.3 5.85 3.65 8 1.4z"
+        />
       ) : null}
     </svg>
   );
@@ -667,7 +695,18 @@ function difficultyClass(level: TrainingScenario['difficulty']) {
 }
 
 function CatalogGlyph(props: {
-  name: 'collapse' | 'expand' | 'book' | 'layers' | 'bars' | 'gear' | 'search' | 'people' | 'clock' | 'phone' | 'shield';
+  name:
+    | 'collapse'
+    | 'expand'
+    | 'book'
+    | 'layers'
+    | 'bars'
+    | 'gear'
+    | 'search'
+    | 'people'
+    | 'clock'
+    | 'phone'
+    | 'shield';
 }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -705,7 +744,12 @@ function CatalogGlyph(props: {
         />
       ) : null}
       {props.name === 'bars' ? (
-        <path d="M5 19V10m7 9V5m7 14v-7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <path
+          d="M5 19V10m7 9V5m7 14v-7"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+        />
       ) : null}
       {props.name === 'gear' ? (
         <path
@@ -772,7 +816,10 @@ function applyTiltFrame(
   node.style.setProperty('--catalog-tilt-i', current.i.toFixed(3));
   const shadowGain = kind === 'button' ? 1.6 : kind === 'strong' ? 2.2 : kind === 'light' ? 1 : 1.6;
   node.style.setProperty('--catalog-tilt-sx', `${(-current.ry * shadowGain).toFixed(2)}px`);
-  node.style.setProperty('--catalog-tilt-sy', `${((kind === 'button' ? 6 : 8) + current.rx * 0.7).toFixed(2)}px`);
+  node.style.setProperty(
+    '--catalog-tilt-sy',
+    `${((kind === 'button' ? 6 : 8) + current.rx * 0.7).toFixed(2)}px`,
+  );
 }
 
 function bindElementTilt(
@@ -1036,7 +1083,10 @@ function useCatalogGroupTilt<T extends HTMLElement>(
   return { ref };
 }
 
-function useCatalogTilt<T extends HTMLElement>(rotation: { x: number; y: number }, kind: TiltKind = 'medium') {
+function useCatalogTilt<T extends HTMLElement>(
+  rotation: { x: number; y: number },
+  kind: TiltKind = 'medium',
+) {
   const ref = useRef<T>(null);
   const reducedRef = useRef(false);
   const hoverRef = useRef(false);

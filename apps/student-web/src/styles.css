@@ -107,6 +107,29 @@ h2 {
   align-items: flex-end;
 }
 
+.operator-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.operator-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #d5dce3;
+}
+
+.catalog-user .operator-avatar {
+  width: 18px;
+  height: 18px;
+}
+
+.catalog-user .operator > span.operator-name.has-avatar::before {
+  display: none;
+}
+
 .panel {
   background: var(--paper);
   border: 1px solid var(--line);

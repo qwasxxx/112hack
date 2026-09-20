@@ -3,6 +3,7 @@ import type { ActiveSession, TrainingGroup } from '../../domain/entities';
 import { calculateRisk } from '../../application/services/risk-radar';
 import { difficultyLabels, emotionLabels, formatDuration } from '../../domain/value-objects';
 import { EmptyState, StatusBadge } from '../components/common';
+import { TeacherFilterBar, TeacherFilterMenu, TeacherSearchField } from '../components/teacher-filter-menu';
 
 export function ActivePage({
   sessions,
@@ -17,6 +18,7 @@ export function ActivePage({
   const [group, setGroup] = useState('');
   const [scenario, setScenario] = useState('');
   const [status, setStatus] = useState('');
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const visible = useMemo(
     () =>
       [...sessions]
@@ -42,47 +44,55 @@ export function ActivePage({
         </div>
         <StatusBadge tone="good">{sessions.length} на линии</StatusBadge>
       </header>
-      <section className="td-filters" aria-label="Фильтры активных занятий">
-        <label>
-          Поиск
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Имя или сценарий"
-          />
-        </label>
-        <label>
-          Группа
-          <select value={group} onChange={(event) => setGroup(event.target.value)}>
-            <option value="">Все</option>
-            {groups.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Сценарий
-          <select value={scenario} onChange={(event) => setScenario(event.target.value)}>
-            <option value="">Все</option>
-            {[...new Map(sessions.map((item) => [item.scenarioId, item])).values()].map((item) => (
-              <option key={item.scenarioId} value={item.scenarioId}>
-                {item.scenarioTitle}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Статус
-          <select value={status} onChange={(event) => setStatus(event.target.value)}>
-            <option value="">Все</option>
-            <option value="live">В разговоре</option>
-            <option value="paused">Пауза</option>
-            <option value="finishing">Завершение</option>
-          </select>
-        </label>
-      </section>
+      <TeacherFilterBar label="Фильтры активных занятий">
+        <TeacherSearchField
+          label="Поиск"
+          value={query}
+          placeholder="Имя или сценарий"
+          onChange={setQuery}
+        />
+        <TeacherFilterMenu
+          label="Группа"
+          icon="people"
+          value={group}
+          open={openMenu === 'group'}
+          onOpenChange={(open) => setOpenMenu(open ? 'group' : null)}
+          onChange={setGroup}
+          options={[
+            { value: '', label: 'Все' },
+            ...groups.map((item) => ({ value: item.id, label: item.name })),
+          ]}
+        />
+        <TeacherFilterMenu
+          label="Сценарий"
+          icon="book"
+          value={scenario}
+          open={openMenu === 'scenario'}
+          onOpenChange={(open) => setOpenMenu(open ? 'scenario' : null)}
+          onChange={setScenario}
+          options={[
+            { value: '', label: 'Все' },
+            ...[...new Map(sessions.map((item) => [item.scenarioId, item])).values()].map((item) => ({
+              value: item.scenarioId,
+              label: item.scenarioTitle,
+            })),
+          ]}
+        />
+        <TeacherFilterMenu
+          label="Статус"
+          icon="bars"
+          value={status}
+          open={openMenu === 'status'}
+          onOpenChange={(open) => setOpenMenu(open ? 'status' : null)}
+          onChange={setStatus}
+          options={[
+            { value: '', label: 'Все' },
+            { value: 'live', label: 'В разговоре' },
+            { value: 'paused', label: 'Пауза' },
+            { value: 'finishing', label: 'Завершение' },
+          ]}
+        />
+      </TeacherFilterBar>
       {visible.length === 0 ? (
         <EmptyState>По выбранным фильтрам сессий нет.</EmptyState>
       ) : (

@@ -10,7 +10,12 @@ export function AccountBar(props: Props) {
   return (
     <div className="operator">
       <span className="operator-role">{ROLE_LABEL[props.user.role]}</span>
-      <span>{props.user.name}</span>
+      <span className={props.user.avatarUrl ? 'operator-name has-avatar' : 'operator-name'}>
+        {props.user.avatarUrl ? (
+          <img className="operator-avatar" src={props.user.avatarUrl} alt="" />
+        ) : null}
+        {props.user.name}
+      </span>
       <button type="button" className="link" onClick={props.onLogout}>
         Выйти
       </button>

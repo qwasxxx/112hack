@@ -1,10 +1,8 @@
 import { useEffect, type ReactNode } from 'react';
-import heroFire from '../assets/briefing/briefing-fire-apartment.webp';
-import heroCrash from '../assets/briefing/briefing-traffic-accident.webp';
-import heroChild from '../assets/briefing/briefing-missing-child.webp';
 import iconDescription from '../assets/briefing/briefing-icon-description.png';
 import iconGoals from '../assets/briefing/briefing-icon-goals.png';
 import { buildLessonSystemPrompt } from '../data/ags-tickets';
+import { heroVisualFor } from '../data/scenario-visuals';
 import {
   DIFFICULTY_LABEL,
   LESSON_SECTIONS,
@@ -29,13 +27,6 @@ type Props = {
 
 type LessonIcon = LessonSection | 'dds';
 
-const HERO_BY_SERVICE: Record<string, { src: string; position: string }> = {
-  fire: { src: heroFire, position: '84% 40%' },
-  gas: { src: heroFire, position: '84% 40%' },
-  ambulance: { src: heroCrash, position: '82% 48%' },
-  police: { src: heroChild, position: '80% 46%' },
-};
-
 const COLLECT = [
   'Где это происходит — адрес или понятный ориентир',
   'Что происходит прямо сейчас',
@@ -51,15 +42,11 @@ const DDS_COLLECT = [
   'Выбрать службы, которым нужна эта карточка, и направить',
 ];
 
-function heroFor(scenario: TrainingScenario) {
-  return HERO_BY_SERVICE[scenario.services[0]] ?? { src: heroFire, position: '78% 42%' };
-}
-
 const GROUP_TILT = { x: 4.2, y: 4.8 } as const;
 
 export function BriefingPage(props: Props) {
   const scenario = props.scenario;
-  const hero = heroFor(scenario);
+  const hero = heroVisualFor(scenario);
   const isDds = props.track === 'dds';
 
   useEffect(() => {
