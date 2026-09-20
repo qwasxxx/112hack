@@ -30,12 +30,20 @@ export function unlockTtsAudio(): void {
   }
 }
 
-export async function playTtsAudio(text: string, conversationRole?: string): Promise<void> {
+export type TtsVoiceHint = {
+  speaker?: string;
+  pitch?: string;
+  speed?: number;
+  emotion?: string;
+  gender?: string;
+};
+
+export async function playTtsAudio(text: string, conversationRole?: string, voice?: TtsVoiceHint): Promise<void> {
   stopTtsAudio();
-  return enqueueTtsAudio(text, conversationRole);
+  return enqueueTtsAudio(text, conversationRole, voice);
 }
 
-export function enqueueTtsAudio(text: string, conversationRole?: string): Promise<void> {
+export function enqueueTtsAudio(text: string, conversationRole?: string, voice?: TtsVoiceHint): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) {
     return Promise.resolve();
@@ -46,7 +54,7 @@ export function enqueueTtsAudio(text: string, conversationRole?: string): Promis
   const abort = new AbortController();
   abortControllers.add(abort);
   currentAbort = abort;
-  const pending = fetchTtsResponse(trimmed, role, token, abort);
+  const pending = fetchTtsResponse(trimmed, role, token, abort, voice);
   const done = playChain.then(async () => {
     try {
       if (token !== playToken) {
@@ -136,17 +144,23 @@ async function fetchTtsResponse(
   voiceId: string,
   token: number,
   abort: AbortController,
+  voice?: TtsVoiceHint,
 ): Promise<Response | undefined> {
+  const operator = voiceId === 'operator';
   try {
     const response = await fetch(ttsUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text,
-        role: voiceId === 'operator' ? 'operator' : 'victim',
-        emotion: voiceId === 'operator' ? 'calm' : 'panic',
-        conversation_role: voiceId === 'operator' ? 'operator' : 'victim',
-        voice_id: voiceId === 'operator' ? 'operator_calm' : 'victim_panic',
+        role: operator ? 'operator' : 'victim',
+        emotion: operator ? 'calm' : voice?.emotion || 'panic',
+        conversation_role: operator ? 'operator' : 'victim',
+        voice_id: operator ? 'operator_calm' : voice?.speaker || 'victim_panic',
+        speaker: operator ? 'aidar' : voice?.speaker,
+        gender: operator ? 'male' : voice?.gender,
+        pitch: operator ? 'medium' : voice?.pitch,
+        speed: operator ? 1 : voice?.speed,
       }),
       signal: abort.signal,
     });

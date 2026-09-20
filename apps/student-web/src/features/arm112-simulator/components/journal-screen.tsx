@@ -43,6 +43,8 @@ const SAMPLE_ROWS = [
 type Props = {
   telephonyStatus: TelephonyStatus;
   incoming: boolean;
+  incomingKind?: 'call' | 'sms';
+  incomingPreview?: string;
   incomingNumber: string;
   onAcceptCall: () => void;
   onDismissIncoming: () => void;
@@ -211,6 +213,8 @@ export function JournalScreen(props: Props) {
         >
           <IncomingCallOverlay
             number={props.incomingNumber}
+            kind={props.incomingKind}
+            preview={props.incomingPreview}
             onAccept={props.onAcceptCall}
             onDismiss={props.onDismissIncoming}
           />

@@ -23,9 +23,9 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 async def lifespan(_app: FastAPI):
     try:
         engine.load()
-        logger.info("[TTS] Silero v5_5_ru engine ready")
+        logger.info("[TTS] %s engine ready", engine.backend)
     except Exception:
-        logger.exception("[TTS] Silero load failed")
+        logger.exception("[TTS] engine load failed")
         engine.status = "not_ready"
     yield
 
@@ -48,6 +48,9 @@ class SynthesizeRequest(BaseModel):
     ambient_type: str | None = None
     random_sfx: bool = False
     gender: str | None = None
+    speaker: str | None = None
+    pitch: str | None = None
+    speed: float | None = None
     play: bool = False
 
 
@@ -63,7 +66,8 @@ def _frame(chunk: bytes) -> bytes:
 @app.post("/api/v1/tts/synthesize")
 async def synthesize(body: SynthesizeRequest) -> StreamingResponse:
     started = time.perf_counter()
-    role = resolve_role(body.role, body.conversation_role, body.voice_id)
+    voice_id = body.speaker or body.voice_id
+    role = resolve_role(body.role, body.conversation_role, voice_id)
     try:
         first = await asyncio.to_thread(
             engine.synthesize_role,
@@ -71,8 +75,10 @@ async def synthesize(body: SynthesizeRequest) -> StreamingResponse:
             role,
             body.play,
             body.emotion,
-            body.voice_id,
+            voice_id,
             body.gender,
+            body.pitch,
+            body.speed,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -1,4 +1,5 @@
 import type { TrainingScenario } from '../../../data/scenarios';
+import { incomingNumberFor } from '../../../progress/ticket-facts';
 import { classifierRuntime, matchRecords, type ClassifierFilter } from './classifier-runtime';
 
 /**
@@ -24,8 +25,7 @@ export type TrainingBinding = {
   };
 };
 
-const INCOMING_NUMBER = '+7 (499) 550-34-56';
-const INCOMING_SOURCE = 'Инструкция_по_заведению_карточки Рисунок 3 / image4 «с номера +7 (499) 550-34-56»';
+const INCOMING_SOURCE = 'Номер заявителя из билета; запасной макет АОН +7 (499) 550-34-56';
 
 function rowByNumber(number: string) {
   const record = classifierRuntime.records.find((item) => String(item.n) === number);
@@ -51,7 +51,7 @@ export function trainingBindingFor(scenario: TrainingScenario): TrainingBinding 
   return {
     scenarioId: scenario.id,
     scenarioCode: scenario.code,
-    incomingNumber: INCOMING_NUMBER,
+    incomingNumber: incomingNumberFor(scenario),
     incomingNumberSource: INCOMING_SOURCE,
     callerOpening: scenario.callerOpening,
     summary: scenario.summary,

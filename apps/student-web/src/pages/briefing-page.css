@@ -548,7 +548,8 @@
 
 .briefing-lesson.is-disabled .briefing-lesson-title,
 .briefing-lesson.is-disabled .briefing-lesson-role,
-.briefing-lesson.is-disabled .briefing-lesson-index {
+.briefing-lesson.is-disabled .briefing-lesson-index,
+.briefing-lesson.is-disabled .briefing-lesson-lead {
   color: #7d8a97;
 }
 
@@ -559,6 +560,16 @@
   font-weight: 750;
   letter-spacing: -0.03em;
   line-height: 1.2;
+}
+
+.briefing-lesson-lead {
+  display: block;
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+  color: #5c6b78;
 }
 
 .briefing-start,

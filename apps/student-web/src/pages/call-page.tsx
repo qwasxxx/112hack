@@ -6,6 +6,7 @@ import { createLlmStream } from '../lib/llm-stream';
 import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
 import { enqueueTtsAudio, stopTtsAudio, takeSpeechChunks, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
+import type { TranscriptTurn } from '../progress';
 
 type Line = {
   id: string;
@@ -13,6 +14,7 @@ type Line = {
   text: string;
   live?: boolean;
   source?: 'stt' | 'llm' | 'typed';
+  at: number;
 };
 
 type CallState = 'idle' | 'connecting' | 'listening' | 'analyzing' | 'error' | 'ended';
@@ -23,6 +25,7 @@ type Props = {
   onLeave: () => void;
   variant?: 'page' | 'panel';
   autoStart?: boolean;
+  onCallEnded?: (payload: { lines: TranscriptTurn[]; seconds: number }) => void;
 };
 
 export function CallPage(props: Props) {
@@ -37,8 +40,8 @@ export function CallPage(props: Props) {
   const [recording, setRecording] = useState(false);
   const [callState, setCallState] = useState<CallState>('idle');
   const [micError, setMicError] = useState<string | undefined>();
-  const [analysis, setAnalysis] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
+  const linesRef = useRef<Line[]>([]);
   const streamRef = useRef<ReturnType<typeof createSttStream> | undefined>(undefined);
   const llmRef = useRef<ReturnType<typeof createLlmStream> | undefined>(undefined);
   const startingRef = useRef(false);
@@ -48,14 +51,14 @@ export function CallPage(props: Props) {
   const utterancePartsRef = useRef<string[]>([]);
   const liveSttRef = useRef('');
   const flushTimerRef = useRef<number | undefined>(undefined);
-  const analysisDoneRef = useRef<(() => void) | undefined>(undefined);
   const ttsHoldRef = useRef(false);
   const spokenTtsRef = useRef('');
   const userSpokeRef = useRef(false);
   const awaitingReplyRef = useRef(false);
   const staleGensRef = useRef(new Set<number>());
+  const endedSentRef = useRef(false);
   const aiVoiceId = conversationRole;
-  const wantsAnalysis = props.section === 'training' || props.section === 'exam';
+  const ttsVoice = conversationRole === 'victim' ? props.scenario.ttsVoice : undefined;
   const showCard = !embedded && props.section !== 'theory';
   const sectionLabel = props.section === 'theory' ? 'Теория' : props.section === 'exam' ? 'Экзамен' : 'Тренировка';
   const youAre = conversationRole === 'victim' ? 'Вы — оператор' : 'Вы — заявитель';
@@ -70,6 +73,7 @@ export function CallPage(props: Props) {
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [lines]);
+  linesRef.current = lines;
 
   useEffect(() => {
     let armed = false;
@@ -113,8 +117,8 @@ export function CallPage(props: Props) {
     awaitingReplyRef.current = false;
     staleGensRef.current = new Set();
     ttsHoldRef.current = false;
+    endedSentRef.current = false;
     setLines([]);
-    setAnalysis('');
     setMicError(undefined);
     setRecording(true);
     setCallState('listening');
@@ -127,10 +131,18 @@ export function CallPage(props: Props) {
           role: 'caller',
           text: opening,
           source: 'llm',
+          at: Date.now(),
         },
       ]);
       spokenTtsRef.current = opening;
-      void enqueueTtsAudio(opening, aiVoiceId);
+      holdMicForTts();
+      void enqueueTtsAudio(opening, aiVoiceId, ttsVoice).finally(() => {
+        if (leavingRef.current || awaitingReplyRef.current) {
+          return;
+        }
+        ttsHoldRef.current = false;
+        streamRef.current?.setCaptureEnabled(true);
+      });
     }
     const callId = crypto.randomUUID();
     const llm = createLlmStream({
@@ -177,17 +189,9 @@ export function CallPage(props: Props) {
           setLines((current) => commitLive(current, aiRole, event.text, 'llm'));
           void speakAi(event.text);
         }
-        if (event.type === 'analysis_partial' && event.text.trim()) {
-          setAnalysis(event.text);
-        }
-        if (event.type === 'analysis_final' && event.text.trim()) {
-          setAnalysis(event.text);
-          analysisDoneRef.current?.();
-        }
       },
       onError: (message) => {
         setMicError(message);
-        analysisDoneRef.current?.();
       },
     });
     llmRef.current = llm;
@@ -283,6 +287,9 @@ export function CallPage(props: Props) {
     }
     try {
       await stream.start();
+      if (ttsHoldRef.current) {
+        stream.setCaptureEnabled(false);
+      }
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === 'NotAllowedError') {
         setMicError('Нет доступа к микрофону. Можно отвечать текстом.');
@@ -326,7 +333,7 @@ export function CallPage(props: Props) {
       return;
     }
     for (const chunk of pending) {
-      void enqueueTtsAudio(chunk, aiVoiceId);
+      void enqueueTtsAudio(chunk, aiVoiceId, ttsVoice);
     }
   }
 
@@ -334,7 +341,7 @@ export function CallPage(props: Props) {
     holdMicForTts();
     feedAiSpeech(text, true);
     try {
-      await Promise.race([waitTtsQueue(), delayMs(12000)]);
+      await waitTtsQueue();
     } finally {
       ttsHoldRef.current = false;
       if (!leavingRef.current) {
@@ -368,11 +375,23 @@ export function CallPage(props: Props) {
     addOperatorLine(draft);
   }
 
+  function emitEnded(snapshot: TranscriptTurn[]) {
+    if (endedSentRef.current) {
+      return;
+    }
+    endedSentRef.current = true;
+    props.onCallEnded?.({ lines: snapshot, seconds });
+    if (!embedded && !props.onCallEnded) {
+      props.onLeave();
+    }
+  }
+
   async function hangup() {
+    const snapshot: TranscriptTurn[] = linesRef.current
+      .filter((line) => !line.live && line.text.trim())
+      .map((line) => ({ role: line.role, text: line.text.trim(), at: line.at || Date.now() }));
     if (!streamRef.current && !llmRef.current) {
-      if (!embedded) {
-        props.onLeave();
-      }
+      emitEnded(snapshot);
       return;
     }
     leavingRef.current = true;
@@ -385,40 +404,16 @@ export function CallPage(props: Props) {
     utterancePartsRef.current = [];
     liveSttRef.current = '';
     if (leftover.trim()) {
+      snapshot.push({ role: userRole, text: leftover.trim(), at: Date.now() });
       setLines((current) => commitLive(current, userRole, leftover, 'stt'));
     }
-    const complete = await streamRef.current?.stop();
+    await streamRef.current?.stop();
     streamRef.current = undefined;
-    if (complete) {
-      finalsRef.current = { ...finalsRef.current, completeText: complete, partial: '' };
-    }
-    setRecording(false);
-    setLines((current) => current.filter((line) => !line.live));
-    if (wantsAnalysis && llmRef.current) {
-      setCallState('analyzing');
-      await waitForAnalysis(leftover);
-    } else if (leftover.trim()) {
-      llmRef.current?.sendUserFinal(crypto.randomUUID(), leftover);
-    }
     await llmRef.current?.stop();
     llmRef.current = undefined;
+    setRecording(false);
     setCallState('ended');
-  }
-
-  async function waitForAnalysis(leftover: string) {
-    const llm = llmRef.current;
-    if (!llm) {
-      return;
-    }
-    await new Promise<void>((resolve) => {
-      const timer = window.setTimeout(resolve, 50000);
-      analysisDoneRef.current = () => {
-        window.clearTimeout(timer);
-        resolve();
-      };
-      llm.analyze(leftover);
-    });
-    analysisDoneRef.current = undefined;
+    emitEnded(snapshot);
   }
 
   function setField(key: string, value: string) {
@@ -431,9 +426,7 @@ export function CallPage(props: Props) {
       ? 'Подключение…'
       : callState === 'listening'
         ? 'Идёт звонок'
-        : callState === 'analyzing'
-          ? 'Разбор разговора…'
-          : callState === 'ended'
+        : callState === 'ended'
             ? 'Вызов завершён'
             : callState === 'error'
               ? 'Ошибка звонка'
@@ -469,7 +462,6 @@ export function CallPage(props: Props) {
               type="button"
               className="btn btn-danger"
               onClick={() => void hangup()}
-              disabled={callState === 'analyzing'}
             >
               Завершить
             </button>
@@ -495,7 +487,6 @@ export function CallPage(props: Props) {
               type="button"
               className="btn btn-danger"
               onClick={() => void hangup()}
-              disabled={callState === 'analyzing'}
             >
               Завершить
             </button>
@@ -504,7 +495,7 @@ export function CallPage(props: Props) {
       </header>
       )}
 
-      <div className={`call-body${showCard || wantsAnalysis ? '' : ' call-body-solo'}`}>
+      <div className={`call-body${showCard ? '' : ' call-body-solo'}`}>
         <section className="panel call-log" aria-label="Разговор">
           <h2>Разговор</h2>
           <div className="log" ref={logRef}>
@@ -523,10 +514,8 @@ export function CallPage(props: Props) {
             ))}
           </div>
 
-          {callState === 'ended' || callState === 'analyzing' ? (
-            <p className="hint">
-              {callState === 'analyzing' ? 'Идёт разбор разговора…' : 'Расшифровка сохранена в этом вызове.'}
-            </p>
+          {callState === 'ended' ? (
+            <p className="hint">Вызов завершён. Открывается разбор.</p>
           ) : (
             <form
               className="composer"
@@ -565,54 +554,46 @@ export function CallPage(props: Props) {
           )}
         </section>
 
-        {showCard || wantsAnalysis ? (
+        {showCard ? (
           <div className="call-side">
-            {showCard ? (
-              <section className="panel" aria-label="Карточка происшествия">
-                <h2>Карточка происшествия</h2>
-                <form className="card-form" onSubmit={(event) => event.preventDefault()}>
-                  {props.scenario.cardFields.map((field) => (
-                    <label key={field.key} className="field">
-                      <span>
-                        {field.label}
-                        {field.required ? ' *' : ''}
-                      </span>
-                      {field.type === 'text' ? (
-                        <textarea
-                          rows={3}
-                          value={card[field.key] ?? ''}
-                          onChange={(event) => setField(field.key, event.target.value)}
-                        />
-                      ) : field.type === 'enum' ? (
-                        <select
-                          value={card[field.key] ?? ''}
-                          onChange={(event) => setField(field.key, event.target.value)}
-                        >
-                          <option value="">Выберите</option>
-                          {field.options?.map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type={field.type === 'phone' ? 'tel' : 'text'}
-                          value={card[field.key] ?? ''}
-                          onChange={(event) => setField(field.key, event.target.value)}
-                        />
-                      )}
-                    </label>
-                  ))}
-                </form>
-              </section>
-            ) : null}
-            {wantsAnalysis && (callState === 'analyzing' || analysis) ? (
-              <section className="panel" aria-label="Разбор разговора">
-                <h2>Разбор разговора</h2>
-                <p className="analysis">{analysis || 'Готовим разбор…'}</p>
-              </section>
-            ) : null}
+            <section className="panel" aria-label="Карточка происшествия">
+              <h2>Карточка происшествия</h2>
+              <form className="card-form" onSubmit={(event) => event.preventDefault()}>
+                {props.scenario.cardFields.map((field) => (
+                  <label key={field.key} className="field">
+                    <span>
+                      {field.label}
+                      {field.required ? ' *' : ''}
+                    </span>
+                    {field.type === 'text' ? (
+                      <textarea
+                        rows={3}
+                        value={card[field.key] ?? ''}
+                        onChange={(event) => setField(field.key, event.target.value)}
+                      />
+                    ) : field.type === 'enum' ? (
+                      <select
+                        value={card[field.key] ?? ''}
+                        onChange={(event) => setField(field.key, event.target.value)}
+                      >
+                        <option value="">Выберите</option>
+                        {field.options?.map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={field.type === 'phone' ? 'tel' : 'text'}
+                        value={card[field.key] ?? ''}
+                        onChange={(event) => setField(field.key, event.target.value)}
+                      />
+                    )}
+                  </label>
+                ))}
+              </form>
+            </section>
           </div>
         ) : null}
       </div>
@@ -633,7 +614,8 @@ function isSameSpeech(left: string, right: string): boolean {
 
 function upsertLive(current: Line[], role: Line['role'], text: string, source: Line['source']): Line[] {
   const next = current.filter((line) => !(line.live && line.source === source));
-  return [...next, { id: `${source}-live`, role, text, live: true, source }];
+  const prev = current.find((line) => line.live && line.source === source);
+  return [...next, { id: `${source}-live`, role, text, live: true, source, at: prev?.at ?? Date.now() }];
 }
 
 function replaceOrAppendUser(
@@ -647,14 +629,15 @@ function replaceOrAppendUser(
   const cleaned = current.filter((line) => !(line.role === aiRole && line.live));
   const last = cleaned.at(-1);
   if (last?.role === userRole) {
-    return [...cleaned.slice(0, -1), { id, role: userRole, text, source }];
+    return [...cleaned.slice(0, -1), { id, role: userRole, text, source, at: last.at || Date.now() }];
   }
-  return [...cleaned, { id, role: userRole, text, source }];
+  return [...cleaned, { id, role: userRole, text, source, at: Date.now() }];
 }
 
 function commitLive(current: Line[], role: Line['role'], text: string, source: Line['source']): Line[] {
   const next = current.filter((line) => !(line.live && line.source === source));
-  return [...next, { id: crypto.randomUUID(), role, text, source }];
+  const live = current.find((line) => line.live && line.source === source);
+  return [...next, { id: crypto.randomUUID(), role, text, source, at: live?.at ?? Date.now() }];
 }
 
 function isShorterTranscript(previous: string, next: string): boolean {
@@ -686,10 +669,4 @@ function composeUtterance(parts: string[], live: string): string {
     return base;
   }
   return `${base} ${extra}`;
-}
-
-function delayMs(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
 }

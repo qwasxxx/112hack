@@ -1,69 +1,55 @@
 import type { Arm112PracticalResult } from '../model/training-result';
-import { fromPracticalResult } from '../model/learning-result';
+import type { LessonRecord } from '../../../progress';
 
 type Props = {
   result: Arm112PracticalResult;
+  record: LessonRecord;
   onLeave: () => void;
 };
 
 export function TrainingResultPanel(props: Props) {
   const result = props.result;
-  const learning = fromPracticalResult(result);
+  const record = props.record;
   return (
     <div className="arm112-result" role="dialog" aria-label="Результат тренировки">
       <div className="arm112-result-card">
         <h2>
-          Результат · {result.scenarioCode} {result.scenarioTitle}
+          {record.passed ? 'Зачёт' : 'Незачёт'} · {record.score} · {result.scenarioCode} {result.scenarioTitle}
         </h2>
+        <p className="arm112-result-saved">Результат записан в «Мои сессии». Удалить его нельзя.</p>
         <dl>
-          <dt>Режим</dt>
-          <dd>{learning.mode}</dd>
-          <dt>Сценарий</dt>
-          <dd>{learning.scenarioId}</dd>
-          <dt>Время сессии</dt>
-          <dd>{learning.elapsedSeconds} сек</dd>
+          <dt>Балл / порог</dt>
+          <dd>
+            {record.score} из 100 · зачёт от 70, если заполнены обязательные поля и службы эталона
+          </dd>
           <dt>Реакция на звонок</dt>
           <dd>{result.reactionSeconds == null ? '—' : `${result.reactionSeconds} сек`}</dd>
           <dt>Таймер карточки</dt>
           <dd>
-            {result.cardTimerSeconds} сек {result.cardTimerExceeded ? '(превышен)' : ''} / норматив набора {result.cardTimerLimitSec} сек,
-            сценарий {result.normativeDurationMin} мин
+            {result.cardTimerSeconds} сек {result.cardTimerExceeded ? '(превышен)' : ''} / норматив {result.cardTimerLimitSec} сек
           </dd>
-          <dt>Типы / признаки</dt>
+          <dt>Классификатор</dt>
           <dd>
-            {result.classifier.selectedTypes.join(', ') || '—'}
-            {result.classifier.priznak1 ? ` · ${result.classifier.priznak1}` : ''}
-            {result.classifier.priznak2.length ? ` · ${result.classifier.priznak2.join(', ')}` : ''}
-          </dd>
-          <dt>Классификатор (факт)</dt>
-          <dd>
+            факт:{' '}
             {result.classifier.matched.length === 0
-              ? 'нет совпадений Лист1'
+              ? 'нет совпадений'
               : result.classifier.matched
-                  .slice(0, 4)
-                  .map((item) => `${item.number} r${item.row} ${item.finalType ?? ''} ${item.mainService ?? ''}`)
-                  .join('; ')}
-          </dd>
-          <dt>Ожидаемая запись</dt>
-          <dd>
-            {result.classifier.expected.number} r{result.classifier.expected.row} {result.classifier.expected.finalType}{' '}
-            {result.classifier.expected.mainService}
+                  .slice(0, 3)
+                  .map((item) => item.number)
+                  .join(', ')}
+            {' · эталон '}
+            {result.classifier.expected.number} {result.classifier.expected.finalType}
           </dd>
           <dt>Службы</dt>
           <dd>{result.services.map((item) => item.name).join(', ') || '—'}</dd>
-          <dt>Карточка</dt>
-          <dd>
-            {result.card.caller.familyNameAndGivenName || 'ФИО не указано'} · {result.card.caller.callerStatus ?? 'статус не выбран'} ·{' '}
-            {result.card.address.searchLine} {result.card.address.street} {result.card.address.house}
-          </dd>
-          <dt>Действия</dt>
-          <dd>{learning.actions.length} ({learning.actions.map((item) => item.type).join(', ')})</dd>
           <dt>Замечания</dt>
           <dd>
-            {learning.validation.length === 0
-              ? 'обязательные поля заполнены'
-              : learning.validation.map((item) => `${item.field}: ${item.message}`).join('; ')}
+            {record.findings.length === 0
+              ? 'нет'
+              : record.findings.map((item) => `${item.field}: ${item.message}`).join('; ')}
           </dd>
+          <dt>Рекомендации</dt>
+          <dd>{record.recommendations.join(' ') || '—'}</dd>
         </dl>
         <button type="button" className="arm112-orange-fill" onClick={props.onLeave}>
           К уроку

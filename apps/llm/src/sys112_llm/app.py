@@ -24,8 +24,10 @@ from sys112_llm.conversation import (
     CallSession,
     ConversationManager,
     analysis_messages,
+    call_score_messages,
     generation_messages,
 )
+from sys112_llm.openai_score import openai_score, parse_score_json
 from sys112_llm.runtime import model_present
 from sys112_llm.think import ThinkFilter
 
@@ -136,6 +138,49 @@ async def warmup_prompt(payload: dict[str, Any]) -> dict[str, str]:
         logger.exception("[LLM] Prompt warmup failed")
         return {"status": "error"}
     return {"status": "warm"}
+
+
+@app.post("/score-call")
+@app.post("/api/llm/score-call")
+async def score_call(payload: dict[str, Any]) -> dict[str, Any]:
+    transcript = str(payload.get("transcript") or "")
+    facts = str(payload.get("facts") or "")
+    card = str(payload.get("card") or "")
+    rules = str(payload.get("rules") or "")
+    messages = call_score_messages(transcript, facts, card, rules)
+    try:
+        judged = await openai_score(messages)
+        if judged:
+            return judged
+    except Exception:
+        logger.exception("[LLM] OpenAI judge failed")
+    if LLM_MODE == "mock" or llm_status == "mock":
+        return {"politeness": 12, "comment": "Разбор в учебном режиме без модели.", "recommendations": [], "source": "mock"}
+    if llm_status != "ready":
+        return {
+            "politeness": 12,
+            "comment": "Модель недоступна, оценка разговора по правилам.",
+            "recommendations": [],
+            "source": "rules",
+        }
+    try:
+        raw = await client.complete_chat(
+            messages,
+            max_tokens=min(LLM_ANALYSIS_MAX_TOKENS, 180),
+            temperature=0.2,
+            think=False,
+        )
+    except Exception:
+        logger.exception("[LLM] Call score failed")
+        return {
+            "politeness": 12,
+            "comment": "Не удалось получить комментарий модели.",
+            "recommendations": [],
+            "source": "rules",
+        }
+    parsed = parse_score_json(raw)
+    parsed["source"] = "local-think"
+    return parsed
 
 
 @app.websocket("/ws/llm")

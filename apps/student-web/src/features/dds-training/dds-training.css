@@ -553,6 +553,12 @@
   margin: 0 0 10px;
 }
 
+.dds-brigade {
+  margin: 0 0 8px;
+  color: #1f6b3a;
+  font-weight: 700;
+}
+
 .dds-result ul {
   margin: 0 0 12px;
   padding-left: 18px;

@@ -18,9 +18,9 @@ export function TheoryGuidePanel(props: Props) {
   return (
     <aside className={`theory-guide${props.collapsed ? ' is-collapsed' : ''}`} aria-label="Обучение АРМ-112">
       <header className="theory-guide-head">
-        <p className="theory-guide-kicker">Режим ознакомления</p>
+        <p className="theory-guide-kicker">Теория</p>
         <h1>АРМ-112</h1>
-        <p>Не тренировка. Экран показывает, где какие поля и зачем они нужны.</p>
+        <p>Назначение полей карточки и действия оператора.</p>
         <button type="button" className="theory-guide-toggle" onClick={props.onToggle}>
           {props.collapsed ? 'Панель' : 'Свернуть'}
         </button>

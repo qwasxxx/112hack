@@ -4,15 +4,19 @@ import sidebarBase from '../assets/catalog/catalog-sidebar-base.webp';
 import { bindElementTilt, playStudentPress, useStudentTilt } from './student-tilt';
 
 const SIDEBAR_ITEMS = [
-  { id: 'scenarios', label: 'Учебные сценарии', icon: 'book' as const, active: true },
-  { id: 'sessions', label: 'Мои сессии', icon: 'layers' as const, active: false },
-  { id: 'reference', label: 'Справочные материалы', icon: 'bars' as const, active: false },
-  { id: 'settings', label: 'Настройки', icon: 'gear' as const, active: false },
+  { id: 'scenarios', label: 'Учебные сценарии', icon: 'book' as const },
+  { id: 'sessions', label: 'Мои сессии', icon: 'layers' as const },
+  { id: 'reference', label: 'Справочные материалы', icon: 'bars' as const },
 ];
+
+export type ShellView = 'scenarios' | 'sessions' | 'reference';
 
 type ShellProps = {
   accountBar: ReactNode;
+  view?: ShellView;
   onCatalog: () => void;
+  onSessions?: () => void;
+  onHandbook?: () => void;
   children: ReactNode;
 };
 
@@ -23,8 +27,11 @@ export function StudentShell(props: ShellProps) {
     <div className={`catalog-screen briefing-screen${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}>
       <StudentSidebar
         collapsed={sidebarCollapsed}
+        view={props.view ?? 'scenarios'}
         onToggle={() => setSidebarCollapsed((value) => !value)}
         onCatalog={props.onCatalog}
+        onSessions={props.onSessions}
+        onHandbook={props.onHandbook}
       />
       <div className="catalog-shell">
         <StudentHeader accountBar={props.accountBar} />
@@ -34,7 +41,14 @@ export function StudentShell(props: ShellProps) {
   );
 }
 
-function StudentSidebar(props: { collapsed: boolean; onToggle: () => void; onCatalog: () => void }) {
+function StudentSidebar(props: {
+  collapsed: boolean;
+  view: ShellView;
+  onToggle: () => void;
+  onCatalog: () => void;
+  onSessions?: () => void;
+  onHandbook?: () => void;
+}) {
   return (
     <aside className="catalog-sidebar" aria-label="Навигация обучающегося">
       <div className="catalog-sidebar-brand">
@@ -50,8 +64,14 @@ function StudentSidebar(props: { collapsed: boolean; onToggle: () => void; onCat
             key={item.id}
             label={item.label}
             icon={item.icon}
-            active={item.active}
-            onActivate={item.active ? props.onCatalog : undefined}
+            active={item.id === props.view}
+            onActivate={
+              item.id === 'scenarios'
+                ? props.onCatalog
+                : item.id === 'sessions'
+                  ? props.onSessions
+                  : props.onHandbook
+            }
           />
         ))}
       </nav>
@@ -77,7 +97,7 @@ function NavItem(props: {
       className={`catalog-nav-item catalog-tilt${props.active ? ' is-active' : ''}`}
       title={props.label}
       aria-current={props.active ? 'page' : undefined}
-      aria-disabled={props.active ? undefined : true}
+      aria-disabled={props.onActivate ? undefined : true}
       onClick={() => {
         if (props.onActivate) {
           props.onActivate();

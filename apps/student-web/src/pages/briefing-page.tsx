@@ -21,6 +21,8 @@ type Props = {
   track: LearnerTrack;
   accountBar: ReactNode;
   onBack: () => void;
+  onSessions: () => void;
+  onHandbook?: () => void;
   onStart: (section: LessonSection) => void;
   onStartDds: () => void;
 };
@@ -61,12 +63,18 @@ export function BriefingPage(props: Props) {
   }, [isDds, scenario]);
 
   return (
-    <StudentShell accountBar={props.accountBar} onCatalog={props.onBack}>
+    <StudentShell
+      accountBar={props.accountBar}
+      onCatalog={props.onBack}
+      onSessions={props.onSessions}
+      onHandbook={props.onHandbook}
+    >
       <div className="briefing-body">
         <BriefingHero scenario={scenario} track={props.track} hero={hero} onBack={props.onBack} />
         <div className="briefing-workspace">
           <BriefingBrief scenario={scenario} track={props.track} />
           <BriefingLessons
+            scenario={scenario}
             track={props.track}
             onStart={props.onStart}
             onStartDds={props.onStartDds}
@@ -148,11 +156,7 @@ function BriefingBrief(props: { scenario: TrainingScenario; track: LearnerTrack 
   const isDds = props.track === 'dds';
   const note = isDds
     ? 'Разговора нет. Работаете только с карточкой: исправляете ошибки оператора 112 и решаете, кому её передать.'
-    : props.scenario.difficulty === 'сложный'
-      ? 'Держите линию. Уточняйте по ходу, не сворачивайте опрос из‑за паники заявителя.'
-      : props.scenario.difficulty === 'базовый'
-        ? 'Спокойный разбор обращения: отделите, есть ли происшествие и нужны ли службы.'
-        : 'Снимите обязательные данные и только потом направляйте службы.';
+    : 'Снимите обязательные данные на линии и заполните карточку.';
   const steps = isDds ? DDS_COLLECT : COLLECT;
 
   return (
@@ -176,7 +180,7 @@ function BriefingBrief(props: { scenario: TrainingScenario; track: LearnerTrack 
             <p>
               {isDds
                 ? 'Вы — диспетчер ДДС. Оператор 112 уже принял вызов и заполнил карточку. Ваша проверка: нет ли ошибок и каким службам её передать.'
-                : 'Вы — оператор 112. Легенду билета заранее не показываем: где, что случилось и кому нужна помощь, выясняете сами во время звонка.'}
+                : 'Вы — оператор 112. Легенду билета выясняете на линии во время тренировки.'}
             </p>
           </article>
           <article className="briefing-block">
@@ -209,11 +213,13 @@ function BriefingBrief(props: { scenario: TrainingScenario; track: LearnerTrack 
 }
 
 function BriefingLessons(props: {
+  scenario: TrainingScenario;
   track: LearnerTrack;
   onStart: (section: LessonSection) => void;
   onStartDds: () => void;
 }) {
   const tilt = useStudentTilt<HTMLElement>(GROUP_TILT, 'medium');
+  const sms = props.scenario.situationNo === 2;
   const lessons =
     props.track === 'dds'
       ? [
@@ -221,6 +227,7 @@ function BriefingLessons(props: {
             icon: 'dds' as LessonIcon,
             title: 'Обработка карточки',
             youAre: 'Вы — диспетчер ДДС',
+            lead: 'Готовая карточка от 112: найти ошибки и направить службы. Разговора нет.',
             enabled: true,
             onStart: props.onStartDds,
           },
@@ -229,6 +236,10 @@ function BriefingLessons(props: {
           icon: section.id as LessonIcon,
           title: section.title,
           youAre: section.youAre,
+          lead:
+            section.id === 'training' && sms
+              ? 'Ситуация придёт SMS: в тексте адрес, суть, ФИО и телефон. Голоса нет — всё берёте из сообщения.'
+              : section.lead,
           enabled: section.enabled,
           onStart: () => props.onStart(section.id),
         }));
@@ -251,6 +262,7 @@ function BriefingLessons(props: {
             index={index + 1}
             title={lesson.title}
             youAre={lesson.youAre}
+            lead={lesson.lead}
             enabled={lesson.enabled}
             onStart={lesson.onStart}
           />
@@ -265,6 +277,7 @@ function LessonCard(props: {
   index: number;
   title: string;
   youAre: string;
+  lead?: string;
   enabled: boolean;
   onStart: () => void;
 }) {
@@ -286,6 +299,7 @@ function LessonCard(props: {
             <span className="briefing-lesson-role">{props.youAre}</span>
           </span>
           <span className="briefing-lesson-title">{props.title}</span>
+          {props.lead ? <span className="briefing-lesson-lead">{props.lead}</span> : null}
         </span>
         <span className={`briefing-lesson-art is-${props.icon}`} aria-hidden="true">
           <LessonGlyph name={props.icon} />

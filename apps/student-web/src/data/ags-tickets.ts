@@ -1,4 +1,4 @@
-import type { LessonSection, ServiceKind, TrainingScenario } from './scenarios';
+import type { CallerTtsVoice, LessonSection, ServiceKind, TrainingScenario } from './scenarios';
 import tickets from './ags-tickets.json';
 
 export type AgsTicket = {
@@ -45,13 +45,16 @@ export function inferServices(text: string): ServiceKind[] {
 
 export function classifierNumberFor(services: ServiceKind[], text: string): string {
   const t = text.toLowerCase();
-  if (services.includes('fire')) {
+  if (services.includes('fire') && /пожар|горит|задымл|плам|возгоран|мусоропровод/.test(t)) {
     return '1050101';
+  }
+  if (/дерут|драк/.test(t)) {
+    return /10-15|масс|палкам|прут/.test(t) ? '15060202' : '15060201';
   }
   if (/дтп|наезд/.test(t)) {
     return '2020000';
   }
-  if (/потерял.*ребен|ребенок/.test(t) && services.includes('police')) {
+  if (/потерял.*ребен/.test(t) && services.includes('police')) {
     return '18070000';
   }
   if (services[0] === 'ambulance') {
@@ -189,10 +192,148 @@ function titleFrom(ticket: number, n: number, theme: string): string {
   return `Билет ${ticket}.${n} — ${theme}`;
 }
 
+const OPENING_SKIP =
+  /^(пострадавших нет|без пострадавших|без оружия|03 не треб.*|дом не газифицирован|дом газифицирован|этажность.*|б\/п|б\/р|наблюдают с улицы|открытого пламени не видит|упал сам|(на вид\s+)?\d+\s*лет)$/i;
+const OPENING_FIO = /^[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}$/;
+const OPENING_SURNAME = /^[А-ЯЁ][а-яё]+(?:ов|ова|ев|ева|ёв|ёва|ин|ина|ын|ына|ский|ская|цкий|цкая)$/;
+
+function extractPhone(text: string): string | undefined {
+  const match = text.match(
+    /(?:тел\.?\s*)?(?:\+?7|8)?[\s\-()]*9\d{2}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}|\b9\d{9}\b|\b\d{10,11}\b/,
+  );
+  return match?.[0].replace(/[^\d]/g, '') || undefined;
+}
+
+function extractCallerHint(situation: string): string | undefined {
+  if (/вызывает мама|звонит мама/i.test(situation)) {
+    return 'мама';
+  }
+  if (/вызывает супруг/i.test(situation)) {
+    return 'супруг';
+  }
+  if (/вызывает отец/i.test(situation)) {
+    return 'отец';
+  }
+  if (/вызывает себе/i.test(situation)) {
+    return 'звонит о себе';
+  }
+  if (/звонит сама/i.test(situation)) {
+    return 'звонит сама';
+  }
+  if (/подруга/i.test(situation)) {
+    return 'подруга';
+  }
+  if (/соседка/i.test(situation)) {
+    return 'соседка';
+  }
+  if (/бабушка/i.test(situation)) {
+    return 'бабушка';
+  }
+  if (/, дочь|дочь,/i.test(situation)) {
+    return 'дочь';
+  }
+  const names = situation.match(/[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)?/g);
+  return names?.at(-1);
+}
+
 function openingFrom(situation: string): string {
-  const head = situation.split(',')[0].trim();
-  const spoken = head.charAt(0).toLowerCase() + head.slice(1);
-  return `Алло, ${spoken}, помогите!`;
+  let text = situation.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  text = text.replace(/а\s*\/\s*д/gi, 'давление');
+  text = text.replace(/(?:тел\.?\s*)?(?:\+?7|8)?[\s\-()]*9\d{2}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}/gi, ' ');
+  text = text.replace(/\b\d{10,11}\b/g, ' ');
+  text = text.replace(/\([^)]*\)/g, ' ');
+  text = text.replace(/д\/р\s*\d{1,2}\.\d{1,2}\.\d{2,4}/gi, ' ');
+  text = text.replace(/\.?\s*(вызывает|звонит)\s+[\s\S]*$/i, '');
+  text = text.replace(
+    /(?<!^)(?<![.!?]\s)[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}/g,
+    ' ',
+  );
+  const parts = text
+    .split(/[,.]/)
+    .map((part) => part.replace(/\s+/g, ' ').trim())
+    .filter(
+      (part) =>
+        part.length > 2 && !OPENING_SKIP.test(part) && !OPENING_FIO.test(part) && !OPENING_SURNAME.test(part),
+    );
+  let core = '';
+  let count = 0;
+  for (const part of parts) {
+    const next = core ? `${core}, ${part}` : part;
+    if (core && next.length > 110) {
+      break;
+    }
+    core = next;
+    count += 1;
+    if (count >= 2 || core.length >= 80) {
+      break;
+    }
+  }
+  core = core.replace(/\s+/g, ' ').trim().replace(/[.!?]+$/g, '').toLocaleLowerCase('ru-RU');
+  if (!core) {
+    core = 'нужна помощь';
+  }
+  return `Алло, ${core}, помогите!`;
+}
+
+const FEMALE_VOICES: CallerTtsVoice[] = [
+  { speaker: 'xenia', pitch: 'high', speed: 1.16, emotion: 'panic', gender: 'female' },
+  { speaker: 'xenia', pitch: 'medium', speed: 1.08, emotion: 'scared', gender: 'female' },
+  { speaker: 'kseniya', pitch: 'high', speed: 1.14, emotion: 'panic', gender: 'female' },
+  { speaker: 'kseniya', pitch: 'low', speed: 1.05, emotion: 'scared', gender: 'female' },
+  { speaker: 'baya', pitch: 'medium', speed: 1.12, emotion: 'panic', gender: 'female' },
+];
+
+const MALE_VOICES: CallerTtsVoice[] = [
+  { speaker: 'eugene', pitch: 'medium', speed: 1.12, emotion: 'panic', gender: 'male' },
+  { speaker: 'eugene', pitch: 'low', speed: 1.04, emotion: 'scared', gender: 'male' },
+  { speaker: 'aidar', pitch: 'medium', speed: 1.1, emotion: 'panic', gender: 'male' },
+  { speaker: 'aidar', pitch: 'low', speed: 1.02, emotion: 'scared', gender: 'male' },
+  { speaker: 'eugene', pitch: 'high', speed: 1.18, emotion: 'panic', gender: 'male' },
+];
+
+function genderFromFio(full: string): CallerTtsVoice['gender'] | undefined {
+  const parts = full.trim().split(/\s+/);
+  const surname = parts[0] || '';
+  const patronymic = parts[parts.length - 1] || '';
+  if (/вна$|чна$/.test(patronymic)) {
+    return 'female';
+  }
+  if (/вич$|ьич$/.test(patronymic) || (/ич$/.test(patronymic) && !/вич$|вна$/.test(patronymic) && parts.length > 1)) {
+    return 'male';
+  }
+  if (/ова$|ева$|ёва$|ина$|ына$|ая$|ская$|цкая$/.test(surname)) {
+    return 'female';
+  }
+  if (/ов$|ев$|ёв$|ин$|ын$|ский$|цкий$/.test(surname)) {
+    return 'male';
+  }
+  return undefined;
+}
+
+function inferCallerGender(situation: string, ticket: number, n: number): CallerTtsVoice['gender'] {
+  if (/вызывает мама|звонит мама|подруга|соседка|бабушка|, дочь|дочь,|звонит сама/i.test(situation)) {
+    return 'female';
+  }
+  if (/рожает жена|вызывает супруг|вызывает отец/i.test(situation)) {
+    return 'male';
+  }
+  const names = situation.match(/[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+/g) || [];
+  for (let i = names.length - 1; i >= 0; i -= 1) {
+    const gender = genderFromFio(names[i]);
+    if (gender) {
+      return gender;
+    }
+  }
+  if (/(прохожий|очевидец|работник|посетитель)/i.test(situation)) {
+    return 'male';
+  }
+  return (ticket * 3 + n) % 2 === 0 ? 'female' : 'male';
+}
+
+function pickCallerVoice(ticket: number, n: number, situation: string): CallerTtsVoice {
+  const gender = inferCallerGender(situation, ticket, n);
+  const pool = gender === 'female' ? FEMALE_VOICES : MALE_VOICES;
+  return pool[(ticket * 3 + n) % pool.length];
 }
 
 function algorithmFor(services: ServiceKind[], text: string): string[] {
@@ -270,6 +411,7 @@ export function ticketToScenario(ticket: AgsTicket): TrainingScenario {
     theory: algorithmFor(services, blob),
     checklist: checklistFor(services),
     callerOpening: openingFrom(ticket.situation),
+    ttsVoice: pickCallerVoice(ticket.ticket, ticket.n, ticket.situation),
     cardFields: CARD_FIELDS,
     ticketNo: ticket.ticket,
     situationNo: ticket.n,
@@ -281,17 +423,48 @@ export function ticketToScenario(ticket: AgsTicket): TrainingScenario {
 
 export const AGS_SCENARIOS: TrainingScenario[] = AGS_TICKETS.map(ticketToScenario);
 
+function speakablePlace(text: string): string {
+  return text
+    .replace(/(?<=[оыи]й)\s*обл\./gi, ' области')
+    .replace(/\bобл\./gi, 'область')
+    .replace(/\bгор\.\s*(?=[А-ЯЁа-яё])/gi, 'город ')
+    .replace(/(^|[\s,;:])г\.\s*(?=[А-ЯЁа-яё])/gi, '$1город ')
+    .replace(/\bпос\./gi, 'посёлок')
+    .replace(/\bдер\./gi, 'деревня')
+    .replace(/\bр-на\b/gi, 'района')
+    .replace(/\bр-н\b/gi, 'район')
+    .replace(/\bул\./gi, 'улица')
+    .replace(/\bпросп\./gi, 'проспект')
+    .replace(/\bпр-т\.?/gi, 'проспект')
+    .replace(/\bпер\./gi, 'переулок')
+    .replace(/\bнаб\./gi, 'набережная')
+    .replace(/\bш\.(?=\s|$|,)/gi, 'шоссе')
+    .replace(/\bмкр\.?/gi, 'микрорайон')
+    .replace(/\bкорп\.?/gi, 'корпус')
+    .replace(/\bкв\./gi, 'квартира')
+    .replace(/(^|\s)д\.(?=\s*\d)/gi, '$1дом ')
+    .replace(/\bстр\.?/gi, 'строение')
+    .replace(/\bст\.(?=\s|$|\d)/gi, 'станция')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function buildLessonSystemPrompt(scenario: TrainingScenario, section: LessonSection): string {
-  const situation = scenario.situation ?? scenario.summary;
-  const address = scenario.address ?? '';
+  const situation = speakablePlace(scenario.situation ?? scenario.summary);
+  const address = speakablePlace(scenario.address ?? '');
   const ticketLabel =
     scenario.ticketNo && scenario.situationNo
       ? `Билет ${scenario.ticketNo}, ситуация ${scenario.situationNo}`
       : scenario.code;
+  const phone = extractPhone(`${situation} ${address}`);
+  const caller = extractCallerHint(situation);
   const facts = [
     ticketLabel,
-    `СИТУАЦИЯ: ${situation}`,
-    address ? `АДРЕС: ${address}` : '',
+    `ЧТО СЛУЧИЛОСЬ: ${situation}`,
+    address ? `АДРЕС (назови, только если спросили): ${address}` : '',
+    caller ? `КТО ЗВОНИТ: ${caller}` : '',
+    phone ? `ТЕЛЕФОН (назови, только если спросили): ${phone}` : '',
+    'Чего нет в этих строках — не существует. Не додумывай улицы, этажи, имена, телефоны, службы и цифры.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -306,7 +479,8 @@ export function buildLessonSystemPrompt(scenario: TrainingScenario, section: Les
 
   return [
     facts,
-    'Первая фраза уже сказана — не повторяй её. Отвечай только на вопрос оператора. Адрес, имена и телефон — лишь когда спросили. Чего нет в ситуации — не знаешь. Говори словами полностью, без сокращений.',
+    `Уже сказано: «${scenario.callerOpening}». Не повторяй эту фразу.`,
+    'Отвечай только на заданный вопрос, 1–2 фразы. Адрес, имена и телефон — лишь когда спросили. Если не знаешь — «не знаю» или «не вижу». Слова полностью, без сокращений.',
   ]
     .filter(Boolean)
     .join('\n');

@@ -50,12 +50,14 @@ PROFILES: dict[str, dict[str, float | str]] = {
 }
 
 _SPEAKERS = {
-    "aidar": {"role": "operator", "gender": "male", "speed": 1.0, "pitch": "medium"},
+    "aidar": {"role": "victim", "gender": "male", "speed": 1.1, "pitch": "medium"},
     "xenia": {"role": "victim", "gender": "female", "speed": 1.12, "pitch": "medium"},
     "kseniya": {"role": "victim", "gender": "female", "speed": 1.12, "pitch": "medium"},
     "baya": {"role": "victim", "gender": "female", "speed": 1.1, "pitch": "medium"},
     "eugene": {"role": "victim", "gender": "male", "speed": 1.08, "pitch": "medium"},
 }
+
+_PITCHES = {"x-low", "low", "medium", "high", "x-high"}
 
 _ROLE_OPERATOR = {
     "operator",
@@ -64,6 +66,7 @@ _ROLE_OPERATOR = {
     "диспетчер_112",
     "theory",
     "теория",
+    "operator_calm",
 }
 _ROLE_VICTIM = {
     "victim",
@@ -73,12 +76,14 @@ _ROLE_VICTIM = {
     "пострадавший",
     "training",
     "тренировка",
+    "victim_panic",
+    "victim_scared",
 }
 _SCARED = {"scared", "crying", "panic_crying", "victim_scared", "quiet"}
 _CALM = {"calm", "operator_calm", "neutral"}
 _PANIC = {"panic", "panic_high", "victim_panic", "fear"}
-_FEMALE = {"female", "жен", "женский", "xenia", "kseniya"}
-_MALE = {"male", "муж", "мужской", "aidar", "baya", "eugene"}
+_FEMALE = {"female", "жен", "женский", "xenia", "kseniya", "baya"}
+_MALE = {"male", "муж", "мужской", "aidar", "eugene"}
 
 
 def _norm(value: str | None) -> str:
@@ -86,12 +91,15 @@ def _norm(value: str | None) -> str:
 
 
 def resolve_role(role: str | None = None, conversation_role: str | None = None, voice_id: str | None = None) -> str:
-    for raw in (role, conversation_role, voice_id):
+    for raw in (role, conversation_role):
         key = _norm(raw)
-        if key in _ROLE_OPERATOR or key in {"aidar", "dmitry", "ru_ru_dmitryneural", "operator_calm"}:
+        if key in _ROLE_OPERATOR:
             return "operator"
-        if key in _ROLE_VICTIM or key in {"xenia", "kseniya", "baya", "eugene", "victim_panic", "victim_scared"}:
+        if key in _ROLE_VICTIM or key in _SPEAKERS:
             return "victim"
+    voice = _norm(voice_id)
+    if voice in _ROLE_OPERATOR:
+        return "operator"
     return "victim"
 
 
@@ -118,6 +126,8 @@ def resolve_profile(
     conversation_role: str | None = None,
     voice_id: str | None = None,
     gender: str | None = None,
+    pitch: str | None = None,
+    speed: float | None = None,
 ) -> dict[str, float | str]:
     voice = _norm(voice_id)
     emo = _norm(emotion)
@@ -134,14 +144,21 @@ def resolve_profile(
         else:
             profile = dict(PROFILES["victim_panic"])
     role_key = str(profile.get("role") or resolve_role(role, conversation_role, voice_id))
+    if role in CHARACTERS:
+        role_key = role if role in {"operator", "victim"} else role_key
+        if _norm(role) in _ROLE_OPERATOR:
+            role_key = "operator"
+        elif _norm(role) in _ROLE_VICTIM:
+            role_key = "victim"
     speaker = resolve_speaker(role_key, gender, voice_id if voice in _SPEAKERS else None)
-    speed = float(profile.get("speed") or CHARACTERS[role_key]["rate"])
-    pitch = str(profile.get("pitch") or CHARACTERS[role_key]["pitch"])
+    rate = float(speed) if speed is not None else float(profile.get("speed") or CHARACTERS[role_key]["rate"])
+    pitch_key = _norm(pitch)
+    tone = pitch_key if pitch_key in _PITCHES else str(profile.get("pitch") or CHARACTERS[role_key]["pitch"])
     return {
         "role": role_key,
         "speaker": speaker,
-        "speed": speed,
-        "pitch": pitch,
+        "speed": rate,
+        "pitch": tone,
         "name": CHARACTERS[role_key]["name"],
         "style": CHARACTERS[role_key]["style"],
     }
@@ -152,4 +169,4 @@ def resolve_voice_id(voice_id: str | None, emotion: str | None = None) -> str:
 
 
 def list_voice_ids() -> list[str]:
-    return ["victim_panic", "victim_scared", "operator_calm"]
+    return ["victim_panic", "victim_scared", "operator_calm", "aidar", "baya", "eugene", "kseniya", "xenia"]

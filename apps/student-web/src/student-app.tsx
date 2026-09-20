@@ -7,15 +7,18 @@ import type { Arm112PracticalResult } from './features/arm112-simulator/model/tr
 import { DdsTrainingPage } from './features/dds-training';
 import type { DdsCheckResult } from './features/dds-training/use-dds-session';
 import { readLearnerTrack, writeLearnerTrack, type LearnerTrack } from './learner-track';
-import { lessonScreenFor, type LessonScreenName } from './lesson-routing';
+import { lessonScreenFor } from './lesson-routing';
 import { BriefingPage } from './pages/briefing-page';
-import { CallPage } from './pages/call-page';
-import { CatalogPage } from './pages/catalog-page';
+import { CatalogPage, type CatalogView } from './pages/catalog-page';
+import { DebriefPage, type TrainingFinish } from './pages/debrief-page';
 
 type Screen =
-  | { name: 'catalog' }
+  | { name: CatalogView }
   | { name: 'briefing'; scenario: TrainingScenario }
-  | { name: LessonScreenName; scenario: TrainingScenario }
+  | { name: 'theory' }
+  | { name: 'training'; scenario: TrainingScenario }
+  | { name: 'debrief'; briefing: TrainingScenario; finish: TrainingFinish }
+  | { name: 'exam'; scenario: TrainingScenario }
   | { name: 'dds'; scenario: TrainingScenario };
 
 type Props = {
@@ -36,7 +39,6 @@ export function StudentApp(props: Props) {
   function changeTrack(next: LearnerTrack) {
     setTrack(next);
     writeLearnerTrack(next);
-    setScreen({ name: 'catalog' });
   }
 
   if (screen.name === 'briefing') {
@@ -46,9 +48,20 @@ export function StudentApp(props: Props) {
         track={track}
         accountBar={bar}
         onBack={() => setScreen({ name: 'catalog' })}
-        onStart={(section) =>
-          setScreen({ name: lessonScreenFor(section), scenario: screen.scenario })
-        }
+        onSessions={() => setScreen({ name: 'sessions' })}
+        onHandbook={() => setScreen({ name: 'handbook' })}
+        onStart={(section) => {
+          const name = lessonScreenFor(section);
+          if (name === 'theory') {
+            setScreen({ name: 'theory' });
+            return;
+          }
+          if (name === 'training') {
+            setScreen({ name: 'training', scenario: screen.scenario });
+            return;
+          }
+          setScreen({ name: 'exam', scenario: screen.scenario });
+        }}
         onStartDds={() => setScreen({ name: 'dds', scenario: screen.scenario })}
       />
     );
@@ -58,6 +71,7 @@ export function StudentApp(props: Props) {
     return (
       <DdsTrainingPage
         scenario={screen.scenario}
+        operatorLogin={props.operator.login}
         onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
         onCompleted={
           props.onDdsTrainingComplete
@@ -69,31 +83,34 @@ export function StudentApp(props: Props) {
   }
 
   if (screen.name === 'theory') {
-    return (
-      <Arm112TheoryPage
-        scenario={screen.scenario}
-        onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
-      />
-    );
+    return <Arm112TheoryPage onLeave={() => setScreen({ name: 'catalog' })} />;
   }
 
-  if (screen.name === 'training') {
+  if (screen.name === 'training' || screen.name === 'exam') {
     return (
       <Arm112TrainingPage
         scenario={screen.scenario}
         operatorName={props.operator.name}
+        operatorLogin={props.operator.login}
+        kind={screen.name}
         onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
         onCompleted={props.onArmTrainingComplete}
+        onFinished={(finish) => setScreen({ name: 'debrief', briefing: screen.scenario, finish })}
       />
     );
   }
 
-  if (screen.name === 'exam') {
+  if (screen.name === 'debrief') {
     return (
-      <CallPage
-        scenario={screen.scenario}
-        section="exam"
-        onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
+      <DebriefPage
+        finish={screen.finish}
+        operatorLogin={props.operator.login}
+        operatorName={props.operator.name}
+        accountBar={bar}
+        onCatalog={() => setScreen({ name: 'catalog' })}
+        onSessions={() => setScreen({ name: 'sessions' })}
+        onHandbook={() => setScreen({ name: 'handbook' })}
+        onBriefing={() => setScreen({ name: 'briefing', scenario: screen.briefing })}
       />
     );
   }
@@ -102,8 +119,18 @@ export function StudentApp(props: Props) {
     <CatalogPage
       accountBar={bar}
       track={track}
-      onTrack={changeTrack}
+      view={screen.name}
+      operatorLogin={props.operator.login}
+      operatorName={props.operator.name}
+      onTrack={(next) => {
+        changeTrack(next);
+        setScreen({ name: 'catalog' });
+      }}
       onOpen={(scenario) => setScreen({ name: 'briefing', scenario })}
+      onTheory={() => setScreen({ name: 'theory' })}
+      onSessions={() => setScreen({ name: 'sessions' })}
+      onHandbook={() => setScreen({ name: 'handbook' })}
+      onCatalog={() => setScreen({ name: 'catalog' })}
     />
   );
 }

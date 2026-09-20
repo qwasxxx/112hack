@@ -117,6 +117,12 @@ def test_think_filter_and_strip():
     station = sanitize_speech("около ст. Киевская, строение2")
     assert "станция" in station
     assert "строение 2" in station
+    place = sanitize_speech("В Волгоградской обл., г. Волжский, ул. Карла Маркса")
+    assert "области" in place
+    assert "город" in place
+    assert "улица" in place
+    assert "обл." not in place
+    assert "г." not in place
     session = ConversationManager().create("ru-only", "victim")
     assert "иероглиф" in session.messages[0].content
 

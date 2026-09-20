@@ -164,10 +164,22 @@ export function CardCreateScreen(props: Props) {
       ) : null}
       {w.modal === 'reminder' ? <ReminderDialog onClose={() => w.setModal('none')} /> : null}
       {w.modal === 'recordings' ? (
-        <SimpleDialog title="записи звонков" body="Записей не найдено" onClose={() => w.setModal('none')} />
+        <SimpleDialog
+          title="записи звонков"
+          body={
+            w.phase === 'активный вызов'
+              ? 'Идёт запись текущего вызова. Файл появится после завершения.'
+              : 'Записей сохранённых вызовов нет.'
+          }
+          onClose={() => w.setModal('none')}
+        />
       ) : null}
       {w.modal === 'sms' ? (
-        <SimpleDialog title="список SMS" body="История сообщений" onClose={() => w.setModal('none')} />
+        <SimpleDialog
+          title="список SMS"
+          body={w.smsInbox || 'Входящих сообщений по этой карточке нет.'}
+          onClose={() => w.setModal('none')}
+        />
       ) : null}
       {w.modal === 'save' ? (
         <SaveConfirmDialog onBack={() => w.setModal('none')} onConfirm={w.saveCard} />

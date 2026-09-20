@@ -15,12 +15,24 @@ import {
   type ServiceKind,
   type TrainingScenario,
 } from '../data/scenarios';
+import { HandbookBoard } from './handbook-page';
+import { SessionsBoard } from './sessions-page';
+import { DDS_LANES, readDdsLane, scenarioMatchesDdsLane, writeDdsLane, type DdsLaneId } from '../dds-lanes';
+
+export type CatalogView = 'catalog' | 'sessions' | 'handbook';
 
 type Props = {
   accountBar: ReactNode;
   track: LearnerTrack;
+  view?: CatalogView;
+  operatorLogin: string;
+  operatorName: string;
   onTrack: (track: LearnerTrack) => void;
   onOpen: (scenario: TrainingScenario) => void;
+  onTheory: () => void;
+  onSessions: () => void;
+  onHandbook: () => void;
+  onCatalog: () => void;
 };
 
 type DifficultyFilter = 'all' | TrainingScenario['difficulty'];
@@ -50,24 +62,25 @@ const HERO_POINTS: Record<
   ],
 };
 
-const SIDEBAR_REST = [
-  { id: 'sessions', label: 'Мои сессии', icon: 'layers' as const },
-  { id: 'reference', label: 'Справочные материалы', icon: 'bars' as const },
-  { id: 'settings', label: 'Настройки', icon: 'gear' as const },
-];
-
 export function CatalogPage(props: Props) {
   const [query, setQuery] = useState('');
   const [service, setService] = useState<ServiceFilter>('all');
   const [difficulty, setDifficulty] = useState<DifficultyFilter>('all');
   const [duration, setDuration] = useState<DurationFilter>('all');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [lane, setLane] = useState<DdsLaneId>(() => readDdsLane());
+  const view = props.view ?? 'catalog';
 
   function resetWorkspace() {
     setQuery('');
     setService('all');
     setDifficulty('all');
     setDuration('all');
+  }
+
+  function changeLane(next: DdsLaneId) {
+    setLane(next);
+    writeDdsLane(next);
   }
 
   const visible = useMemo(() => {
@@ -82,35 +95,61 @@ export function CatalogPage(props: Props) {
         duration === 'all' ||
         (duration === 'short' && scenario.durationMin <= 8) ||
         (duration === 'long' && scenario.durationMin >= 10);
-      return matchesQuery && matchesService && matchesDifficulty && matchesDuration;
+      const matchesLane = props.track !== 'dds' || scenarioMatchesDdsLane(scenario, lane);
+      return matchesQuery && matchesService && matchesDifficulty && matchesDuration && matchesLane;
     });
-  }, [difficulty, duration, query, service]);
+  }, [difficulty, duration, lane, props.track, query, service]);
 
   return (
     <div className={`catalog-screen${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}>
       <StudentSidebar
         collapsed={sidebarCollapsed}
         track={props.track}
+        view={view}
         onTrack={props.onTrack}
         onToggle={() => setSidebarCollapsed((value) => !value)}
         onReset={resetWorkspace}
+        onTheory={props.onTheory}
+        onSessions={props.onSessions}
+        onHandbook={props.onHandbook}
+        onCatalog={props.onCatalog}
       />
       <div className="catalog-shell">
         <CatalogHeader accountBar={props.accountBar} />
-        <div className="catalog-body">
+        <div className={`catalog-body${view === 'catalog' ? '' : ' is-sessions'}`}>
+          {view === 'sessions' ? (
+            <section className="catalog-board" aria-labelledby="sessions-title">
+              <SessionsBoard login={props.operatorLogin} name={props.operatorName} />
+            </section>
+          ) : view === 'handbook' ? (
+            <section className="catalog-board" aria-labelledby="handbook-title">
+              <HandbookBoard />
+            </section>
+          ) : (
+            <>
           <CatalogHero track={props.track} />
           <ScenarioToolbar
+            track={props.track}
             query={query}
             service={service}
             difficulty={difficulty}
             duration={duration}
+            lane={lane}
             found={visible.length}
             onQuery={setQuery}
             onService={setService}
             onDifficulty={setDifficulty}
             onDuration={setDuration}
+            onLane={changeLane}
+            onRandom={() => {
+              if (!visible.length) {
+                return;
+              }
+              props.onOpen(visible[Math.floor(Math.random() * visible.length)]);
+            }}
           />
           <section className="catalog-board" aria-labelledby="catalog-title">
+            <CatalogTheoryEntry onOpen={props.onTheory} />
             <ScenarioListShell>
               <div className="scenario-list-head">
                 <span className="scenario-head-lead">
@@ -138,6 +177,8 @@ export function CatalogPage(props: Props) {
               </ul>
             </ScenarioListShell>
           </section>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -147,9 +188,14 @@ export function CatalogPage(props: Props) {
 function StudentSidebar(props: {
   collapsed: boolean;
   track: LearnerTrack;
+  view: CatalogView;
   onTrack: (track: LearnerTrack) => void;
   onToggle: () => void;
   onReset: () => void;
+  onTheory: () => void;
+  onSessions: () => void;
+  onHandbook: () => void;
+  onCatalog: () => void;
 }) {
   return (
     <aside className="catalog-sidebar" aria-label="Навигация обучающегося">
@@ -164,24 +210,36 @@ function StudentSidebar(props: {
         <CatalogNavItem
           label={LEARNER_TRACK_LABEL.operator112}
           icon="phone"
-          active={props.track === 'operator112'}
+          active={props.view === 'catalog' && props.track === 'operator112'}
           onActivate={() => {
             props.onTrack('operator112');
             props.onReset();
+            props.onCatalog();
           }}
         />
         <CatalogNavItem
           label={LEARNER_TRACK_LABEL.dds}
           icon="layers"
-          active={props.track === 'dds'}
+          active={props.view === 'catalog' && props.track === 'dds'}
           onActivate={() => {
             props.onTrack('dds');
             props.onReset();
+            props.onCatalog();
           }}
         />
-        {SIDEBAR_REST.map((item) => (
-          <CatalogNavItem key={item.id} label={item.label} icon={item.icon} active={false} />
-        ))}
+        <CatalogNavItem label="Теория АРМ-112" icon="book" active={false} onActivate={props.onTheory} />
+        <CatalogNavItem
+          label="Мои сессии"
+          icon="clock"
+          active={props.view === 'sessions'}
+          onActivate={props.onSessions}
+        />
+        <CatalogNavItem
+          label="Справочные материалы"
+          icon="bars"
+          active={props.view === 'handbook'}
+          onActivate={props.onHandbook}
+        />
       </nav>
       <div className="catalog-sidebar-art" aria-hidden="true">
         <img src={sidebarBase} alt="" />
@@ -192,7 +250,7 @@ function StudentSidebar(props: {
 
 function CatalogNavItem(props: {
   label: string;
-  icon: 'book' | 'layers' | 'bars' | 'gear' | 'phone';
+  icon: 'book' | 'layers' | 'bars' | 'gear' | 'phone' | 'clock';
   active: boolean;
   onActivate?: () => void;
 }) {
@@ -330,15 +388,19 @@ function CatalogHighlight(props: {
 }
 
 function ScenarioToolbar(props: {
+  track: LearnerTrack;
   query: string;
   service: ServiceFilter;
   difficulty: DifficultyFilter;
   duration: DurationFilter;
+  lane: DdsLaneId;
   found: number;
   onQuery: (value: string) => void;
   onService: (value: ServiceFilter) => void;
   onDifficulty: (value: DifficultyFilter) => void;
   onDuration: (value: DurationFilter) => void;
+  onLane: (value: DdsLaneId) => void;
+  onRandom: () => void;
 }) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
@@ -355,21 +417,33 @@ function ScenarioToolbar(props: {
           onChange={(event) => props.onQuery(event.target.value)}
         />
       </label>
-      <CatalogMenu
-        label="Службы"
-        value={props.service}
-        open={openMenu === 'service'}
-        onOpenChange={(open) => setOpenMenu(open ? 'service' : null)}
-        onChange={(value) => props.onService(value as ServiceFilter)}
-        options={[
-          { value: 'all', label: 'Все службы' },
-          ...SERVICE_FILTERS.filter((item) => item !== 'all').map((item) => ({
-            value: item,
-            label: SERVICE_LABEL[item],
-          })),
-        ]}
-        icon="people"
-      />
+      {props.track === 'dds' ? (
+        <CatalogMenu
+          label="Лента ДДС"
+          value={props.lane}
+          open={openMenu === 'lane'}
+          onOpenChange={(open) => setOpenMenu(open ? 'lane' : null)}
+          onChange={(value) => props.onLane(value as DdsLaneId)}
+          options={DDS_LANES.map((item) => ({ value: item.id, label: item.label }))}
+          icon="people"
+        />
+      ) : (
+        <CatalogMenu
+          label="Службы"
+          value={props.service}
+          open={openMenu === 'service'}
+          onOpenChange={(open) => setOpenMenu(open ? 'service' : null)}
+          onChange={(value) => props.onService(value as ServiceFilter)}
+          options={[
+            { value: 'all', label: 'Все службы' },
+            ...SERVICE_FILTERS.filter((item) => item !== 'all').map((item) => ({
+              value: item,
+              label: SERVICE_LABEL[item],
+            })),
+          ]}
+          icon="people"
+        />
+      )}
       <CatalogMenu
         label="Уровень"
         value={props.difficulty}
@@ -401,6 +475,9 @@ function ScenarioToolbar(props: {
       <p className="catalog-found">
         Найдено сценариев: <strong>{props.found}</strong>
       </p>
+      <button type="button" className="catalog-random" onClick={props.onRandom} disabled={props.found === 0}>
+        Случайная карточка
+      </button>
     </div>
   );
 }
@@ -516,6 +593,33 @@ function CatalogMenu(props: {
   );
 }
 
+function CatalogTheoryEntry(props: { onOpen: () => void }) {
+  return (
+    <button type="button" className="catalog-theory-entry" onClick={props.onOpen}>
+      <span className="catalog-theory-icon" aria-hidden="true">
+        <CatalogGlyph name="book" />
+      </span>
+      <span className="catalog-theory-copy">
+        <strong>Теория АРМ-112</strong>
+        <span>Как заполнять поля карточки происшествия.</span>
+      </span>
+      <span className="catalog-theory-go">
+        Открыть
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+          <path
+            d="M2.2 6h7.1M6.4 3.1 9.6 6 6.4 8.9"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+    </button>
+  );
+}
+
 function ScenarioListShell(props: { children: ReactNode }) {
   return <div className="scenario-list-shell">{props.children}</div>;
 }
@@ -547,6 +651,9 @@ function ScenarioRow(props: {
         ) : (
           scenario.services.map((item) => <ServiceTag key={item} kind={item} />)
         )}
+        {props.track !== 'dds' && scenario.situationNo === 2 ? (
+          <span className="scenario-service is-sms">SMS</span>
+        ) : null}
       </div>
       <p className="scenario-time">
         <CatalogGlyph name="clock" />

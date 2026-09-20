@@ -21,15 +21,39 @@ LLM_BASE_URL = _env("LLM_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
 LLM_HOST = _env("LLM_HOST", "0.0.0.0")
 LLM_PORT = int(_env("LLM_PORT", "8091"))
 LLM_LLAMA_PORT = int(_env("LLM_LLAMA_PORT", "8080"))
-LLM_TEMPERATURE = float(_env("LLM_TEMPERATURE", "0.7"))
-LLM_TOP_P = float(_env("LLM_TOP_P", "0.8"))
+LLM_TEMPERATURE = float(_env("LLM_TEMPERATURE", "0.5"))
+LLM_TOP_P = float(_env("LLM_TOP_P", "0.9"))
 LLM_TOP_K = int(_env("LLM_TOP_K", "20"))
+LLM_MIN_P = float(_env("LLM_MIN_P", "0.05"))
 LLM_MAX_TOKENS = int(_env("LLM_MAX_TOKENS", "48"))
 LLM_CONTEXT_SIZE = int(_env("LLM_CONTEXT_SIZE", "2048"))
 LLM_N_GPU_LAYERS = 0
 LLM_TIMEOUT_SEC = float(_env("LLM_TIMEOUT_SEC", "60"))
-LLM_REPEAT_PENALTY = float(_env("LLM_REPEAT_PENALTY", "1.12"))
+LLM_REPEAT_PENALTY = float(_env("LLM_REPEAT_PENALTY", "1.05"))
 LLM_ANALYSIS_MAX_TOKENS = int(_env("LLM_ANALYSIS_MAX_TOKENS", "180"))
+OPENAI_API_KEY = _env("OPENAI_API_KEY", "")
+OPENAI_SCORE_MODEL = _env("OPENAI_SCORE_MODEL", "o3-mini")
+OPENAI_BASE_URL = _env("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+
+
+def _load_repo_env() -> None:
+    path = REPO_ROOT / ".env"
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        key = name.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value.strip().strip('"').strip("'")
+
+
+_load_repo_env()
+OPENAI_API_KEY = _env("OPENAI_API_KEY", OPENAI_API_KEY)
+OPENAI_SCORE_MODEL = _env("OPENAI_SCORE_MODEL", OPENAI_SCORE_MODEL)
+OPENAI_BASE_URL = _env("OPENAI_BASE_URL", OPENAI_BASE_URL).rstrip("/")
 
 
 def _default_threads() -> str:
@@ -39,7 +63,7 @@ def _default_threads() -> str:
 
 def _default_batch_threads() -> str:
     logical = os.cpu_count() or 4
-    return str(max(int(_default_threads()), min(logical - 1, 14)))
+    return str(max(int(_default_threads()), min(logical, 16)))
 
 
 LLM_THREADS = int(_env("LLM_THREADS", _default_threads()))

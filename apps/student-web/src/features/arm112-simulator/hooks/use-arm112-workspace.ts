@@ -24,6 +24,8 @@ import type { CallSession, CallerStatus, ClassifierPath, IncidentCard, ServiceAs
 import { CALLER_STATUSES } from '../model/arm112-models';
 import { createEmptyIncidentCard } from '../model/factories';
 import { buildPracticalResult, type Arm112PracticalResult, type TrainingAction } from '../model/training-result';
+import { readArmDraft, writeArmDraft } from '../../../progress/draft-store';
+import { incomingChannelFor, smsFromTicket } from '../../../progress/ticket-facts';
 
 export type ArmUiModal =
   | 'none'
@@ -119,20 +121,27 @@ function applyClassifier(card: IncidentCard, path: ClassifierPath): IncidentCard
 export function useArm112Workspace(input: {
   scenario: TrainingScenario;
   operatorName: string;
+  operatorLogin?: string;
   mode?: 'training' | 'guided';
 }) {
   const mode = input.mode ?? 'training';
   const binding = useMemo(() => trainingBindingFor(input.scenario), [input.scenario]);
-  const [phase, setPhase] = useState<CallSession['phase']>('входящий звонок');
-  const [telephonyStatus, setTelephonyStatus] = useState<CallSession['telephonyStatus']>('доступен');
+  const draft = mode !== 'guided' && input.operatorLogin ? readArmDraft(input.operatorLogin, input.scenario.id) : null;
+  const [phase, setPhase] = useState<CallSession['phase']>(
+    draft?.phase ?? (mode === 'guided' ? 'заполнение карточки' : 'входящий звонок'),
+  );
+  const [telephonyStatus, setTelephonyStatus] = useState<CallSession['telephonyStatus']>(
+    draft?.telephonyStatus ?? 'доступен',
+  );
   const [modal, setModal] = useState<ArmUiModal>('none');
   const [emptyReason, setEmptyReason] = useState<'нет контакта' | 'срыв звонка'>('нет контакта');
   const [mapOpen, setMapOpen] = useState(false);
   const [startedAt] = useState(isoNow);
-  const [incomingAcceptedAt, setIncomingAcceptedAt] = useState<string | null>(null);
+  const [incomingAcceptedAt, setIncomingAcceptedAt] = useState<string | null>(draft?.incomingAcceptedAt ?? null);
   const [actions, setActions] = useState<TrainingAction[]>([]);
   const [result, setResult] = useState<Arm112PracticalResult | null>(null);
   const [card, setCard] = useState<IncidentCard>(() =>
+    draft?.card ??
     createEmptyIncidentCard({
       number: String(36800000 + Math.floor(Math.random() * 90000)),
       createdAt: nowStamp(),
@@ -140,6 +149,23 @@ export function useArm112Workspace(input: {
       armNumber: '4',
     }),
   );
+
+  useEffect(() => {
+    if (mode === 'guided' || !input.operatorLogin || result) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      writeArmDraft(input.operatorLogin as string, {
+        scenarioId: input.scenario.id,
+        savedAt: isoNow(),
+        phase,
+        card,
+        incomingAcceptedAt,
+        telephonyStatus,
+      });
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [card, incomingAcceptedAt, input.operatorLogin, input.scenario.id, mode, phase, result, telephonyStatus]);
 
   function log(type: string, detail: string) {
     setActions((current) => [...current, { at: isoNow(), type, detail }]);
@@ -175,7 +201,7 @@ export function useArm112Workspace(input: {
     setCard((current) => ({ ...current, ...next }));
   }
 
-  function acceptCall() {
+  function acceptIncoming(kind: 'call' | 'sms' = 'call') {
     if (phase === PHASE_AFTER_INCOMING_ACCEPT) {
       return;
     }
@@ -183,7 +209,7 @@ export function useArm112Workspace(input: {
     setIncomingAcceptedAt((current) => current ?? at);
     setTelephonyStatus('недоступен');
     setPhase(PHASE_AFTER_INCOMING_ACCEPT);
-    log('accept-call', binding.incomingNumber);
+    log(kind === 'sms' ? 'accept-sms' : 'accept-call', binding.incomingNumber);
     setCard((current) => ({
       ...current,
       caller: {
@@ -199,6 +225,14 @@ export function useArm112Workspace(input: {
               exceeded: current.timer.elapsedSeconds >= binding.cardTimerLimitSec,
             },
     }));
+  }
+
+  function acceptCall() {
+    acceptIncoming('call');
+  }
+
+  function acceptSms() {
+    acceptIncoming('sms');
   }
 
   function openManualCard() {
@@ -389,13 +423,30 @@ export function useArm112Workspace(input: {
     setPhase('просмотр карточки');
   }
 
+  function snapshotPractical(): Arm112PracticalResult {
+    const completedAt = isoNow();
+    const path = card.classification.classifier;
+    const matched = path.groupCode || path.priznak1 ? matchRecords(filterFromPath(path)) : [];
+    return buildPracticalResult({
+      scenario: input.scenario,
+      binding,
+      card,
+      startedAt,
+      completedAt,
+      incomingAcceptedAt,
+      actions,
+      matched,
+    });
+  }
+
   function markOtrabotana() {
     if (mode === 'guided') {
       return;
     }
     const completedAt = isoNow();
     const next = { ...card, status: 'Отработана' as const };
-    const matched = matchRecords(filterFromPath(next.classification.classifier));
+    const path = next.classification.classifier;
+    const matched = path.groupCode || path.priznak1 ? matchRecords(filterFromPath(path)) : [];
     const nextActions = [...actions, { at: completedAt, type: 'otrabotana', detail: 'Отработана' }];
     setCard(next);
     setActions(nextActions);
@@ -466,6 +517,7 @@ export function useArm112Workspace(input: {
     searchHits,
     classifierOptions: options,
     acceptCall,
+    acceptSms,
     openManualCard,
     selectType,
     selectPriznak,
@@ -475,6 +527,7 @@ export function useArm112Workspace(input: {
     copyAonTo,
     saveCard,
     markOtrabotana,
+    snapshotPractical,
     setInjuredCount,
     toggleFlag,
     activeQuestionnaire,
@@ -487,6 +540,8 @@ export function useArm112Workspace(input: {
     actions,
     mode,
     incomingAcceptedAt,
+    smsInbox:
+      incomingChannelFor(input.scenario) === 'sms' ? smsFromTicket(input.scenario) : '',
   };
 }
 

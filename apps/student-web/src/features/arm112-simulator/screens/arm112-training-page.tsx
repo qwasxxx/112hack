@@ -4,23 +4,30 @@ import { JournalScreen } from '../components/journal-screen';
 import { useArm112Workspace } from '../hooks/use-arm112-workspace';
 import { CallPage } from '../../../pages/call-page';
 import { unlockTtsAudio } from '../../../lib/tts-player';
+import { incomingChannelFor, smsFromTicket, type TranscriptTurn } from '../../../progress';
+import type { TrainingFinish } from '../../../pages/debrief-page';
 import '../styles/arm112.css';
 import { CardCreateScreen } from './card-create-screen';
-import { CardViewScreen } from './card-view-screen';
-import { TrainingResultPanel } from '../components/training-result-panel';
 import type { Arm112PracticalResult } from '../model/training-result';
 
 type Props = {
   scenario: TrainingScenario;
   operatorName: string;
+  operatorLogin: string;
+  kind?: 'training' | 'exam';
   onLeave: () => void;
   onCompleted?: (result: Arm112PracticalResult) => void;
+  onFinished: (finish: TrainingFinish) => void;
 };
 
 export function Arm112TrainingPage(props: Props) {
+  const kind = props.kind ?? 'training';
+  const channel = incomingChannelFor(props.scenario, kind);
+  const sms = channel === 'sms';
   const workspace = useArm112Workspace({
     scenario: props.scenario,
     operatorName: props.operatorName,
+    operatorLogin: props.operatorLogin,
     mode: 'training',
   });
   const reported = useRef(false);
@@ -33,14 +40,31 @@ export function Arm112TrainingPage(props: Props) {
     onCompleted?.(workspace.result);
   }, [onCompleted, workspace.result]);
   const binding = workspace.binding;
-  const showCard = workspace.phase === 'заполнение карточки' || workspace.phase === 'активный вызов';
-  const showView = workspace.phase === 'просмотр карточки' || workspace.phase === 'завершена';
-  const showConversation = workspace.phase === 'активный вызов';
+  const showConversation =
+    workspace.phase === 'активный вызов' ||
+    workspace.phase === 'просмотр карточки' ||
+    workspace.phase === 'завершена';
+  const showCard = workspace.phase === 'заполнение карточки' || showConversation;
+  const smsText = sms ? smsFromTicket(props.scenario) : '';
+
+  function finish(transcript: TranscriptTurn[], durationSec: number) {
+    const result = workspace.snapshotPractical();
+    props.onCompleted?.(result);
+    props.onFinished({
+      scenario: props.scenario,
+      result,
+      transcript,
+      durationSec,
+      kind,
+      channel,
+    });
+  }
 
   return (
     <div
       className="arm112-shell"
-      data-lesson="training"
+      data-lesson={kind}
+      data-channel={channel}
       data-scenario={props.scenario.code}
       data-call-phase={workspace.phase}
     >
@@ -49,12 +73,14 @@ export function Arm112TrainingPage(props: Props) {
           К уроку
         </button>
         <span>
-          Тренировка · {binding.scenarioCode} {props.scenario.title}
+          {kind === 'exam' ? 'Экзамен' : sms ? 'Тренировка · SMS' : 'Тренировка'} · {binding.scenarioCode}{' '}
+          {props.scenario.title}
         </span>
         <span className="arm112-chrome-meta">
           норматив {binding.normativeDurationMin} мин · набор карточки {binding.cardTimerLimitSec} сек
+          {kind === 'exam' ? ' · зачёт от 80' : ''}
         </span>
-        {workspace.phase !== 'ожидание' && workspace.phase !== 'входящий звонок' ? (
+        {kind !== 'exam' && !sms && workspace.phase !== 'ожидание' && workspace.phase !== 'входящий звонок' ? (
           <span className="arm112-chrome-call">Заявитель: {binding.callerOpening}</span>
         ) : null}
       </div>
@@ -63,8 +89,14 @@ export function Arm112TrainingPage(props: Props) {
           <JournalScreen
             telephonyStatus={workspace.telephonyStatus}
             incoming={workspace.phase === 'входящий звонок'}
+            incomingKind={sms ? 'sms' : 'call'}
+            incomingPreview={sms ? smsText : undefined}
             incomingNumber={binding.incomingNumber}
             onAcceptCall={() => {
+              if (sms) {
+                workspace.acceptSms();
+                return;
+              }
               unlockTtsAudio();
               workspace.acceptCall();
             }}
@@ -78,7 +110,7 @@ export function Arm112TrainingPage(props: Props) {
         {showCard ? (
           <div className={showConversation ? 'arm112-live' : undefined}>
             <div className="arm112-live-main">
-              {showConversation ? null : (
+              {showConversation || kind === 'exam' || sms ? null : (
                 <div className="arm112-script" aria-label="Реплика заявителя">
                   <span>Реплика заявителя</span>
                   <p>{binding.callerOpening}</p>
@@ -86,19 +118,28 @@ export function Arm112TrainingPage(props: Props) {
               )}
               <CardCreateScreen workspace={workspace} onClose={() => workspace.setPhase('ожидание')} />
             </div>
-            {showConversation ? (
+            {showConversation && sms ? (
+              <aside className="arm112-sms-panel" aria-label="Входящее SMS">
+                <p>Входящее SMS</p>
+                <strong>с номера {binding.incomingNumber}</strong>
+                <p className="arm112-sms-body">{smsText}</p>
+                <button type="button" onClick={() => finish([], workspace.card.timer.elapsedSeconds)}>
+                  Завершить обработку
+                </button>
+              </aside>
+            ) : null}
+            {showConversation && !sms ? (
               <CallPage
                 scenario={props.scenario}
-                section="training"
+                section={kind}
                 variant="panel"
                 autoStart
                 onLeave={() => undefined}
+                onCallEnded={(payload) => finish(payload.lines, payload.seconds)}
               />
             ) : null}
           </div>
         ) : null}
-        {showView ? <CardViewScreen workspace={workspace} onClose={props.onLeave} /> : null}
-        {workspace.result ? <TrainingResultPanel result={workspace.result} onLeave={props.onLeave} /> : null}
       </div>
     </div>
   );

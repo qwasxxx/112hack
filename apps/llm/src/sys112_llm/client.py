@@ -10,6 +10,7 @@ import httpx
 from sys112_llm.config import (
     LLM_BASE_URL,
     LLM_MAX_TOKENS,
+    LLM_MIN_P,
     LLM_MODEL_NAME,
     LLM_REPEAT_PENALTY,
     LLM_TEMPERATURE,
@@ -28,6 +29,14 @@ _ABBREV = (
     (re.compile(r"\bSTR\b", re.IGNORECASE), "строение"),
     (re.compile(r"\bKM\b", re.IGNORECASE), "километр"),
     (re.compile(r"\bST\b"), "станция"),
+    (re.compile(r"(?<=[оыи]й)\s*обл\.", re.IGNORECASE), " области"),
+    (re.compile(r"\bобл\.", re.IGNORECASE), "область"),
+    (re.compile(r"\bгор\.(?=\s*[А-ЯЁа-яё])", re.IGNORECASE), "город"),
+    (re.compile(r"(?:^|(?<=[\s,;:]))г\.(?=\s*[А-ЯЁа-яё])", re.IGNORECASE), "город"),
+    (re.compile(r"\bпос\.", re.IGNORECASE), "посёлок"),
+    (re.compile(r"\bдер\.", re.IGNORECASE), "деревня"),
+    (re.compile(r"\bр-на\b", re.IGNORECASE), "района"),
+    (re.compile(r"\bр-н\b", re.IGNORECASE), "район"),
     (re.compile(r"\bСТ\.(?=\s|$|\d)", re.IGNORECASE), "станция"),
     (re.compile(r"\bст\.(?=\s|$|\d)", re.IGNORECASE), "станция"),
     (re.compile(r"\bстр\.?(?=\s|$|\d|,)", re.IGNORECASE), "строение"),
@@ -35,7 +44,12 @@ _ABBREV = (
     (re.compile(r"\bкорп\.?(?=\s|$|\d|,)", re.IGNORECASE), "корпус"),
     (re.compile(r"\bкв\.(?=\s|$|\d)", re.IGNORECASE), "квартира"),
     (re.compile(r"\bул\.(?=\s|$|\d)", re.IGNORECASE), "улица"),
+    (re.compile(r"\bпросп\.", re.IGNORECASE), "проспект"),
+    (re.compile(r"\bпр-т\.?", re.IGNORECASE), "проспект"),
     (re.compile(r"\bпер\.(?=\s|$|\d)", re.IGNORECASE), "переулок"),
+    (re.compile(r"\bнаб\.", re.IGNORECASE), "набережная"),
+    (re.compile(r"\bш\.(?=\s|$|,)", re.IGNORECASE), "шоссе"),
+    (re.compile(r"\bмкр\.?", re.IGNORECASE), "микрорайон"),
     (re.compile(r"\bд\.(?=\s*\d)", re.IGNORECASE), "дом"),
     (re.compile(r"([а-яёА-ЯЁ])(\d)"), r"\1 \2"),
 )
@@ -73,6 +87,13 @@ def sanitize_speech(text: str) -> str:
 class LlamaClient:
     def __init__(self, base_url: str = LLM_BASE_URL) -> None:
         self.base_url = base_url.rstrip("/")
+        self._http = httpx.AsyncClient(
+            timeout=httpx.Timeout(LLM_TIMEOUT_SEC, connect=5.0),
+            trust_env=False,
+        )
+
+    async def aclose(self) -> None:
+        await self._http.aclose()
 
     def _chat_payload(
         self,
@@ -88,6 +109,7 @@ class LlamaClient:
             "temperature": LLM_TEMPERATURE,
             "top_p": LLM_TOP_P,
             "top_k": LLM_TOP_K,
+            "min_p": LLM_MIN_P,
             "max_tokens": max_tokens,
             "repeat_penalty": LLM_REPEAT_PENALTY,
             "cache_prompt": True,
@@ -99,35 +121,33 @@ class LlamaClient:
 
     async def ready(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                response = await client.get(f"{self.base_url}/v1/models")
-                return response.status_code == 200
+            response = await self._http.get(f"{self.base_url}/v1/models", timeout=3.0)
+            return response.status_code == 200
         except Exception:
             return False
 
     async def prefetch_chat(self, messages: list[dict[str, str]]) -> None:
-        async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SEC) as http:
-            response = None
-            for tokens in (0, 1):
-                payload = self._chat_payload(messages, stream=False, max_tokens=tokens)
-                response = await http.post(
-                    f"{self.base_url}/v1/chat/completions",
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                )
-                if response.status_code != 400:
-                    break
-            if response is None:
-                return
-            response.raise_for_status()
-            data = response.json()
-            timings = data.get("timings") or {}
-            if timings:
-                logger.info(
-                    "[LLM] warmup prompt %sms / %s tok",
-                    round(float(timings.get("prompt_ms") or 0)),
-                    timings.get("prompt_n"),
-                )
+        response = None
+        for tokens in (0, 1):
+            payload = self._chat_payload(messages, stream=False, max_tokens=tokens)
+            response = await self._http.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            if response.status_code != 400:
+                break
+        if response is None:
+            return
+        response.raise_for_status()
+        data = response.json()
+        timings = data.get("timings") or {}
+        if timings:
+            logger.info(
+                "[LLM] warmup prompt %sms / %s tok",
+                round(float(timings.get("prompt_ms") or 0)),
+                timings.get("prompt_n"),
+            )
 
     async def stream_chat(
         self,
@@ -140,39 +160,63 @@ class LlamaClient:
             stream=True,
             max_tokens=LLM_MAX_TOKENS if max_tokens is None else max_tokens,
         )
-        async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SEC) as client:
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/v1/chat/completions",
-                json=payload,
-                headers={"Content-Type": "application/json"},
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if should_stop and should_stop():
-                        return
-                    if not line:
-                        continue
-                    if line.startswith("data:"):
-                        data = line[5:].strip()
-                    else:
-                        data = line.strip()
-                    if not data or data == "[DONE]":
-                        continue
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    timings = chunk.get("timings")
-                    if timings:
-                        logger.info(
-                            "[LLM] prompt %sms / %s tok, decode %sms / %s tok",
-                            round(float(timings.get("prompt_ms") or 0)),
-                            timings.get("prompt_n"),
-                            round(float(timings.get("predicted_ms") or 0)),
-                            timings.get("predicted_n"),
-                        )
-                    delta = chunk.get("choices", [{}])[0].get("delta", {})
-                    piece = delta.get("content") or ""
-                    if piece:
-                        yield piece
+        async with self._http.stream(
+            "POST",
+            f"{self.base_url}/v1/chat/completions",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if should_stop and should_stop():
+                    return
+                if not line:
+                    continue
+                if line.startswith("data:"):
+                    data = line[5:].strip()
+                else:
+                    data = line.strip()
+                if not data or data == "[DONE]":
+                    continue
+                try:
+                    chunk = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                timings = chunk.get("timings")
+                if timings:
+                    logger.info(
+                        "[LLM] prompt %sms / %s tok, decode %sms / %s tok",
+                        round(float(timings.get("prompt_ms") or 0)),
+                        timings.get("prompt_n"),
+                        round(float(timings.get("predicted_ms") or 0)),
+                        timings.get("predicted_n"),
+                    )
+                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                piece = delta.get("content") or ""
+                if piece:
+                    yield piece
+
+    async def complete_chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int,
+        temperature: float = 0.3,
+        think: bool = False,
+    ) -> str:
+        payload = self._chat_payload(messages, stream=False, max_tokens=max_tokens)
+        payload["temperature"] = temperature
+        payload["stop"] = []
+        if think:
+            payload["chat_template_kwargs"] = {"enable_thinking": True}
+            payload["enable_thinking"] = True
+        response = await self._http.post(
+            f"{self.base_url}/v1/chat/completions",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            **({"timeout": 80.0} if think else {}),
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = str((data.get("choices") or [{}])[0].get("message", {}).get("content") or "")
+        return strip_reasoning(content)

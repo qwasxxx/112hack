@@ -5,17 +5,14 @@ import { TheoryGuidePanel } from '../guided/theory-guide-panel';
 import { THEORY_STEPS } from '../guided/tutorial-steps';
 import type { TheoryRegionId } from '../guided/types';
 import { useArm112Workspace } from '../hooks/use-arm112-workspace';
-import { JournalScreen } from '../components/journal-screen';
 import { CardCreateScreen } from './card-create-screen';
 import '../styles/arm112.css';
 
 type Props = {
-  scenario: TrainingScenario;
   onLeave: () => void;
 };
 
 const REGION_TO_STEP: Partial<Record<TheoryRegionId, string>> = {
-  incoming: 'call',
   phones: 'call',
   caller: 'caller',
   address: 'address',
@@ -27,16 +24,29 @@ const REGION_TO_STEP: Partial<Record<TheoryRegionId, string>> = {
   footer: 'card-actions',
 };
 
+const THEORY_CARD: TrainingScenario = {
+  id: 'arm112-theory',
+  code: 'АРМ',
+  title: 'Карточка АРМ-112',
+  summary: '',
+  services: ['ambulance'],
+  durationMin: 8,
+  difficulty: 'базовый',
+  theory: [],
+  checklist: [],
+  callerOpening: '',
+  cardFields: [],
+};
+
 export function Arm112TheoryPage(props: Props) {
   const workspace = useArm112Workspace({
-    scenario: props.scenario,
+    scenario: THEORY_CARD,
     operatorName: 'ознакомление',
     mode: 'guided',
   });
   const [stepIndex, setStepIndex] = useState(0);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const step = THEORY_STEPS[stepIndex] ?? THEORY_STEPS[0];
-  const showJournal = step.id === 'call' && workspace.phase === 'входящий звонок';
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -65,15 +75,13 @@ export function Arm112TheoryPage(props: Props) {
   }
 
   return (
-    <div className="arm112-shell is-guided" data-lesson="theory" data-scenario={props.scenario.code}>
+    <div className="arm112-shell is-guided" data-lesson="theory">
       <div className="arm112-chrome">
         <button type="button" onClick={props.onLeave}>
-          К уроку
+          К списку
         </button>
-        <span>
-          Теория · {workspace.binding.scenarioCode} {props.scenario.title}
-        </span>
-        <span className="arm112-chrome-meta">ознакомление с АРМ-112 · учебный вызов не запускается</span>
+        <span>Теория · АРМ-112</span>
+        <span className="arm112-chrome-meta">Карточка происшествия</span>
       </div>
       <div className="arm112-theory-split">
         <ArmGuidedProvider
@@ -83,21 +91,7 @@ export function Arm112TheoryPage(props: Props) {
           }}
         >
           <div className="arm112-workspace">
-            {showJournal ? (
-              <JournalScreen
-                telephonyStatus={workspace.telephonyStatus}
-                incoming
-                incomingNumber={workspace.binding.incomingNumber}
-                onAcceptCall={workspace.acceptCall}
-                onDismissIncoming={() => undefined}
-                onCreateCard={workspace.openManualCard}
-                onToggleTelephony={() =>
-                  workspace.setTelephonyStatus(workspace.telephonyStatus === 'доступен' ? 'недоступен' : 'доступен')
-                }
-              />
-            ) : (
-              <CardCreateScreen workspace={workspace} onClose={props.onLeave} />
-            )}
+            <CardCreateScreen workspace={workspace} onClose={props.onLeave} />
           </div>
         </ArmGuidedProvider>
         <TheoryGuidePanel

@@ -1,0 +1,43 @@
+.handbook-board {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  padding: 4px 2px 24px;
+}
+
+.handbook-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.handbook-grid article {
+  padding: 16px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.handbook-grid h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.handbook-grid ol {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--catalog-navy);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.handbook-grid li + li {
+  margin-top: 6px;
+}
+
+@media (max-width: 900px) {
+  .handbook-grid {
+    grid-template-columns: 1fr;
+  }
+}

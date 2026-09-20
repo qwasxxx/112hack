@@ -10,6 +10,14 @@ export type CardField = {
   options?: string[];
 };
 
+export type CallerTtsVoice = {
+  speaker: 'aidar' | 'baya' | 'eugene' | 'kseniya' | 'xenia';
+  pitch: 'low' | 'medium' | 'high';
+  speed: number;
+  emotion: 'panic' | 'scared';
+  gender: 'male' | 'female';
+};
+
 export type TrainingScenario = {
   id: string;
   code: string;
@@ -21,6 +29,7 @@ export type TrainingScenario = {
   theory: string[];
   checklist: string[];
   callerOpening: string;
+  ttsVoice?: CallerTtsVoice;
   cardFields: CardField[];
   ticketNo?: number;
   situationNo?: number;
@@ -45,25 +54,18 @@ export const LESSON_SECTIONS: Array<{
   enabled: boolean;
 }> = [
   {
-    id: 'theory',
-    title: 'Теория',
-    lead: 'Ознакомление с АРМ-112: поля карточки, звонок, адрес, службы и действия. Без учебного вызова.',
-    youAre: 'Ознакомление с АРМ',
-    enabled: true,
-  },
-  {
     id: 'training',
     title: 'Тренировка',
-    lead: 'Вызов, заполнение карточки происшествия, классификатор и службы. Результат — заполненные поля, службы и замечания по обязательным данным.',
+    lead: 'Вы — оператор 112. На линии заявитель. Принимаете вызов и заполняете карточку.',
     youAre: 'Вы — оператор',
     enabled: true,
   },
   {
     id: 'exam',
     title: 'Экзамен',
-    lead: 'Тот же формат, что тренировка, но преподаватель сможет вмешиваться в разговор. Пока недоступно.',
+    lead: 'Аттестация: принять вызов, заполнить карточку, сверить с эталоном. Зачёт от 80 баллов. Подсказок на линии нет.',
     youAre: 'Вы — оператор',
-    enabled: false,
+    enabled: true,
   },
 ];
 

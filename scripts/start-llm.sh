@@ -16,6 +16,10 @@ export LLM_MODEL_PATH="$MODEL"
 export LLM_BASE_URL=http://127.0.0.1:8080
 export LLM_HOST=127.0.0.1
 export LLM_PORT=8091
+export LLM_TEMPERATURE=0.5
+export LLM_TOP_P=0.9
+export LLM_MAX_TOKENS=48
+export LLM_CONTEXT_SIZE=2048
 
 "$VENV/bin/python" "$LLM/scripts/download_model.py"
 exec "$VENV/bin/python" -m uvicorn sys112_llm.app:app --host 127.0.0.1 --port 8091
