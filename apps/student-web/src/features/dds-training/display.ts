@@ -89,3 +89,19 @@ export function ddsClassLabel(scenario: TrainingScenario, description: string, s
   }
   return scenario.title || 'происшествие';
 }
+
+const CLASS_LINE: Record<string, string> = {
+  'пожар: квартира': 'Пожар в квартире',
+  'пожар: мусор': 'Пожар / задымление',
+  пожар: 'Пожар',
+  'запах газа': 'Запах газа',
+  'медицинская помощь': 'Медицинский вызов',
+};
+
+export function journalIncidentLine(title: string, classifierClass: string): string {
+  if (CLASS_LINE[classifierClass]) {
+    return CLASS_LINE[classifierClass];
+  }
+  const cut = title.replace(/^Билет\s+[\d.]+\s*[—–-]\s*/u, '').trim();
+  return cut || title;
+}

@@ -43,4 +43,11 @@ export class DatabaseService {
       return false;
     }
   }
+
+  requireSql(): Sql {
+    if (!this.client || this.status !== 'connected') {
+      throw new Error(this.lastError || 'База данных недоступна');
+    }
+    return this.client;
+  }
 }

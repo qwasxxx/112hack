@@ -18,15 +18,21 @@ import {
   assignScenario,
   assignedScenarioIds,
   isScenarioAssigned,
+  liveCardSnapshot,
+  pushTeacherCue,
   readAllLessons,
+  readClassSession,
   readLiveSessions,
+  subscribeLive,
   unassignScenario,
   type LessonRecord,
 } from '../progress';
+import { latestCue } from '../progress/teacher-cues';
+import { hydrateFromApi } from '../progress/hydrate';
+import { pushAudit, pushOverlay } from '../progress/remote';
 
 const COMMENTS_KEY = 'sys112.teacher.comments.v1';
 const AUDIT_KEY = 'sys112.teacher.audit.v1';
-const CUSTOM_SCENARIOS_KEY = 'sys112.teacher.scenarios.v1';
 
 type CommentMap = Record<string, { expertScore?: number; comment?: string }>;
 
@@ -79,8 +85,33 @@ function toScenario(id: string): Scenario | null {
   };
 }
 
-function customScenarios(): Scenario[] {
-  return readJson<Scenario[]>(CUSTOM_SCENARIOS_KEY, []);
+function resolveTicket(draft: ScenarioDraft) {
+  if (draft.id) {
+    const byId = SCENARIOS.find((item) => item.id === draft.id);
+    if (byId) {
+      return byId;
+    }
+  }
+  const title = draft.title.trim().toLowerCase();
+  if (!title) {
+    return null;
+  }
+  return (
+    SCENARIOS.find((item) => title.includes(item.code.toLowerCase()) || title.includes(item.id.toLowerCase())) ??
+    SCENARIOS.find((item) => item.title.toLowerCase() === title || title.includes(item.title.toLowerCase())) ??
+    null
+  );
+}
+
+function emotionFromLogin(login: string): ActiveSession['emotionalState'] {
+  const cue = latestCue(login);
+  if (cue?.type === 'set_emotional_state') {
+    return { primary: 'panicked', intensity: 0.86, stability: 0.22 };
+  }
+  if (cue?.type === 'inject_event' || cue?.type === 'adjust_difficulty') {
+    return { primary: 'confused', intensity: 0.7, stability: 0.32 };
+  }
+  return { primary: 'anxious', intensity: 0.4, stability: 0.6 };
 }
 
 function lessonToResult(lesson: LessonRecord, students: Student[]): CompletedResult {
@@ -139,11 +170,22 @@ function lessonToResult(lesson: LessonRecord, students: Student[]): CompletedRes
   };
 }
 
-function emptyCard(): ActiveSession['incidentCard'] {
-  return {};
-}
-
 export class LocalTeacherDashboardRepository implements TeacherDashboardRepository {
+  private pendingHydrate?: Promise<void>;
+
+  private hydrate(): Promise<void> {
+    if (!this.pendingHydrate) {
+      this.pendingHydrate = hydrateFromApi().finally(() => {
+        this.pendingHydrate = undefined;
+      });
+    }
+    return this.pendingHydrate;
+  }
+
+  watch(onChange: () => void): () => void {
+    return subscribeLive(onChange);
+  }
+
   private async students(): Promise<Student[]> {
     const accounts = await loadAccounts();
     return accounts
@@ -152,10 +194,12 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
   }
 
   async getDashboardSnapshot(): Promise<DashboardSnapshot> {
+    await this.hydrate();
     const students = await this.students();
     const results = await this.getResults();
-    const live = readLiveSessions();
     const assigned = assignedScenarioIds().length;
+    const live = readLiveSessions();
+    const classSession = readClassSession();
     const avg = results.length
       ? Math.round(results.reduce((sum, item) => sum + item.finalScore, 0) / results.length)
       : 0;
@@ -178,9 +222,18 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
       activeCount: live.length,
       averageScore: avg,
       completionRate: assigned === 0 ? 0 : Math.min(100, Math.round((passed / Math.max(assigned, 1)) * 100)),
-      upcomingLessons: assigned
-        ? [{ id: 'asg-1', title: `Назначено билетов: ${assigned}`, group: 'Учебная группа', startsAt: new Date().toISOString() }]
-        : [],
+      upcomingLessons: classSession.active
+        ? [
+            {
+              id: 'class-live',
+              title: classSession.title || 'Идёт занятие',
+              group: 'Учебная группа',
+              startsAt: classSession.startedAt,
+            },
+          ]
+        : assigned
+          ? [{ id: 'asg-1', title: `Назначено билетов: ${assigned}`, group: 'Учебная группа', startsAt: new Date().toISOString() }]
+          : [],
       scoreTrend: trend.length ? trend : [0],
       categoryScores: [
         { category: 'Тренировка 112', score: avgFor(results, 'Тренировка 112') },
@@ -192,6 +245,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
   }
 
   async getActiveSessions(): Promise<ActiveSession[]> {
+    await this.hydrate();
     const students = await this.students();
     return readLiveSessions().map((item) => {
       const student =
@@ -201,36 +255,58 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
           groupId: 'g-local',
         };
       const durationSec = Math.max(0, Math.round((Date.now() - Date.parse(item.startedAt)) / 1000));
+      const snap = liveCardSnapshot(item.login, item.scenarioId, item.mode);
+      const cue = latestCue(item.login);
+      const progress = item.cardProgress || snap.percent;
+      const rows = item.cardRows?.length ? item.cardRows : snap.rows;
+      const briefing = item.phase === 'Брифинг' || item.phase === 'Теория';
       return {
         callId: `live-${item.login}`,
         student,
         scenarioId: item.scenarioId,
-        scenarioTitle: item.scenarioTitle,
-        category: item.mode === 'dds' ? 'ДДС' : item.mode === 'exam' ? 'Экзамен' : 'Тренировка',
+        scenarioTitle: item.phase ? `${item.scenarioTitle} · ${item.phase}` : item.scenarioTitle,
+        category: briefing
+          ? item.phase || 'Подготовка'
+          : item.mode === 'dds'
+            ? 'ДДС'
+            : item.mode === 'exam'
+              ? 'Экзамен'
+              : 'Тренировка',
         difficulty: 'standard',
         mode: item.mode === 'exam' ? 'exam' : 'training',
         startedAt: item.startedAt,
         durationSec,
-        status: 'live',
-        cardProgress: item.cardProgress,
-        foundActions: 0,
-        missedActions: 0,
-        emotionalState: { primary: 'anxious', intensity: 0.4, stability: 0.6 },
+        status: briefing ? 'paused' : 'live',
+        cardProgress: progress,
+        foundActions: item.foundActions ?? snap.found,
+        missedActions: item.missedActions ?? snap.missed,
+        emotionalState: emotionFromLogin(item.login),
         riskSignals: {
           missedRequiredQuestions: 0,
           longPauses: 0,
-          emptyRequiredFields: 0,
+          emptyRequiredFields: rows.filter((row) => row.key !== 'phase' && !row.filled).length,
           repeatedQuestions: 0,
-          emotionalEscalation: 0,
+          emotionalEscalation: cue?.type === 'set_emotional_state' ? 2 : 0,
           actionOrderViolations: 0,
           timeLimitRatio: Math.min(1, durationSec / 180),
           hasCriticalError: false,
         },
-        riskHistory: [12, 18, 22],
-        transcript: [],
-        incidentCard: emptyCard(),
-        requiredActions: [],
-        protocolViolations: [],
+        riskHistory: [12, 18, Math.min(90, 20 + snap.missed * 8)],
+        transcript: (item.transcript ?? []).map((line, index) => ({
+          id: `tr-${item.login}-${index}`,
+          role: line.role,
+          text: line.text,
+          at: line.at,
+        })),
+        incidentCard: Object.fromEntries(rows.map((row) => [row.label, row.value])),
+        requiredActions: rows
+          .filter((row) => row.key !== 'phase')
+          .map((row) => ({
+            id: row.key,
+            label: row.label,
+            completed: row.filled,
+          })),
+        protocolViolations: snap.missed ? [`Не заполнено полей: ${snap.missed}`] : [],
         timeline: [
           {
             id: `t-${item.login}`,
@@ -239,8 +315,19 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
             detail: item.scenarioTitle,
             kind: 'system',
           },
+          ...(cue
+            ? [
+                {
+                  id: cue.id,
+                  at: new Date(cue.at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+                  title: 'Вмешательство',
+                  detail: cue.note || cue.type,
+                  kind: 'intervention' as const,
+                },
+              ]
+            : []),
         ],
-        currentScore: 0,
+        currentScore: progress,
       };
     });
   }
@@ -251,8 +338,8 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
   }
 
   async getScenarios(): Promise<Scenario[]> {
-    const tickets = SCENARIOS.map((item) => toScenario(item.id)).filter((item): item is Scenario => Boolean(item));
-    return [...customScenarios(), ...tickets];
+    await this.hydrate();
+    return SCENARIOS.map((item) => toScenario(item.id)).filter((item): item is Scenario => Boolean(item));
   }
 
   async getMaterials(): Promise<TrainingMaterial[]> {
@@ -268,17 +355,15 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
   }
 
   async saveScenario(draft: ScenarioDraft): Promise<Scenario> {
-    const saved: Scenario = {
-      ...draft,
-      id: draft.id ?? `custom-${Date.now()}`,
-      version: 1,
-      status: 'active',
-      assignments: 1,
-      updatedAt: new Date().toISOString(),
-    };
-    const current = customScenarios().filter((item) => item.id !== saved.id);
-    writeJson(CUSTOM_SCENARIOS_KEY, [...current, saved]);
-    assignScenario(saved.id);
+    const ticket = resolveTicket(draft);
+    if (!ticket) {
+      throw new Error('Назначайте существующий билет АГС: укажите код в названии, например «П-12». Новый сценарий ученик открыть не сможет.');
+    }
+    assignScenario(ticket.id);
+    const saved = toScenario(ticket.id);
+    if (!saved) {
+      throw new Error('Билет не найден');
+    }
     return saved;
   }
 
@@ -302,6 +387,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
   }
 
   async getResults(): Promise<CompletedResult[]> {
+    await this.hydrate();
     const students = await this.students();
     return readAllLessons()
       .sort((a, b) => b.completedAt.localeCompare(a.completedAt))
@@ -312,6 +398,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
     const comments = readJson<CommentMap>(COMMENTS_KEY, {});
     comments[resultId] = { ...comments[resultId], comment };
     writeJson(COMMENTS_KEY, comments);
+    pushOverlay(resultId, comments[resultId]);
     const results = await this.getResults();
     const saved = results.find((item) => item.id === resultId);
     if (!saved) {
@@ -328,6 +415,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
     const before = comments[resultId]?.expertScore;
     comments[resultId] = { ...comments[resultId], expertScore: score };
     writeJson(COMMENTS_KEY, comments);
+    pushOverlay(resultId, comments[resultId]);
     const audit = readJson<AuditRecord[]>(AUDIT_KEY, []);
     audit.unshift({
       id: `audit-${Date.now()}`,
@@ -341,6 +429,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
       mock: true,
     });
     writeJson(AUDIT_KEY, audit);
+    pushAudit(audit[0].id, audit[0] as unknown as Record<string, unknown>);
     const results = await this.getResults();
     const saved = results.find((item) => item.id === resultId);
     if (!saved) {
@@ -354,8 +443,11 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
     if (!session) {
       throw new Error('Сессия не найдена');
     }
+    const login = input.callId.startsWith('live-') ? input.callId.slice(5) : session.student.id;
+    pushTeacherCue(login, input.type, input.note);
     return {
       ...session,
+      emotionalState: emotionFromLogin(login),
       timeline: [
         ...session.timeline,
         {

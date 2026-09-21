@@ -263,7 +263,7 @@ function ResultScreen(props: {
       ]
     : [
         { label: 'Карточка', value: record.cardScore ?? 0, max: 50, hint: 'Совпадение с эталоном билета' },
-        { label: 'Опрос на линии', value: record.interviewScore ?? 0, max: 20, hint: 'Где, что случилось, пострадавшие, телефон' },
+        { label: 'Опрос на линии', value: record.interviewScore ?? 0, max: 20, hint: 'Адрес, пострадавшие, телефон; суть — если заявитель уже сказал сам' },
         { label: 'Скорость ответа', value: record.speedScore ?? 0, max: 15, hint: 'Пауза до следующего вопроса' },
         { label: 'Вежливость', value: record.politenessScore ?? 0, max: 15, hint: 'Тон разговора' },
       ];

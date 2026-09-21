@@ -35,8 +35,10 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository, poll
   });
   const [notice, setNotice] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setState((current) => ({ ...current, loading: true, error: null }));
+  const load = useCallback(async (quiet = false) => {
+    if (!quiet) {
+      setState((current) => ({ ...current, loading: true, error: null }));
+    }
     try {
       const [snapshot, sessions, scenarios, materials, results, audit] = await Promise.all([
         repository.getDashboardSnapshot(),
@@ -73,10 +75,23 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository, poll
       return;
     }
     const timer = window.setInterval(() => {
-      void load();
+      void load(true);
     }, pollMs);
     return () => window.clearInterval(timer);
   }, [load, pollMs]);
+  useEffect(() => {
+    let timer = 0;
+    const stop = repository.watch?.(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        void load(true);
+      }, 200);
+    });
+    return () => {
+      window.clearTimeout(timer);
+      stop?.();
+    };
+  }, [load, repository]);
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(null), 3200);
@@ -86,14 +101,18 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository, poll
   const operations = useMemo(
     () => ({
       saveScenario: async (draft: ScenarioDraft) => {
-        const saved = await repository.saveScenario(draft);
-        setState((current) => ({
-          ...current,
-          scenarios: current.scenarios.some((item) => item.id === saved.id)
-            ? current.scenarios.map((item) => (item.id === saved.id ? saved : item))
-            : [...current.scenarios, saved],
-        }));
-        setNotice('Сценарий сохранён только в памяти');
+        try {
+          const saved = await repository.saveScenario(draft);
+          setState((current) => ({
+            ...current,
+            scenarios: current.scenarios.some((item) => item.id === saved.id)
+              ? current.scenarios.map((item) => (item.id === saved.id ? saved : item))
+              : [...current.scenarios, saved],
+          }));
+          setNotice('Билет назначен ученикам');
+        } catch (error) {
+          setNotice(error instanceof Error ? error.message : 'Не удалось назначить билет');
+        }
       },
       toggleArchive: async (id: string, archived: boolean) => {
         const saved = await repository.setScenarioArchived(id, archived);
@@ -101,9 +120,7 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository, poll
           ...current,
           scenarios: current.scenarios.map((item) => (item.id === id ? saved : item)),
         }));
-        setNotice(
-          archived ? 'Сценарий архивирован в mock-хранилище' : 'Сценарий восстановлен как черновик',
-        );
+        setNotice(archived ? 'Билет снят с назначения' : 'Билет назначен ученикам');
       },
       intervene: async (callId: string, type: InterventionType, note: string) => {
         const saved = await repository.applyIntervention({ callId, type, note });
@@ -111,7 +128,7 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository, poll
           ...current,
           sessions: current.sessions.map((item) => (item.callId === callId ? saved : item)),
         }));
-        setNotice('Mock-вмешательство добавлено в ленту');
+        setNotice('Указание отправлено ученику');
       },
       saveComment: async (resultId: string, comment: string) => {
         const saved = await repository.saveExpertComment(resultId, comment);
@@ -119,7 +136,7 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository, poll
           ...current,
           results: current.results.map((item) => (item.id === resultId ? saved : item)),
         }));
-        setNotice('Комментарий сохранён в памяти');
+          setNotice('Комментарий сохранён');
       },
       adjustScore: async (resultId: string, score: number, reason: string) => {
         const saved = await repository.adjustExpertScore(resultId, score, reason);
@@ -129,7 +146,7 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository, poll
           results: current.results.map((item) => (item.id === resultId ? saved : item)),
           audit,
         }));
-        setNotice('Оценка скорректирована; создана mock-запись аудита');
+        setNotice('Оценка скорректирована, запись аудита сохранена');
       },
     }),
     [repository],

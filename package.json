@@ -18,7 +18,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @sys112/api db:generate",
-    "db:migrate": "pnpm --filter @sys112/api db:migrate"
+    "db:migrate": "pnpm --filter @sys112/api db:migrate",
+    "db:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-postgres.ps1"
   },
   "devDependencies": {
     "prettier": "^3.5.3",

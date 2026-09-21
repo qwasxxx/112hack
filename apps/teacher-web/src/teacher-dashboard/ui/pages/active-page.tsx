@@ -93,7 +93,12 @@ export function ActivePage({
           ]}
         />
       </TeacherFilterBar>
-      {visible.length === 0 ? (
+      {sessions.length === 0 ? (
+        <EmptyState>
+          Нет активных занятий. Откройте билет во второй вкладке под учётом ученика — запись появится
+          здесь сразу.
+        </EmptyState>
+      ) : visible.length === 0 ? (
         <EmptyState>По выбранным фильтрам сессий нет.</EmptyState>
       ) : (
         <div className="td-table-wrap">
@@ -126,8 +131,22 @@ export function ActivePage({
                       <small>{difficultyLabels[item.difficulty]}</small>
                     </td>
                     <td>
-                      <StatusBadge tone={item.mode === 'exam' ? 'warning' : 'neutral'}>
-                        {item.mode === 'exam' ? 'Экзамен' : 'Тренировка'}
+                      <StatusBadge
+                        tone={
+                          item.category === 'Брифинг' || item.category === 'Теория'
+                            ? 'neutral'
+                            : item.mode === 'exam'
+                              ? 'warning'
+                              : 'neutral'
+                        }
+                      >
+                        {item.category === 'Брифинг' || item.category === 'Теория'
+                          ? item.category
+                          : item.mode === 'exam'
+                            ? 'Экзамен'
+                            : item.category === 'ДДС'
+                              ? 'ДДС'
+                              : 'Тренировка'}
                       </StatusBadge>
                     </td>
                     <td>{formatDuration(item.durationSec)}</td>

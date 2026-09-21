@@ -89,7 +89,7 @@ export function scoreCard50(result: Arm112PracticalResult, scenario: TrainingSce
 
   const address = scoreAddress(facts, result, findings, checks);
   const description = scoreDescription(facts, card.descriptionFromCaller, findings, checks);
-  const fio = scoreFio(facts.callerFio, card.caller.familyNameAndGivenName, findings, checks);
+  const fio = scoreFio(facts, card.caller.familyNameAndGivenName, findings, checks);
   const phone = scorePhone(facts.phone, cardPhones(card), findings, checks);
   const injured = scoreInjured(facts, card.injured, findings, checks);
   const classifier = scoreClassifier(result, findings, checks);
@@ -183,25 +183,56 @@ function scoreDescription(
   return points;
 }
 
-function scoreFio(expected: string, got: string, findings: LessonFinding[], checks: FieldCheck[]): number {
+function scoreFio(
+  facts: TicketFacts,
+  got: string,
+  findings: LessonFinding[],
+  checks: FieldCheck[],
+): number {
   const max = 6;
+  const expected = facts.callerFio;
+  const expectedLabel = expected
+    ? expected
+    : facts.callerRole
+      ? `${facts.callerRole} (ФИО заявителя в билете нет)`
+      : 'как назвал заявитель';
   if (!got.trim()) {
     note(findings, 'required-fio', 'ФИО заявителя', 'Не заполнено', 'error');
-    checks.push({ id: 'fio', label: 'ФИО заявителя', expected: expected || 'из разговора', got: '—', state: 'empty', points: 0, max });
+    checks.push({ id: 'fio', label: 'ФИО заявителя', expected: expectedLabel, got: '—', state: 'empty', points: 0, max });
     return 0;
   }
   if (!expected) {
-    const points = tokens(got).length >= 2 ? max : Math.round(max / 2);
-    checks.push({ id: 'fio', label: 'ФИО заявителя', expected: 'как назвал заявитель', got, state: checkState(points, max, got), points, max });
+    const wroteInjured =
+      facts.injuredName &&
+      nameOverlap(facts.injuredName, got) >= 0.5 &&
+      nameOverlap(facts.injuredName, got) > nameOverlap(facts.callerRole, got);
+    const points = wroteInjured ? 4 : max;
+    if (wroteInjured) {
+      note(
+        findings,
+        'fio-role',
+        'ФИО заявителя',
+        `В поле заявителя попало ФИО пострадавшего (${facts.injuredName}). Заявитель — ${facts.callerRole || 'кто звонит'}`,
+        'warning',
+      );
+    }
+    checks.push({
+      id: 'fio',
+      label: 'ФИО заявителя',
+      expected: expectedLabel,
+      got,
+      state: checkState(points, max, got),
+      points,
+      max,
+    });
     return points;
   }
-  const need = tokens(expected);
-  const have = new Set(tokens(got));
-  const hit = need.filter((item) => have.has(item)).length;
-  const ratio = need.length ? hit / need.length : 1;
-  const points = Math.round(max * ratio);
-  if (points < max) {
-    note(findings, 'fio-miss', 'ФИО заявителя', `Эталон: ${expected}`, points === 0 ? 'error' : 'warning');
+  const ratio = nameOverlap(expected, got);
+  const points = ratio >= 0.5 ? max : ratio > 0 ? 5 : 0;
+  if (points < max && points > 0) {
+    note(findings, 'fio-partial', 'ФИО заявителя', `Эталон: ${expected}`, 'warning');
+  } else if (points === 0) {
+    note(findings, 'fio-miss', 'ФИО заявителя', `Эталон: ${expected}`, 'error');
   }
   checks.push({
     id: 'fio',
@@ -213,6 +244,65 @@ function scoreFio(expected: string, got: string, findings: LessonFinding[], chec
     max,
   });
   return points;
+}
+
+const NAME_NICK: Record<string, string[]> = {
+  александр: ['саша', 'шура'],
+  александра: ['саша', 'шура'],
+  светлана: ['света', 'светка'],
+  екатерина: ['катя', 'катерина'],
+  мария: ['маша', 'маруся'],
+  анастасия: ['настя'],
+  дмитрий: ['дима', 'митя'],
+  михаил: ['миша'],
+  николай: ['коля'],
+  иван: ['ваня'],
+  илья: ['илюша', 'илюха'],
+  алексей: ['леша', 'лёша', 'леха', 'лёха'],
+  елена: ['лена'],
+  татьяна: ['таня'],
+  наталья: ['наташа'],
+  ольга: ['оля'],
+  юлия: ['юля'],
+  анна: ['аня'],
+  евгений: ['женя'],
+  сергей: ['сережа', 'серёжа'],
+  владимир: ['вова'],
+  павел: ['паша'],
+  максим: ['макс'],
+  дарья: ['даша'],
+  ирина: ['ира'],
+};
+
+function nameKeys(word: string): Set<string> {
+  const w = word.replace(/ё/g, 'е');
+  const keys = new Set([w]);
+  for (const [full, nicks] of Object.entries(NAME_NICK)) {
+    if (w === full || nicks.includes(w) || (w.length >= 4 && (full.startsWith(w) || w.startsWith(full.slice(0, 4))))) {
+      keys.add(full);
+      nicks.forEach((nick) => keys.add(nick.replace(/ё/g, 'е')));
+    }
+  }
+  return keys;
+}
+
+function nameOverlap(expected: string, got: string): number {
+  const need = tokens(expected);
+  const have = tokens(got);
+  if (!need.length) {
+    return have.length ? 1 : 0;
+  }
+  if (!have.length) {
+    return 0;
+  }
+  let hit = 0;
+  for (const item of need) {
+    const keys = nameKeys(item);
+    if (have.some((word) => keys.has(word) || nameKeys(word).has(item))) {
+      hit += 1;
+    }
+  }
+  return hit / need.length;
 }
 
 function scorePhone(expected: string, got: string[], findings: LessonFinding[], checks: FieldCheck[]): number {
@@ -337,12 +427,15 @@ function scoreClassifier(
     points = max;
   } else if (expectedP1 && (gotP1 === expectedP1 || hay.includes(expectedP1))) {
     points = max;
+  } else if (medicalClose(expectedNo, hay, selected, numbers)) {
+    points = 5;
+    note(findings, 'classifier-partial', 'Классификатор', `Тип близкий, эталон ${expectedNo}`, 'warning');
   } else if (
     result.classifier.groupCode &&
     result.classifier.groupCode === result.classifier.expected.groupCode &&
     result.classifier.priznak1
   ) {
-    points = 3;
+    points = 4;
     note(findings, 'classifier-partial', 'Классификатор', `Группа совпала, эталон ${expectedNo} не выбран`, 'warning');
   } else {
     note(findings, 'classifier-miss', 'Классификатор', `Эталон ${expectedLabel}`, 'error');
@@ -357,6 +450,14 @@ function scoreClassifier(
     max,
   });
   return { points };
+}
+
+function medicalClose(expectedNo: string, hay: string, selected: string[], numbers: string[]): boolean {
+  if (!expectedNo.startsWith('22') && expectedNo !== '17040100' && expectedNo !== '17040200') {
+    return false;
+  }
+  const blob = `${hay} ${selected.join(' ')} ${numbers.join(' ')}`;
+  return /103|скор|цэмп|травм|паден|медицин|2253|2211|2209|17040/.test(blob);
 }
 
 function scoreServices(

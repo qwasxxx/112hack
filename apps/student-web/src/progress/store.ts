@@ -1,4 +1,5 @@
 import type { LessonRecord } from './types';
+import { pushLesson } from './remote';
 
 const keyFor = (login: string) => `sys112.lessons.v1.${login}`;
 
@@ -44,6 +45,7 @@ export function appendLesson(login: string, record: Omit<LessonRecord, 'id'>): L
   }
   const saved: LessonRecord = { ...record, id: crypto.randomUUID() };
   writeLessons(login, [...current, saved]);
+  pushLesson(saved);
   return saved;
 }
 
@@ -57,6 +59,7 @@ export function patchLesson(login: string, id: string, patch: Partial<Omit<Lesso
   const copy = [...current];
   copy[index] = next;
   writeLessons(login, copy);
+  pushLesson(next);
   return next;
 }
 
@@ -81,4 +84,27 @@ export function listLessonLogins(): string[] {
 
 export function readAllLessons(): LessonRecord[] {
   return listLessonLogins().flatMap((login) => readLessons(login));
+}
+
+export function absorbLessons(records: LessonRecord[]): void {
+  const grouped = new Map<string, LessonRecord[]>();
+  for (const record of records) {
+    const login = record.operatorLogin;
+    if (!login) {
+      continue;
+    }
+    if (!grouped.has(login)) {
+      grouped.set(login, readLessons(login));
+    }
+    const list = grouped.get(login) as LessonRecord[];
+    const index = list.findIndex((item) => item.id === record.id);
+    if (index >= 0) {
+      list[index] = record;
+    } else {
+      list.push(record);
+    }
+  }
+  for (const [login, list] of grouped) {
+    writeLessons(login, list);
+  }
 }

@@ -134,6 +134,7 @@ export function Arm112TrainingPage(props: Props) {
                 section={kind}
                 variant="panel"
                 autoStart
+                operatorLogin={props.operatorLogin}
                 onLeave={() => undefined}
                 onCallEnded={(payload) => finish(payload.lines, payload.seconds)}
               />

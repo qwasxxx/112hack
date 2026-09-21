@@ -10,6 +10,7 @@ import {
 } from '../../dds-lanes';
 import { fromDdsExercise } from '../arm112-simulator/model/learning-result';
 import { buildIncoming, cardFromDraft, incidentFromViewModel } from './adapter';
+import { journalIncidentLine } from './display';
 import { scoreDds, type DdsDraft, type TicketFacts } from './incoming-card';
 import {
   isDdsTerminal,
@@ -463,15 +464,18 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     transferCard: () => finishCard('transfer'),
     closeShift,
     startedAt,
-    items: cards.map((item) => ({
-      card: cardFromDraft(item.scenario, item.draft, item.number, item.createdAt, item.id),
-      state: item.state,
-      role: item.role,
-      source: item.source,
-      sourceLabel: sourceCaption(item.source),
-      workplaceStatus: item.workplaceStatus,
-      shortLine: item.scenario.title,
-    })),
+    items: cards.map((item) => {
+      const card = cardFromDraft(item.scenario, item.draft, item.number, item.createdAt, item.id);
+      return {
+        card,
+        state: item.state,
+        role: item.role,
+        source: item.source,
+        sourceLabel: sourceCaption(item.source),
+        workplaceStatus: item.workplaceStatus,
+        shortLine: journalIncidentLine(item.scenario.title, card.classifierClass),
+      };
+    }),
     queue: cards,
     clockHm,
     isTerminal: isDdsTerminal(active?.workplaceStatus ?? 'Добавлена'),

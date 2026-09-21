@@ -238,6 +238,12 @@ export function DdsCard(props: Props) {
               key={kind}
               type="button"
               className={`dds-chip${on ? ' is-on' : ''}`}
+              aria-pressed={on}
+              title={
+                on
+                  ? `${serviceChipLabel(kind)} привлечена — клик снимет`
+                  : `${serviceChipLabel(kind)} не привлечена — клик добавит. 101 пожар, 102 полиция, 103 скорая, 104 газ`
+              }
               onClick={() => props.onToggleService(kind)}
             >
               <span>{serviceChipLabel(kind)}</span>

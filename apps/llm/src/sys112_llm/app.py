@@ -24,8 +24,12 @@ from sys112_llm.conversation import (
     CallSession,
     ConversationManager,
     analysis_messages,
+    apply_teacher_intervention,
     call_score_messages,
     generation_messages,
+    last_user_text,
+    repair_victim_reply,
+    session_scenario_extra,
 )
 from sys112_llm.openai_score import openai_score, parse_score_json
 from sys112_llm.runtime import model_present
@@ -276,11 +280,25 @@ async def llm_socket(ws: WebSocket) -> None:
                     logger.info("[LLM] Analysis complete")
                 continue
             if kind == "intervention":
+                current = manager.get(call_id) if call_id else None
+                if current is None or current.closed:
+                    await ws.send_json(
+                        {
+                            "type": "intervention_ack",
+                            "accepted": False,
+                            "code": "no_session",
+                        }
+                    )
+                    continue
+                command = str(payload.get("command") or payload.get("type") or "")
+                note = str(payload.get("note") or payload.get("text") or "")
+                detail = apply_teacher_intervention(current, command, note)
                 await ws.send_json(
                     {
                         "type": "intervention_ack",
-                        "accepted": False,
-                        "code": "not_implemented",
+                        "accepted": True,
+                        "command": command,
+                        "detail": detail,
                     }
                 )
                 continue
@@ -386,6 +404,13 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
                 return
             continue
         if full:
+            if session.conversation_role == "victim":
+                full = repair_victim_reply(
+                    full,
+                    last_user_text(session),
+                    session.conversation_role,
+                    session_scenario_extra(session),
+                )
             manager.append_assistant(call_id, full)
             await ws.send_json({"type": "assistant_final", "text": full, "gen": gen_id})
             logger.info("[LLM] Response complete")

@@ -50,7 +50,9 @@ export function DdsJournal(props: Props) {
               onChange={(event) => props.onQuery(event.target.value)}
               aria-label="Поиск происшествий"
             />
-          ) : null}
+          ) : (
+            <span className="dds-search-spacer" />
+          )}
           <button
             type="button"
             className="dds-icon-btn"
@@ -73,9 +75,9 @@ export function DdsJournal(props: Props) {
             </span>
           </div>
           <div className="dds-clock-meta">
-            <span>УМЦ О n</span>
-            <button type="button" onClick={props.onLeave}>
-              выйти
+            <span>УМЦ| О п</span>
+            <button type="button" className="dds-clock-user" onClick={props.onLeave} aria-label="выйти">
+              <UserIcon />
             </button>
           </div>
           <div className="dds-clock-time">
@@ -88,13 +90,13 @@ export function DdsJournal(props: Props) {
       <div className="dds-list-wrap">
         <div className="dds-list-head">
           <p className="dds-list-title">
-            Список происшествий <span>▴</span>
+            Список происшествий <span>▲</span>
           </p>
           <label className="dds-notify">
             <i className="dds-bell" />
             уведомления
             <select defaultValue="">
-              <option value="">Выберите что показать</option>
+              <option value="">выберите что показать</option>
             </select>
           </label>
         </div>
@@ -110,8 +112,7 @@ export function DdsJournal(props: Props) {
             Дата <span className="dds-sort">↓</span>
           </span>
           <span>Время</span>
-          <span>Тип происшествия</span>
-          <span />
+          <span className="dds-col-type">Тип происшествия</span>
           <span>Постр.</span>
           <span>Адрес</span>
           <span>Статус службы</span>
@@ -131,7 +132,9 @@ export function DdsJournal(props: Props) {
                 onClick={() => props.onOpen(item.card.id)}
               >
                 <span className="dds-chevron">▾</span>
-                <span />
+                <span className="dds-link-cell">
+                  <LinkIcon />
+                </span>
                 <span className="dds-chs">
                   <LightningIcon />
                   <TargetIcon />
@@ -142,7 +145,6 @@ export function DdsJournal(props: Props) {
                 <span>{time.date}</span>
                 <span className="dds-time">{time.time}</span>
                 <span className="dds-type">{item.card.typeCode}</span>
-                <span />
                 <span>{item.card.injured}</span>
                 <span className="dds-row-addr">{addr}</span>
                 <span className="dds-status-cell">
@@ -154,7 +156,7 @@ export function DdsJournal(props: Props) {
                 </span>
               </button>
               <div className="dds-desc">
-                Описание: {item.card.createdAt} УМЦ О n.{' '}
+                Описание: {item.card.createdAt} УМЦ| О. п. —{' '}
                 <b>{item.shortLine || shortLine(item.card.description)}</b>
               </div>
             </article>
@@ -206,9 +208,22 @@ function shortLine(text: string): string {
 
 function SearchIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-      <circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" strokeWidth="2" />
-      <path d="M15 15l6 6" fill="none" stroke="currentColor" strokeWidth="2" />
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <circle cx="10" cy="10" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M15 15l7 7" fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function LinkIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="#e4e8ea"
+        strokeWidth="1.7"
+        d="M6.2 9.8 9.8 6.2M7 5.2l1.2-1.2a2.4 2.4 0 1 1 3.4 3.4L10.4 9M9 10.8l-1.2 1.2a2.4 2.4 0 1 1-3.4-3.4L5.6 7"
+      />
     </svg>
   );
 }
@@ -234,6 +249,15 @@ function FlagIcon() {
   return (
     <svg viewBox="0 0 10 12" width="10" height="12" aria-hidden="true">
       <path fill="#e67a2a" d="M1 0v12h1.4V7.2L9 4.6 2.4 2.2V0z" />
+    </svg>
+  );
+}
+
+function UserIcon() {
+  return (
+    <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+      <circle cx="6" cy="3.4" r="2.2" fill="none" stroke="#c5cdd2" strokeWidth="1.2" />
+      <path d="M1.8 11c.4-2.6 2-3.8 4.2-3.8S9.8 8.4 10.2 11" fill="none" stroke="#c5cdd2" strokeWidth="1.2" />
     </svg>
   );
 }

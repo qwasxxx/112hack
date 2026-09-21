@@ -1,14 +1,23 @@
 import { useState } from 'react';
 import type { InterventionType } from '@sys112/shared-types';
-import { calculateRisk } from '../../application/services/risk-radar';
 import type { ActiveSession } from '../../domain/entities';
-import { difficultyLabels, emotionLabels, formatDuration } from '../../domain/value-objects';
-import { Sparkline, StatusBadge } from '../components/common';
+import { difficultyLabels, formatDuration } from '../../domain/value-objects';
+import { StatusBadge } from '../components/common';
 
 interface Action {
   type: InterventionType;
   label: string;
   hint: string;
+}
+
+function formatLineTime(value: string): string {
+  const stamp = Date.parse(value);
+  if (Number.isFinite(stamp)) {
+    return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(
+      stamp,
+    );
+  }
+  return value;
 }
 
 export function ObservationPage({
@@ -24,20 +33,14 @@ export function ObservationPage({
 }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
-  const risk = calculateRisk(session.riskSignals);
-  const actions: Action[] = [
-    ...examActions,
-    { type: 'reveal_fact', label: 'Открыть факт', hint: 'Сделать факт доступным заявителю' },
-    { type: 'conceal_fact', label: 'Скрыть факт', hint: 'Временно скрыть обстоятельство' },
-    { type: 'end_call', label: 'Завершить вызов', hint: 'Перевести mock-сессию к завершению' },
-  ];
+  const filled = session.requiredActions.filter((item) => item.completed).length;
+  const total = session.requiredActions.length;
+  const fields = Object.entries(session.incidentCard);
+  const live = session.status === 'live';
   const act = async (action: Action) => {
-    if (
-      !window.confirm(
-        `Подтвердить mock-действие «${action.label}»? Оно изменит только данные в памяти.`,
-      )
-    )
+    if (!window.confirm(`Отправить ученику «${action.label}»?`)) {
       return;
+    }
     setBusy(true);
     try {
       await onIntervene(action.type, note || action.hint);
@@ -46,128 +49,119 @@ export function ObservationPage({
       setBusy(false);
     }
   };
+
   return (
-    <div className="td-page">
-      <header className="td-page-head">
+    <div className="td-page td-observe-page">
+      <header className="td-page-head td-observe-head">
         <div>
           <button className="td-back" onClick={onBack}>
             ← Активные занятия
           </button>
-          <p className="td-kicker">Рабочее место наблюдения</p>
+          <p className="td-kicker">Наблюдение за вызовом</p>
           <h2>{session.student.name}</h2>
           <p>
             {session.scenarioTitle} · {difficultyLabels[session.difficulty]}
           </p>
         </div>
-        <div className="td-session-clock">
-          <span>{session.status === 'paused' ? 'Пауза' : 'Идёт вызов'}</span>
+        <div className={`td-session-clock ${live ? 'is-live' : ''}`}>
+          <span>{live ? 'Идёт вызов' : session.status === 'paused' ? 'Подготовка' : 'Завершение'}</span>
           <strong>{formatDuration(session.durationSec)}</strong>
         </div>
       </header>
-      <div className="td-observation-summary">
+
+      <div className="td-observe-summary">
         <StatusBadge tone={session.mode === 'exam' ? 'warning' : 'neutral'}>
-          {session.mode === 'exam' ? 'Экзамен' : 'Тренировка'}
+          {session.category || (session.mode === 'exam' ? 'Экзамен' : 'Тренировка')}
         </StatusBadge>
-        <span>Карточка {session.cardProgress}%</span>
+        <div className="td-observe-meter" title="Заполнение карточки">
+          <span>Карточка</span>
+          <b>
+            <i style={{ width: `${session.cardProgress}%` }} />
+          </b>
+          <strong>{session.cardProgress}%</strong>
+        </div>
         <span>
-          Действия {session.foundActions}/{session.foundActions + session.missedActions}
+          Поля {filled}/{total || 0}
         </span>
-        <span>Заявитель: {emotionLabels[session.emotionalState.primary]}</span>
-        <StatusBadge
-          tone={risk.level === 'high' ? 'danger' : risk.level === 'medium' ? 'warning' : 'good'}
-        >
-          Риск {risk.score}/100
-        </StatusBadge>
       </div>
+
       <div className="td-observe-grid">
         <section className="td-panel td-transcript">
           <div className="td-section-title">
-            <h3>Live-транскрипция</h3>
-            <span className="td-live">● LIVE</span>
+            <h3>Разговор</h3>
+            {live ? <span className="td-live">● LIVE</span> : <span className="td-help">ожидание</span>}
           </div>
-          {session.transcript.map((line) => (
-            <article className={`td-message td-message--${line.role}`} key={line.id}>
-              <div>
-                <strong>
-                  {line.role === 'student'
-                    ? 'Оператор'
-                    : line.role === 'caller'
-                      ? 'Заявитель'
-                      : 'Система'}
-                </strong>
-                <time>{line.at}</time>
-              </div>
-              <p>{line.text}</p>
-            </article>
-          ))}
-        </section>
-        <aside className="td-panel">
-          <h3>Карточка происшествия</h3>
-          <dl className="td-card-fields">
-            {Object.entries(session.incidentCard).map(([key, value]) => (
-              <div key={key}>
-                <dt>{key}</dt>
-                <dd>{String(value)}</dd>
-              </div>
-            ))}
-          </dl>
-          <h4>Обязательные действия</h4>
-          <ul className="td-checklist">
-            {session.requiredActions.map((item) => (
-              <li key={item.id} className={item.completed ? 'is-done' : ''}>
-                <span>{item.completed ? '✓' : '!'}</span>
-                {item.label}
-              </li>
-            ))}
-          </ul>
-        </aside>
-        <section className="td-panel">
-          <div className="td-section-title">
-            <h3>Центр внимания</h3>
-            <Sparkline values={session.riskHistory} label="Изменение риска" />
-          </div>
-          <div className={`td-risk-callout td-risk-callout--${risk.level}`}>
-            <strong>{risk.score}/100</strong>
-            <span>Демонстрационный аналитический показатель</span>
-          </div>
-          <ul className="td-reasons">
-            {risk.reasons.map((reason) => (
-              <li key={reason}>{reason}</li>
-            ))}
-          </ul>
-          <p className="td-recommendation">Рекомендация: {risk.recommendation}</p>
-          <h4>Нарушения регламента</h4>
-          {session.protocolViolations.length ? (
-            <ul className="td-reasons">
-              {session.protocolViolations.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
+          {session.transcript.length ? (
+            session.transcript.map((line) => (
+              <article className={`td-message td-message--${line.role}`} key={line.id}>
+                <div>
+                  <strong>
+                    {line.role === 'student' ? 'Оператор' : line.role === 'caller' ? 'Заявитель' : 'Система'}
+                  </strong>
+                  <time>{formatLineTime(line.at)}</time>
+                </div>
+                <p>{line.text}</p>
+              </article>
+            ))
           ) : (
-            <p className="td-muted">Нарушений не зафиксировано</p>
+            <p className="td-observe-empty">Реплики появятся, когда ученик начнёт разговор.</p>
           )}
-          <div className="td-current-score">
-            <span>Текущая оценка</span>
-            <strong>{session.currentScore}%</strong>
-          </div>
         </section>
-        <section className="td-panel">
+
+        <aside className="td-panel td-observe-card">
+          <div className="td-section-title">
+            <h3>Карточка происшествия</h3>
+            <span className="td-help">
+              {filled}/{total || 0} заполнено
+            </span>
+          </div>
+          <dl className="td-card-fields">
+            {fields.length ? (
+              fields.map(([key, value]) => {
+                const text = String(value ?? '').trim();
+                return (
+                  <div key={key} className={text ? 'is-filled' : 'is-empty'}>
+                    <dt>{key}</dt>
+                    <dd>{text || 'не заполнено'}</dd>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="td-observe-empty">Карточка ещё не открыта.</p>
+            )}
+          </dl>
+          {session.requiredActions.length > 0 && (
+            <>
+              <h4>Обязательные поля</h4>
+              <ul className="td-checklist">
+                {session.requiredActions.map((item) => (
+                  <li key={item.id} className={item.completed ? 'is-done' : ''}>
+                    <span>{item.completed ? '✓' : ''}</span>
+                    {item.label}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </aside>
+
+        <section className="td-panel td-observe-intervene">
           <div className="td-section-title">
             <div>
-              <h3>Вмешательство преподавателя</h3>
-              <span className="td-help">Только mock · серверная команда не отправляется</span>
+              <h3>Вмешательство</h3>
+              <span className="td-help">Указание сразу появится у ученика на АРМ</span>
             </div>
           </div>
           <label className="td-field">
-            Комментарий / параметры
+            Комментарий
             <textarea
               value={note}
               onChange={(event) => setNote(event.target.value)}
-              placeholder="Например: заявитель сообщает о ребёнке на этаже"
+              placeholder="Например: уточните этаж и есть ли там люди"
             />
           </label>
           <div className="td-action-grid">
-            {actions.map((action) => (
+            {examActions.map((action) => (
               <button
                 disabled={busy}
                 key={action.type}
@@ -181,22 +175,6 @@ export function ObservationPage({
           </div>
         </section>
       </div>
-      <section className="td-panel">
-        <h3>Лента событий и вмешательств</h3>
-        <ol className="td-timeline">
-          {[...session.timeline].reverse().map((event) => (
-            <li key={event.id} className={`is-${event.kind}`}>
-              <time>{event.at}</time>
-              <div>
-                <strong>
-                  {event.title} {event.mock && <StatusBadge tone="accent">mock</StatusBadge>}
-                </strong>
-                <p>{event.detail}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
     </div>
   );
 }

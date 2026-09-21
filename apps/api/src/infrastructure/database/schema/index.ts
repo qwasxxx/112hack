@@ -9,8 +9,10 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deactivatedAt: timestamp('deactivated_at', { withTimezone: true }),
+  login: text('login'),
 }, (table) => ({
   emailIdx: uniqueIndex('users_email_idx').on(table.email),
+  loginIdx: uniqueIndex('users_login_idx').on(table.login),
 }));
 
 export const courses = pgTable('courses', {

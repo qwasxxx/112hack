@@ -24,7 +24,7 @@ const OUTER_SELECTOR = [
   '.td-table-wrap',
   '.td-legacy-exam',
   '.exam',
-  '.td-observation-summary',
+  '.td-observe-summary',
 ].join(', ');
 
 const TILT_CLASSES = ['td-tilt', 'td-tilt--button', 'td-tilt--light', 'td-tilt--surface', 'td-tilt--nested'];
@@ -39,7 +39,7 @@ function applyTiltFrame(
   node.style.setProperty('--td-tilt-gx', `${current.gx.toFixed(1)}%`);
   node.style.setProperty('--td-tilt-gy', `${current.gy.toFixed(1)}%`);
   node.style.setProperty('--td-tilt-i', current.i.toFixed(3));
-  const depth = kind === 'strong' ? 26 : kind === 'button' ? 10 : kind === 'light' ? 10 : 16;
+  const depth = kind === 'strong' ? 10 : kind === 'button' ? 6 : kind === 'light' ? 4 : 8;
   const shadowGain = kind === 'button' ? 1.8 : kind === 'strong' ? 2.8 : kind === 'light' ? 1.3 : 2;
   node.style.setProperty('--td-tilt-z', `${(current.i * depth).toFixed(2)}px`);
   node.style.setProperty('--td-tilt-sx', `${(-current.ry * shadowGain).toFixed(2)}px`);
@@ -193,21 +193,15 @@ function collectOutermost(nodes: HTMLElement[]) {
 
 function rotationFor(node: HTMLElement, role: TeacherTiltRole): { x: number; y: number } {
   if (node.matches('.td-action-btn, .exam-btn')) {
-    return { x: 5.2, y: 5.6 };
+    return { x: 4.2, y: 4.6 };
   }
   if (role === 'surface') {
-    if (node.matches('.td-table-wrap')) {
-      return { x: 6.2, y: 7.2 };
-    }
-    if (node.matches('.td-filters, .td-observation-summary')) {
-      return { x: 6.8, y: 7.8 };
-    }
-    return { x: 7.8, y: 9.2 };
+    return { x: 1.6, y: 1.8 };
   }
   if (node.matches('.td-risk-row, .td-list-item, .td-audit')) {
-    return role === 'nested' ? { x: 3.6, y: 4.2 } : { x: 4.4, y: 5 };
+    return { x: 2.4, y: 2.8 };
   }
-  return role === 'nested' ? { x: 5.2, y: 5.8 } : { x: 6.4, y: 7.2 };
+  return { x: 3.2, y: 3.6 };
 }
 
 function kindFor(node: HTMLElement, role: TeacherTiltRole): TeacherTiltKind {
@@ -215,12 +209,16 @@ function kindFor(node: HTMLElement, role: TeacherTiltRole): TeacherTiltKind {
     return 'button';
   }
   if (role === 'surface') {
-    return 'strong';
+    return 'light';
   }
   if (node.matches('.td-risk-row, .td-list-item, .td-audit, .td-session-clock')) {
     return 'light';
   }
-  return 'medium';
+  return 'light';
+}
+
+function tooLargeForTilt(node: HTMLElement) {
+  return node.offsetHeight > 360 || node.offsetWidth > 760;
 }
 
 export function bindTeacherDashboardTilt(root: HTMLElement | null) {
@@ -232,9 +230,11 @@ export function bindTeacherDashboardTilt(root: HTMLElement | null) {
   const bound = new Map<HTMLElement, () => void>();
 
   function bind() {
-    const surfaces = collectOutermost([...host.querySelectorAll<HTMLElement>(OUTER_SELECTOR)]);
+    const surfaces = collectOutermost([...host.querySelectorAll<HTMLElement>(OUTER_SELECTOR)]).filter(
+      (node) => !tooLargeForTilt(node),
+    );
     const inners = [...host.querySelectorAll<HTMLElement>(INNER_SELECTOR)].filter(
-      (node) => !node.closest('.td-form'),
+      (node) => !node.closest('.td-form') && !tooLargeForTilt(node),
     );
     const wanted = new Set<HTMLElement>([...surfaces, ...inners]);
     for (const [node, release] of bound) {

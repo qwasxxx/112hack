@@ -22,4 +22,5 @@ export interface TeacherDashboardRepository {
   adjustExpertScore(resultId: string, score: number, reason: string): Promise<CompletedResult>;
   applyIntervention(input: InterventionInput): Promise<ActiveSession>;
   getAudit(): Promise<AuditRecord[]>;
+  watch?(onChange: () => void): () => void;
 }

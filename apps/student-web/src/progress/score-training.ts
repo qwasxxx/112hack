@@ -4,6 +4,19 @@ import { scoreCard50 } from './score-card';
 import { applyAiPoliteness, scoreCallRules, type TranscriptTurn } from './score-call';
 import { PASS_SCORE, PASS_SCORE_EXAM, type LessonMode, type LessonRecord } from './types';
 
+const WHAT_REASK = /не спросил[аи]?,?\s*что случилось|не уточнил[аи]?,?\s*что произош|не спросил[аи]? суть/i;
+
+function scrubWhatRemark(text: string, whatKnown: boolean): string {
+  if (!whatKnown || !text) {
+    return text;
+  }
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .filter((part) => !WHAT_REASK.test(part))
+    .join(' ')
+    .trim();
+}
+
 export type TrainingScoreInput = {
   result: Arm112PracticalResult;
   scenario: TrainingScenario;
@@ -22,7 +35,11 @@ export type TrainingScoreInput = {
 export function scoreTrainingLesson(input: TrainingScoreInput): Omit<LessonRecord, 'id'> {
   const mode = input.mode ?? 'training';
   const card = scoreCard50(input.result, input.scenario);
-  let call = scoreCallRules(input.transcript);
+  let call = scoreCallRules(input.transcript, {
+    opening: input.scenario.callerOpening,
+    address: input.scenario.address,
+    situation: input.scenario.situation ?? input.scenario.summary,
+  });
   if (input.channel === 'sms') {
     call = {
       ...call,
@@ -45,10 +62,15 @@ export function scoreTrainingLesson(input: TrainingScoreInput): Omit<LessonRecor
         ? 'Из SMS в карточку переносятся адрес, ФИО, телефон и суть — всё, что есть в тексте.'
         : 'Сверяйте каждое поле карточки с тем, что сказал заявитель по билету.'
       : '',
-    input.channel !== 'sms' && call.interview < 14 ? 'На линии нужны четыре опоры: где, что случилось, пострадавшие, телефон.' : '',
+    input.channel !== 'sms' && call.interview < 14
+      ? 'На линии нужны адрес, пострадавшие и телефон. Если заявитель уже сказал, что случилось, это спрашивать повторно не нужно.'
+      : '',
     input.channel !== 'sms' && call.speed < 10 ? 'После ответа заявителя сразу следующий короткий вопрос.' : '',
   ].filter(Boolean);
-  const unique = [...new Set(recs)].slice(0, 5);
+  const whatKnown = !call.findings.some((item) => item.code === 'ask-what');
+  const unique = [...new Set(recs)]
+    .filter((item) => !whatKnown || !WHAT_REASK.test(item))
+    .slice(0, 5);
   return {
     operatorLogin: input.operatorLogin,
     mode,
@@ -72,7 +94,7 @@ export function scoreTrainingLesson(input: TrainingScoreInput): Omit<LessonRecor
     speedScore: call.speed,
     politenessScore: call.politeness,
     interviewScore: call.interview,
-    comment: input.ai?.comment ?? '',
+    comment: scrubWhatRemark(input.ai?.comment ?? '', whatKnown),
     judgeSource: input.ai?.source,
   };
 }

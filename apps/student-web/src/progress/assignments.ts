@@ -1,4 +1,5 @@
 import { SCENARIOS } from '../data/scenarios';
+import { pushAssignments } from './remote';
 
 const KEY = 'sys112.assignments.v1';
 const DEMO_COUNT = 8;
@@ -13,11 +14,14 @@ function canUseStorage(): boolean {
   return typeof localStorage !== 'undefined';
 }
 
-function writeStore(store: AssignmentStore): void {
+function writeStore(store: AssignmentStore, sync = true): void {
   if (!canUseStorage()) {
     return;
   }
   localStorage.setItem(KEY, JSON.stringify(store));
+  if (sync) {
+    pushAssignments(store);
+  }
 }
 
 export function readAssignments(): AssignmentStore {
@@ -32,7 +36,7 @@ export function readAssignments(): AssignmentStore {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) {
-      writeStore(fallback);
+      writeStore(fallback, false);
       return fallback;
     }
     const parsed = JSON.parse(raw) as Partial<AssignmentStore>;
@@ -40,7 +44,7 @@ export function readAssignments(): AssignmentStore {
       ? parsed.scenarioIds.filter((id) => typeof id === 'string')
       : [];
     if (ids.length === 0 && !raw.includes('"scenarioIds"')) {
-      writeStore(fallback);
+      writeStore(fallback, false);
       return fallback;
     }
     return {
@@ -53,11 +57,16 @@ export function readAssignments(): AssignmentStore {
   }
 }
 
+const KNOWN = new Set(SCENARIOS.map((item) => item.id));
+
 export function assignedScenarioIds(_login?: string): string[] {
-  return readAssignments().scenarioIds;
+  return readAssignments().scenarioIds.filter((id) => KNOWN.has(id));
 }
 
 export function assignScenario(id: string, teacherLogin = 'petrov'): void {
+  if (!KNOWN.has(id)) {
+    return;
+  }
   const current = readAssignments();
   if (current.scenarioIds.includes(id)) {
     return;
@@ -80,4 +89,8 @@ export function unassignScenario(id: string, teacherLogin = 'petrov'): void {
 
 export function isScenarioAssigned(id: string): boolean {
   return assignedScenarioIds().includes(id);
+}
+
+export function replaceAssignments(store: AssignmentStore): void {
+  writeStore(store, false);
 }

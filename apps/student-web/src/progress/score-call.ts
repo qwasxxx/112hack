@@ -14,6 +14,12 @@ export type CallPart = {
   findings: Array<{ code: string; field: string; message: string; severity: 'error' | 'warning' }>;
 };
 
+export type CallFacts = {
+  opening?: string;
+  address?: string;
+  situation?: string;
+};
+
 const ASK = {
   address: /адрес|где это|где вы|улиц|какой дом|квартир|ориентир/,
   what: /что случилось|что произошло|что там|что горит|что случ/,
@@ -21,18 +27,56 @@ const ASK = {
   phone: /телефон|номер|как перезвон|оставайтесь на/,
 };
 
-export function scoreCallRules(turns: TranscriptTurn[]): CallPart {
+const WHAT_VOLUNTEERED =
+  /пожар|горит|возгоран|задымл|дтп|авари|газ\b|мусорн|контейнер|взрыв|дым|упал|ранен|скорая|полици|запах/;
+
+const STOP = new Set(['алло', 'помогите', 'пожалуйста', 'сейчас', 'здесь', 'там', 'это', 'надо']);
+
+function norm(value: string): string {
+  return value.toLowerCase().replace(/ё/g, 'е');
+}
+
+function significantTokens(value: string): string[] {
+  return norm(value)
+    .split(/[^а-я0-9]+/u)
+    .filter((word) => word.length >= 4 && !STOP.has(word));
+}
+
+function callerCovers(callerText: string, source?: string): boolean {
+  if (!source) {
+    return false;
+  }
+  const words = significantTokens(source);
+  if (words.length === 0) {
+    return false;
+  }
+  const hits = words.filter((word) => callerText.includes(word)).length;
+  return hits >= Math.min(2, words.length);
+}
+
+export function scoreCallRules(turns: TranscriptTurn[], facts: CallFacts = {}): CallPart {
   const spoken = turns.filter((item) => item.text.trim() && !item.text.startsWith('…'));
   const operatorText = spoken
     .filter((item) => item.role === 'operator')
     .map((item) => item.text)
     .join(' ')
     .toLowerCase();
+  const callerText = spoken
+    .filter((item) => item.role === 'caller')
+    .map((item) => item.text)
+    .join(' ');
+  const callerNorm = norm(callerText);
   const findings: CallPart['findings'] = [];
 
+  const whatKnown =
+    WHAT_VOLUNTEERED.test(callerNorm) ||
+    callerCovers(callerNorm, facts.opening) ||
+    callerCovers(callerNorm, facts.situation);
+  const addressKnown = callerCovers(callerNorm, facts.address) || /\bдом\s*\d+/u.test(callerNorm);
+
   const asked = {
-    address: ASK.address.test(operatorText),
-    what: ASK.what.test(operatorText),
+    address: ASK.address.test(operatorText) || addressKnown,
+    what: ASK.what.test(operatorText) || whatKnown,
     injured: ASK.injured.test(operatorText),
     phone: ASK.phone.test(operatorText),
   };

@@ -72,11 +72,28 @@ function normalizeSettings(row: Partial<ContourSettings> | undefined): ContourSe
   };
 }
 
-export async function probeLocalDatabase(): Promise<boolean> {
+export async function probeIndexedDb(): Promise<boolean> {
   try {
     const db = await openSys112Db();
     db.close();
     return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function probeLocalDatabase(): Promise<boolean> {
+  if (!(await probeIndexedDb())) {
+    return false;
+  }
+  try {
+    const response = await fetch('/api/v1/ready');
+    if (!response.ok) {
+      return false;
+    }
+    const body = (await response.json()) as { checks?: Array<{ name: string; status: string }> };
+    const database = body.checks?.find((item) => item.name === 'database');
+    return database?.status === 'ok';
   } catch {
     return false;
   }

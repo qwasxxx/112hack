@@ -8,11 +8,15 @@ export function OverviewPage({
   sessions,
   results,
   onObserve,
+  classActive,
+  onToggleClass,
 }: {
   snapshot: DashboardSnapshot;
   sessions: ActiveSession[];
   results: CompletedResult[];
   onObserve: (id: string) => void;
+  classActive?: boolean;
+  onToggleClass?: () => void;
 }) {
   const ranked = rankSessionsByRisk(sessions);
   const attention = ranked.filter(({ assessment }) => assessment.level !== 'low').length;
@@ -23,7 +27,13 @@ export function OverviewPage({
           <p className="td-kicker">Оперативная сводка</p>
           <h2>Обзор учебной смены</h2>
         </div>
-        <StatusBadge tone="accent">{snapshot.teacher.shift}</StatusBadge>
+        {onToggleClass ? (
+          <button className="td-btn td-btn--primary" type="button" onClick={onToggleClass}>
+            {classActive ? 'Завершить занятие' : 'Начать занятие'}
+          </button>
+        ) : (
+          <StatusBadge tone="accent">{snapshot.teacher.shift}</StatusBadge>
+        )}
       </header>
       <section className="td-metrics" aria-label="Основные показатели">
         <MetricCard
@@ -61,7 +71,6 @@ export function OverviewPage({
             <p className="td-kicker">Центр внимания · Risk Radar</p>
             <h3>Приоритет наблюдения</h3>
           </div>
-          <span className="td-help">Демонстрационный аналитический показатель</span>
         </div>
         <div className="td-risk-list">
           {ranked.map(({ session, assessment }) => (

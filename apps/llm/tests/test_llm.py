@@ -192,6 +192,22 @@ def test_transcript_skips_kickoff_and_analysis_is_separate():
     assert KICKOFF_TEXT not in messages[1]["content"]
 
 
+def test_apply_teacher_intervention_keeps_ticket_facts():
+    from sys112_llm.conversation import (
+        ConversationManager,
+        apply_teacher_intervention,
+        session_scenario_extra,
+    )
+
+    manager = ConversationManager()
+    session = manager.create("cue-1", "victim", "Вызывает мама. Мальчик упал с велосипеда.")
+    detail = apply_teacher_intervention(session, "set_emotional_state", "паника")
+    extra = session_scenario_extra(session)
+    assert "паника" in detail
+    assert "УКАЗАНИЕ ПРЕПОДАВАТЕЛЯ" in extra
+    assert "Вызывает мама" in extra
+
+
 def test_kickoff_analyze_and_intervention_mock():
     from fastapi.testclient import TestClient
     from sys112_llm.app import app
@@ -217,11 +233,10 @@ def test_kickoff_analyze_and_intervention_mock():
                 final = ws.receive_json()
                 assert final["type"] == "analysis_final"
                 assert final["text"]
-            ws.send_json({"type": "intervention", "command": "set_emotional_state"})
+            ws.send_json({"type": "intervention", "command": "set_emotional_state", "note": "паника"})
             ack = ws.receive_json()
             assert ack["type"] == "intervention_ack"
-            assert ack["accepted"] is False
-            assert ack["code"] == "not_implemented"
+            assert ack["accepted"] is True
             ws.send_json({"type": "stop"})
             assert ws.receive_json()["type"] == "session_closed"
 
@@ -246,3 +261,51 @@ def test_not_ready_and_missing_model():
                     assert event.get("code") in ("llm_not_ready", "llm_loading")
     finally:
         appmod.llm_status = previous
+
+
+def test_repair_victim_does_not_play_blind_on_dispatch():
+    from sys112_llm.conversation import repair_victim_reply
+
+    assert (
+        repair_victim_reply(
+            "не слышу, не вижу.",
+            "хорошо я вас услышал направляю на вас в службы",
+            "victim",
+        )
+        == "Хорошо, жду."
+    )
+    assert repair_victim_reply("Не знаю.", "Какой этаж?", "victim") == "Не знаю."
+    assert repair_victim_reply("Горит контейнер у дома.", "Что случилось?", "victim") == "Горит контейнер у дома."
+    assert (
+        repair_victim_reply("Около получика.", "как давно произошло", "victim") == "Только что."
+    )
+    assert (
+        repair_victim_reply(
+            "Меня зовут Света.",
+            "Как вас зовут?",
+            "victim",
+            "КТО ЗВОНИТ: мама. Имени заявителя нет — не выдумывай",
+        )
+        == "Я мама."
+    )
+    extra_addr = (
+        "АДРЕС (назови, только если спросили): Волгоградская область, город Волжский, "
+        "улица Карла Маркса около Волжского Молсыркомбината"
+    )
+    spoken = repair_victim_reply(
+        "Находится в Волжском, Волгоградская область.",
+        "скажите точный адрес",
+        "victim",
+        extra_addr,
+    )
+    assert "Волжск" in spoken
+    assert spoken != "Не знаю."
+    assert (
+        repair_victim_reply("Не знаю.", "скажите точный адрес", "victim", extra_addr)
+        != "Не знаю."
+    )
+    assert "Волжск" in repair_victim_reply("Не знаю.", "скажите точный адрес", "victim", extra_addr)
+    moscow = repair_victim_reply("Москва, Тверская улица дом пять.", "какой адрес?", "victim", extra_addr)
+    assert "Волжск" in moscow
+    assert "Тверск" not in moscow
+    assert repair_victim_reply("Волжский какой-то.", "какой адрес?", "victim") == "Не знаю."

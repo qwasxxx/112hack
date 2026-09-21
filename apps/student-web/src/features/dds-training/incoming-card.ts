@@ -1,4 +1,5 @@
 import { SERVICE_LABEL, type ServiceKind, type TrainingScenario } from '../../data/scenarios';
+import { namesFromTicket } from '../../progress/ticket-facts';
 
 export type TicketFacts = {
   callerName: string;
@@ -22,7 +23,6 @@ export type DdsDefect = 'service' | 'injured' | 'phone';
 
 const ALL_SERVICES: ServiceKind[] = ['fire', 'ambulance', 'police', 'gas'];
 
-const FIO = /[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}/g;
 const PHONE =
   /(?:тел\.?\s*)?(?:\+?7|8)?[\s\-()]*9\d{2}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}|\b9\d{9}\b|\b\d{10,11}\b/;
 const DOB = /дата рождения\s+\d{2}\.\d{2}\.\d{4}|д\/р\s*\d{2}\.\d{2}\.\d{4}/i;
@@ -52,8 +52,8 @@ export function factsFromScenario(scenario: TrainingScenario): TicketFacts {
   const expanded = expandTicketShorthand(raw);
   const phoneMatch = expanded.match(PHONE);
   const callerPhone = phoneMatch ? phoneMatch[0].trim() : '';
-  const names = expanded.match(FIO) ?? [];
-  const callerName = names.at(-1)?.trim() ?? '';
+  const people = namesFromTicket(expanded);
+  const callerName = people.callerFio || people.callerRole;
   const dob = expanded.match(DOB)?.[0]?.replace(/^д\/р\s*/i, 'дата рождения ') ?? '';
   let description = expanded;
   if (callerName) {
@@ -89,7 +89,7 @@ function injuredFrom(text: string): string {
     return 'Нет';
   }
   if (
-    /пострадав|травм|кров|ожог|без сознания|избит|нож|судорог|задыха|головн|вызывает себе|давление|а\/д|инсульт|рожает|топор|потеряла сознание|теряет сознание/.test(
+    /пострадав|травм|кров|ожог|без сознания|избит|нож|судорог|задыха|головн|вызывает себе|давление|а\/д|инсульт|рожает|топор|потеряла сознание|теряет сознание|упал|отек|отёк|велосипед/.test(
       t,
     )
   ) {

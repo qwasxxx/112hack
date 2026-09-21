@@ -36,7 +36,8 @@ export function TeacherDashboard({
   accountBar,
   repository,
   pollMs,
-  storageLabel,
+  classActive,
+  onToggleClass,
 }: {
   apiStatus: ConnectionStatus;
   realtimeStatus: ConnectionStatus;
@@ -47,6 +48,8 @@ export function TeacherDashboard({
   repository?: TeacherDashboardRepository;
   pollMs?: number;
   storageLabel?: string;
+  classActive?: boolean;
+  onToggleClass?: () => void;
 }) {
   const resolvedRepository = useMemo(
     () => repository ?? new MockTeacherDashboardRepository(),
@@ -65,7 +68,7 @@ export function TeacherDashboard({
 
   useLayoutEffect(
     () => bindTeacherDashboardTilt(contentRef.current),
-    [section, observedId, state.snapshot],
+    [section, observedId],
   );
   useEffect(() => () => cancelAnimationFrame(collapsePress.current), []);
   useEffect(() => {
@@ -100,7 +103,7 @@ export function TeacherDashboard({
       <main className="td-loading" aria-live="polite">
         <div className="td-loader" />
         <h1>Загружаем преподавательскую панель</h1>
-        <p>{storageLabel ? 'Читаем результаты учеников с этого компьютера…' : 'Mock-репозиторий подготавливает демонстрационные данные…'}</p>
+        <p>Подключаем занятия и результаты учеников…</p>
       </main>
     );
   if (state.error || !state.snapshot)
@@ -163,12 +166,8 @@ export function TeacherDashboard({
             ))}
           </nav>
           <div className="td-sidebar-foot">
-            <span className="td-demo-label">{storageLabel ?? 'DEMO · MOCK DATA'}</span>
-            <p>
-              {storageLabel
-                ? 'Результаты учеников с этого компьютера. Назначьте билет кнопкой «Восстановить».'
-                : 'Данные сбросятся после перезагрузки страницы.'}
-            </p>
+            <span className="td-demo-label">SYS112</span>
+            <p>Учебная панель преподавателя. Активные занятия появляются, когда ученик открывает билет.</p>
           </div>
           <div className="td-sidebar-art" aria-hidden="true">
             <img src={sidebarBase} alt="" />
@@ -241,6 +240,8 @@ export function TeacherDashboard({
                 sessions={state.sessions}
                 results={state.results}
                 onObserve={observe}
+                classActive={classActive}
+                onToggleClass={onToggleClass}
               />
               <TeacherSystemStatuses>{legacyStatus}</TeacherSystemStatuses>
               {examPanel}
@@ -256,7 +257,6 @@ export function TeacherDashboard({
               scenarios={state.scenarios}
               materials={state.materials}
               onSave={saveScenario}
-              onToggleArchive={toggleArchive}
             />
           ) : (
             <ResultsPage

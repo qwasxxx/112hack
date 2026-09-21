@@ -5,6 +5,7 @@ import '../../../teacher-web/src/app.css';
 import type { Session } from '../auth/accounts';
 import { AccountBar } from '../auth/account-bar';
 import { LocalTeacherDashboardRepository } from './local-teacher-repository';
+import { readClassSession, readLiveSessions, startClass, stopClass, hydrateFromApi } from '../progress';
 
 const EXAM_ACTIONS: Array<{ type: InterventionType; label: string; hint: string }> = [
   {
@@ -39,9 +40,11 @@ function Dot(props: { tone: 'ok' | 'warn' | 'bad'; label: string }) {
 export function TeacherApp(props: Props) {
   const [apiStatus, setApiStatus] = useState<'ok' | 'bad' | 'pending'>('pending');
   const [realtimeStatus, setRealtimeStatus] = useState<'ok' | 'bad' | 'pending'>('pending');
+  const [classActive, setClassActive] = useState(() => readClassSession().active);
   const repository = useMemo(() => new LocalTeacherDashboardRepository(), []);
 
   useEffect(() => {
+    void hydrateFromApi().then(() => setClassActive(readClassSession().active));
     void fetch('/api/v1/health')
       .then((response) => setApiStatus(response.ok ? 'ok' : 'bad'))
       .catch(() => setApiStatus('bad'));
@@ -71,14 +74,35 @@ export function TeacherApp(props: Props) {
     };
   }, []);
 
+  function toggleClass() {
+    if (readClassSession().active) {
+      stopClass();
+    } else {
+      startClass(props.operator.login);
+    }
+    setClassActive(readClassSession().active);
+  }
+
+  async function applyExamCue(type: InterventionType, hint: string) {
+    const live = readLiveSessions();
+    if (!live.length) {
+      window.alert('Нет активных занятий. Пусть ученик откроет билет в другой вкладке.');
+      return;
+    }
+    await Promise.all(
+      live.map((item) => repository.applyIntervention({ callId: `live-${item.login}`, type, note: hint })),
+    );
+  }
+
   return (
     <TeacherDashboard
       apiStatus={apiStatus}
       realtimeStatus={realtimeStatus}
       examActions={EXAM_ACTIONS}
       repository={repository}
-      pollMs={4000}
-      storageLabel="ЛОКАЛЬНЫЕ РЕЗУЛЬТАТЫ"
+      pollMs={2000}
+      classActive={classActive}
+      onToggleClass={toggleClass}
       accountBar={<AccountBar user={props.operator} onLogout={props.onLogout} />}
       legacyStatus={
         <div className="status">
@@ -96,9 +120,7 @@ export function TeacherApp(props: Props) {
         <section className="exam td-legacy-exam">
           <h2>Экзамен</h2>
           <p className="muted">
-            На экзамене преподаватель сможет вмешиваться в разговор: эмоции, новые обстоятельства,
-            внезапные события. Пока команды только размечены — сервис диалога отвечает{' '}
-            <code>not_implemented</code>.
+            Команда сразу уходит ученику на АРМ и в реплику заявителя, если идёт живой звонок.
           </p>
           <div className="exam-actions">
             {EXAM_ACTIONS.map((action) => (
@@ -106,8 +128,8 @@ export function TeacherApp(props: Props) {
                 key={action.type}
                 type="button"
                 className="exam-btn"
-                disabled
                 title={action.hint}
+                onClick={() => void applyExamCue(action.type, action.hint)}
               >
                 <strong>{action.label}</strong>
                 <span>{action.hint}</span>

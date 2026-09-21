@@ -427,6 +427,29 @@ h2 {
   font-size: 13px;
 }
 
+.teacher-cue {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 16px;
+  background: #1f4e79;
+  color: #fff;
+  font-size: 13px;
+}
+
+.teacher-cue button {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
 @media (max-width: 900px) {
   .split,
   .call-body,

@@ -180,7 +180,7 @@ function ScenarioForm({
           Отмена
         </button>
         <button disabled={saving} className="td-btn td-btn--primary">
-          {saving ? 'Сохранение…' : 'Сохранить mock-сценарий'}
+          {saving ? 'Сохранение…' : 'Сохранить'}
         </button>
       </div>
     </form>
@@ -191,12 +191,10 @@ export function ScenariosPage({
   scenarios,
   materials,
   onSave,
-  onToggleArchive,
 }: {
   scenarios: Scenario[];
   materials: TrainingMaterial[];
   onSave: (draft: ScenarioDraft) => Promise<void>;
-  onToggleArchive: (id: string, archived: boolean) => Promise<void>;
 }) {
   const [editing, setEditing] = useState<Scenario | 'new' | null>(null);
   return (
@@ -268,12 +266,6 @@ export function ScenariosPage({
                 <button className="td-btn td-btn--secondary" onClick={() => setEditing(scenario)}>
                   Редактировать
                 </button>
-                <button
-                  className="td-btn td-btn--ghost"
-                  onClick={() => void onToggleArchive(scenario.id, scenario.status !== 'archived')}
-                >
-                  {scenario.status === 'archived' ? 'Восстановить' : 'Архивировать'}
-                </button>
               </div>
             </article>
           ))}
@@ -281,20 +273,7 @@ export function ScenariosPage({
       </section>
       <section className="td-panel">
         <div className="td-section-title">
-          <div>
-            <h3>Учебные материалы</h3>
-            <span className="td-help">Серверное хранение ещё не подключено</span>
-          </div>
-          <button
-            className="td-btn td-btn--secondary"
-            onClick={() =>
-              window.alert(
-                'Демонстрация: загрузка файлов появится после подключения серверного хранилища.',
-              )
-            }
-          >
-            Загрузить файл
-          </button>
+          <h3>Учебные материалы</h3>
         </div>
         <div className="td-table-wrap">
           <table className="td-table">

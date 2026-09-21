@@ -51,14 +51,23 @@ export function classifierNumberFor(services: ServiceKind[], text: string): stri
   if (/дерут|драк/.test(t)) {
     return /10-15|масс|палкам|прут/.test(t) ? '15060202' : '15060201';
   }
-  if (/дтп|наезд/.test(t)) {
+  if ((/дтп|наезд/.test(t) || /сбил|столкнов/.test(t)) && !/упал сам|упал с велосипеда/.test(t)) {
     return '2020000';
   }
   if (/потерял.*ребен/.test(t) && services.includes('police')) {
     return '18070000';
   }
-  if (services[0] === 'ambulance') {
-    return '2020000';
+  if (/без сознания|потеря сознания|теряет сознание/.test(t)) {
+    return '22020000';
+  }
+  if (/рожает|отошли воды|беремен/.test(t)) {
+    return '22030000';
+  }
+  if (
+    /упал|травм|отек|отёк|велосипед|перелом|ушибли|головн|астма|судорог|кровоточ/.test(t) ||
+    services.includes('ambulance')
+  ) {
+    return '22530000';
   }
   return '18070000';
 }
@@ -206,13 +215,13 @@ function extractPhone(text: string): string | undefined {
 
 function extractCallerHint(situation: string): string | undefined {
   if (/вызывает мама|звонит мама/i.test(situation)) {
-    return 'мама';
+    return 'мама. Имени заявителя в билете нет — не выдумывай Свету, Марию и любые другие имена. Если спросили как зовут: «я мама»';
   }
   if (/вызывает супруг/i.test(situation)) {
-    return 'супруг';
+    return 'супруг. Имени в билете нет, не выдумывай';
   }
   if (/вызывает отец/i.test(situation)) {
-    return 'отец';
+    return 'отец. Имени в билете нет, не выдумывай';
   }
   if (/вызывает себе/i.test(situation)) {
     return 'звонит о себе';
@@ -232,8 +241,14 @@ function extractCallerHint(situation: string): string | undefined {
   if (/, дочь|дочь,/i.test(situation)) {
     return 'дочь';
   }
-  const names = situation.match(/[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)?/g);
-  return names?.at(-1);
+  return undefined;
+}
+
+function extractInjuredName(situation: string): string | undefined {
+  const match =
+    situation.match(/ребенок[^.]{0,48}?([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+)+)/i) ||
+    situation.match(/([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+)+)\s+упал/i);
+  return match?.[1]?.trim();
 }
 
 function openingFrom(situation: string): string {
@@ -458,11 +473,15 @@ export function buildLessonSystemPrompt(scenario: TrainingScenario, section: Les
       : scenario.code;
   const phone = extractPhone(`${situation} ${address}`);
   const caller = extractCallerHint(situation);
+  const injured = extractInjuredName(situation);
   const facts = [
     ticketLabel,
     `ЧТО СЛУЧИЛОСЬ: ${situation}`,
     address ? `АДРЕС (назови, только если спросили): ${address}` : '',
     caller ? `КТО ЗВОНИТ: ${caller}` : '',
+    injured
+      ? `ПОСТРАДАВШИЙ (это не ты; назови только если спросили кто упал / как зовут ребёнка): ${injured}`
+      : '',
     phone ? `ТЕЛЕФОН (назови, только если спросили): ${phone}` : '',
     'Чего нет в этих строках — не существует. Не додумывай улицы, этажи, имена, телефоны, службы и цифры.',
   ]
@@ -480,7 +499,7 @@ export function buildLessonSystemPrompt(scenario: TrainingScenario, section: Les
   return [
     facts,
     `Уже сказано: «${scenario.callerOpening}». Не повторяй эту фразу.`,
-    'Отвечай только на заданный вопрос, 1–2 фразы. Адрес, имена и телефон — лишь когда спросили. Если не знаешь — «не знаю» или «не вижу». Слова полностью, без сокращений.',
+    'Имена — только из строк выше. Нет имени заявителя: не выдумывай Свету и любые ФИО. Как вас зовут → «я мама» / «не знаю, как записать». Как давно: если времени нет — «Только что». Если оператор не спрашивает факт, а говорит что услышал или направит помощь — «хорошо» или «жду». Не говори «не вижу» и «не слышу». Не коверкай слова. Слова полностью, без сокращений.',
   ]
     .filter(Boolean)
     .join('\n');

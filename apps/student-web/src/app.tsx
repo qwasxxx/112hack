@@ -51,6 +51,7 @@ export function App() {
         setAccounts(next);
         setSession(hydrated);
         setReady(true);
+        void import('./progress').then(({ hydrateFromApi }) => hydrateFromApi());
       })
       .catch(() => {
         if (!cancelled) {

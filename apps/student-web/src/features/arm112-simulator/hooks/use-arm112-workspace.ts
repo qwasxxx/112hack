@@ -162,7 +162,7 @@ export function useArm112Workspace(input: {
         incomingAcceptedAt,
         telephonyStatus,
       });
-    }, 800);
+    }, 200);
     return () => window.clearTimeout(timer);
   }, [card, incomingAcceptedAt, input.operatorLogin, input.scenario.id, mode, phase, result, telephonyStatus]);
 

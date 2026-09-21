@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Literal
@@ -19,7 +20,8 @@ ANALYSIS_PROMPT = (
     "По стенограмме учебного звонка в 112 кратко разбери работу оператора. "
     "Пиши по-русски кириллицей, без markdown, иероглифов и латиницы. "
     "Что получилось, чего не хватило, что уточнить в следующий раз. "
-    "Не выдумывай фактов, которых не было в разговоре."
+    "Не выдумывай фактов, которых не было в разговоре. "
+    "Если заявитель сам назвал суть в начале (пожар, возгорание, ДТП, газ) — не пиши, что оператор не спросил «что случилось»."
 )
 
 CALL_SCORE_PROMPT = (
@@ -32,6 +34,7 @@ CALL_SCORE_PROMPT = (
     '{"politeness":12,"comment":"2-4 предложения по-русски","recommendations":["...","..."]}\n'
     "politeness целое 4..15. 15 без грубости и с нормальным тоном. 8 сухо. 4 грубо.\n"
     "comment: что совпало с билетом на линии, чего не спросили, тон.\n"
+    "Если заявитель в первой реплике уже назвал суть (пожар, возгорание, ДТП, газ и т.п.) — это не ошибка оператора: не пиши в comment и recommendations, что не спросили «что случилось».\n"
     "recommendations: 0-3 коротких совета."
 )
 
@@ -58,12 +61,16 @@ VICTIM_SYSTEM_PROMPT = """/no_think
 - Слегка напуган и сбит с толку, но тебя можно понять. Не ори без остановки и не повторяй «алло» и «помогите», если уже сказал.
 - Слова полностью, как в устной речи. Без точек-сокращений: не «обл.», не «г.», не «ул.», не «д.», не «ст.», не «стр», не STR, не «км». Говори «область», «город», «улица», «дом», «станция», «строение», «километр».
 - Адрес — одно короткое предложение своими словами, как в разговоре. Не зачитывай канцелярию целиком.
-- Отвечай только на заданный вопрос. Не выкладывай всю легенду сразу.
+- Если спросили «как вас зовут» / имя: назови только имя из контекста. Если в контексте написано, что ты мама/отец и имени нет — скажи «я мама» / «я отец». Никогда не выдумывай Свету, Марию и любые ФИО.
+- Как давно это произошло: если в контексте нет времени — скажи «Только что». Не выдумывай часы, полчаса и калечные слова вроде «получика».
+- Если оператор не спрашивает, а говорит, что услышал, направляет помощь, службы выезжают, оставайтесь на линии — ответь как живой человек: «хорошо», «скорее», «жду». Никогда не говори «не вижу», «не слышу», «не знаю» на такие фразы.
 - Если оператор молчит — одной фразой напомни, что нужна помощь. Сам опрос не веди.
 
 Факты:
 - Адрес, имена, телефоны, возраст, этаж, число людей и что произошло — только из блока «Контекст сценария».
-- Чего там нет — не существует. Скажи «не вижу» или «не знаю». Не выдумывай и не додумывай «для правдоподобия» улицы, этажи, имена, телефоны, службы и цифры.
+- Если спросили адрес — назови адрес из контекста своими словами. Не говори «не знаю», если адрес в контексте есть.
+- Если спросили конкретный факт, которого в контексте нет — «не знаю». Не выдумывай улицы, этажи, имена, телефоны, службы, цифры и время.
+- Говори только обычные русские слова. Не коверкай и не сливай слова.
 
 Запрещено:
 - Не будь оператором, диспетчером или сотрудником 112.
@@ -76,6 +83,187 @@ DEFAULT_PROMPTS: dict[ConversationRole, str] = {
     "operator": OPERATOR_SYSTEM_PROMPT.strip(),
     "victim": VICTIM_SYSTEM_PROMPT.strip(),
 }
+
+_BLANK_SIGHT = re.compile(
+    r"^(?:я\s+)?(?:не\s+(?:слышу|вижу|знаю)|непонятно)(?:\s*[,.!]+\s*(?:не\s+(?:слышу|вижу|знаю))*)*[.!]?\s*$",
+    re.IGNORECASE,
+)
+_OPERATOR_ASKS = re.compile(
+    r"\?|где|куда|какой|какая|какие|какое|кто|кому|чей|чья|сколько|адрес|телефон|этаж|квартир|"
+    r"подъезд|корпус|имя|фио|как\s+вас|пострадав|ранен|горит|что\s+(?:там|случилось|произошло)|"
+    r"есть\s+ли|назовите|уточните|повторите",
+    re.IGNORECASE,
+)
+_ASK_NAME = re.compile(r"как вас зовут|ваше имя|как зовут|представьтесь|кто вы\b", re.IGNORECASE)
+_ASK_ADDRESS = re.compile(
+    r"адрес|где (?:это|вы|находи|происход)|куда ехать|какая улица|какой дом|где случилось",
+    re.IGNORECASE,
+)
+_ASK_PHONE = re.compile(r"телефон|номер телефона|с какого номера|какой номер", re.IGNORECASE)
+_EXTRA_STOP = frozenset(
+    "только если спросили назови назовите адрес кто звонит что случилось пострадавший билет ситуация контекст сценария".split()
+)
+_ASK_WHEN = re.compile(
+    r"как давно|давно ли|сколько времени|когда (?:это )?(?:начал|произош|случил|начал)",
+    re.IGNORECASE,
+)
+_HAS_TIME = re.compile(r"только что|минут|час\b|секунд|сейчас происходит|только нача", re.IGNORECASE)
+_WORD = re.compile(r"[а-яё]{4,}", re.IGNORECASE)
+_OK_WORDS = frozenset(
+    """
+    алло помогите пожалуйста хорошо ладно жду скорее спасибо да нет сейчас сразу
+    только что уже еще ещё там здесь тут около после перед рядом горит дым пожар
+    газ вода кровь человек люди женщина мужчина ребенок ребёнок сосед соседи
+    дом улица квартира этаж подъезд двор контейнер мусор машина водитель
+    адрес телефон имя не знаю вижу слышу понял поняла происходит случилось
+    произошло началось выезжают едут помощь скорая полиция пожарные
+    находится кажется примерно напротив точно точный помню недалеко вообще
+    области города улицы комбинат комбинате комбинатом
+    пламя балкон окно крыша подвал запах гарь дымит взорвался упал лежит
+    кричит задыхается сознание мчс автобус трамвай метро мост шоссе проспект
+    перекресток перекрёсток пострадал пострадавшие никого муж жену дочь сын
+    мать отец бабушка дедушка скорее быстрее остаюсь линии частный
+    многоквартирный мусорного контейнера
+    """.split()
+)
+
+
+def _known_word(word: str, extra_words: set[str]) -> bool:
+    if word in _OK_WORDS or word in extra_words:
+        return True
+    if len(word) < 5:
+        return True
+    stem = word[:5]
+    pool = extra_words | _OK_WORDS
+    return any(item.startswith(stem) or stem.startswith(item[:5]) for item in pool if len(item) >= 5)
+
+
+def reply_has_garbage(text: str, extra: str = "") -> bool:
+    extra_words = {item.replace("ё", "е") for item in _WORD.findall((extra or "").lower().replace("ё", "е"))}
+    for raw in _WORD.findall(text.lower().replace("ё", "е")):
+        if not _known_word(raw, extra_words):
+            return True
+    return False
+
+
+def _norm_words(text: str) -> list[str]:
+    return _WORD.findall((text or "").lower().replace("ё", "е"))
+
+
+def field_from_extra(extra: str, label: str) -> str:
+    match = re.search(rf"{label}[^:\n]*:\s*(.+)", extra or "", re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(1).strip().split("\n")[0].strip()
+
+
+def reply_uses_ticket_facts(text: str, extra: str) -> bool:
+    extra_words = {
+        item
+        for item in _norm_words(extra)
+        if item not in _EXTRA_STOP and item not in _OK_WORDS and len(item) >= 5
+    }
+    if not extra_words:
+        return False
+    hits = 0
+    for word in _norm_words(text):
+        if _known_word(word, extra_words) and any(
+            item.startswith(word[:5]) or word.startswith(item[:5]) for item in extra_words if len(item) >= 5
+        ):
+            hits += 1
+            if hits >= 2:
+                return True
+    return False
+
+
+def fact_for_question(operator_text: str, extra: str) -> str:
+    if _ASK_ADDRESS.search(operator_text or ""):
+        return field_from_extra(extra, "АДРЕС")
+    if _ASK_PHONE.search(operator_text or ""):
+        return field_from_extra(extra, "ТЕЛЕФОН")
+    return ""
+
+
+def repair_caller_name(reply: str, operator_text: str, extra: str) -> str:
+    if not _ASK_NAME.search(operator_text or ""):
+        return ""
+    extra_l = (extra or "").lower()
+    if "мама" in extra_l and re.search(r"имени заявителя нет|не выдумывай", extra_l):
+        if re.search(r"\bмама\b", reply, re.IGNORECASE) and not re.search(
+            r"зовут\s+[а-яё]{3,}", reply, re.IGNORECASE
+        ):
+            return ""
+        return "Я мама."
+    if "отец" in extra_l and re.search(r"имени", extra_l):
+        return "Я отец."
+    return ""
+
+
+def last_user_text(session: CallSession) -> str:
+    for item in reversed(session.messages):
+        if item.role == "user":
+            return item.content
+    return ""
+
+
+def repair_victim_reply(
+    reply: str,
+    operator_text: str,
+    role: ConversationRole,
+    extra: str = "",
+) -> str:
+    text = (reply or "").strip()
+    if role != "victim" or not text:
+        return text
+    op = operator_text or ""
+    garbage = reply_has_garbage(text, extra)
+    blank = bool(_BLANK_SIGHT.match(text))
+    grounded = reply_uses_ticket_facts(text, extra)
+    when = bool(_ASK_WHEN.search(op))
+    if when and (garbage or blank or not _HAS_TIME.search(extra or "")):
+        return "Только что."
+    named = repair_caller_name(text, op, extra)
+    if named:
+        return named
+    ticket_fact = fact_for_question(op, extra)
+    if ticket_fact and (blank or garbage or not grounded):
+        return ticket_fact
+    if grounded:
+        return text
+    if blank or garbage:
+        if _OPERATOR_ASKS.search(op) or when:
+            return "Не знаю."
+        return "Хорошо, жду."
+    return text
+
+
+def session_scenario_extra(session: CallSession) -> str:
+    if not session.messages or session.messages[0].role != "system":
+        return ""
+    return _scenario_extra(session.messages[0].content, locked_system_prompt(session.conversation_role))
+
+
+_INTERVENTION_HINTS = {
+    "set_emotional_state": "Говори в панике: короче, сбивчиво, повторяй главное.",
+    "add_circumstance": "Появилось новое обстоятельство. Сообщи его, если оператор спрашивает или сам по ходу.",
+    "inject_event": "Произошло внезапное событие. Отвечай рвано, можно переспросить «алло».",
+    "reveal_fact": "Теперь можно назвать точный факт из контекста сценария, если оператор спрашивает.",
+    "conceal_fact": "Пока не называй точный адрес и ФИО, пока оператор не переспросит дважды.",
+    "adjust_difficulty": "Путай адрес и детали, пока оператор спокойно не уточнит.",
+    "force_state": "Ситуация изменилась. Держись новой обстановки из указания.",
+    "end_call": "Разговор пора заканчивать. Коротко попрощайся, новых фактов не добавляй.",
+}
+
+
+def apply_teacher_intervention(session: CallSession, command: str, note: str = "") -> str:
+    hint = _INTERVENTION_HINTS.get(command, "Следуй указанию преподавателя.")
+    extra_note = " ".join((note or "").split()).strip()
+    line = f"{hint} {extra_note}".strip() if extra_note else hint
+    extra = session_scenario_extra(session)
+    extra = f"{extra}\nУКАЗАНИЕ ПРЕПОДАВАТЕЛЯ: {line}".strip()
+    if session.messages and session.messages[0].role == "system":
+        session.messages[0].content = build_system_prompt(session.conversation_role, extra)
+    return line
 
 
 def locked_system_prompt(role: ConversationRole) -> str:

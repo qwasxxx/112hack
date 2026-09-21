@@ -1,5 +1,13 @@
-CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS vector;
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE NOTICE 'pgvector skipped: %', SQLERRM;
+END
+$$;
+
 
 CREATE TABLE users (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -117,7 +125,7 @@ CREATE TABLE knowledge_chunks (
   ordinal integer NOT NULL,
   content text NOT NULL,
   metadata jsonb NOT NULL,
-  embedding vector(1536)
+  embedding text
 );
 CREATE INDEX chunks_document_idx ON knowledge_chunks (document_id);
 

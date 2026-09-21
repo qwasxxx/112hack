@@ -12,6 +12,7 @@ import {
   TeacherSystemStatuses,
 } from '../components/teacher-analytics-panels';
 import { TeacherFilterBar, TeacherFilterMenu } from '../components/teacher-filter-menu';
+import { downloadResultsCsv, printGroupReport, printResultCertificate } from '../teacher-export';
 
 function ResultDetail({
   result,
@@ -131,6 +132,9 @@ function ResultDetail({
           <button className="td-btn td-btn--secondary" onClick={() => void onSaveComment(comment)}>
             Сохранить комментарий
           </button>
+          <button className="td-btn td-btn--ghost" type="button" onClick={() => printResultCertificate(result)}>
+            Печать справки
+          </button>
         </div>
         <div className="td-score-edit">
           <label>
@@ -162,7 +166,7 @@ function ResultDetail({
           </button>
         </div>
       </div>
-      <h4>Mock-аудит результата</h4>
+      <h4>Аудит результата</h4>
       <div className="td-stack">
         {audit
           .filter((item) => item.entityId === result.id)
@@ -176,7 +180,6 @@ function ResultDetail({
                   {item.reason}
                 </p>
               </div>
-              <StatusBadge tone="accent">mock</StatusBadge>
             </article>
           ))}
       </div>
@@ -228,7 +231,15 @@ export function ResultsPage({
           <p className="td-kicker">Качество подготовки</p>
           <h2>Результаты и аналитика</h2>
         </div>
-        <StatusBadge tone="accent">{results.length ? `${Math.round(results.reduce((sum, item) => sum + item.finalScore, 0) / results.length)}% средний` : 'Нет попыток'}</StatusBadge>
+        <div className="td-inline">
+          <StatusBadge tone="accent">{results.length ? `${Math.round(results.reduce((sum, item) => sum + item.finalScore, 0) / results.length)}% средний` : 'Нет попыток'}</StatusBadge>
+          <button className="td-btn td-btn--secondary" type="button" onClick={() => downloadResultsCsv(visible)}>
+            CSV группы
+          </button>
+          <button className="td-btn td-btn--ghost" type="button" onClick={() => printGroupReport(visible)}>
+            Печать отчёта
+          </button>
+        </div>
       </header>
       <TeacherFilterBar label="Фильтры результатов">
         <TeacherFilterMenu

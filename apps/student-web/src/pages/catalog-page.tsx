@@ -19,6 +19,7 @@ import { HandbookBoard } from './handbook-page';
 import { SessionsBoard } from './sessions-page';
 import { DDS_LANES, readDdsLane, scenarioMatchesDdsLane, writeDdsLane, type DdsLaneId } from '../dds-lanes';
 import { assignedScenarioIds } from '../progress';
+import { readClassSession } from '../progress/class-session';
 
 export type CatalogView = 'catalog' | 'sessions' | 'handbook';
 
@@ -70,9 +71,22 @@ export function CatalogPage(props: Props) {
   const [duration, setDuration] = useState<DurationFilter>('all');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [lane, setLane] = useState<DdsLaneId>(() => readDdsLane());
-  const assignedIds = assignedScenarioIds(props.operatorLogin);
-  const [scope, setScope] = useState<'assigned' | 'all'>(assignedIds.length ? 'assigned' : 'all');
+  const [assignedIds, setAssignedIds] = useState(() => assignedScenarioIds(props.operatorLogin));
+  const [classLive, setClassLive] = useState(() => readClassSession().active);
+  const [scope, setScope] = useState<'assigned' | 'all'>(assignedIds.length || classLive ? 'assigned' : 'all');
   const view = props.view ?? 'catalog';
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setAssignedIds(assignedScenarioIds(props.operatorLogin));
+      const active = readClassSession().active;
+      setClassLive(active);
+      if (active) {
+        setScope('assigned');
+      }
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [props.operatorLogin]);
 
   function resetWorkspace() {
     setQuery('');
@@ -156,6 +170,9 @@ export function CatalogPage(props: Props) {
             }}
           />
           <section className="catalog-board" aria-labelledby="catalog-title">
+            {classLive ? (
+              <p className="catalog-assign">Идёт занятие преподавателя. Открывайте назначенные билеты.</p>
+            ) : null}
             {assignedIds.length ? (
               <p className="catalog-assign">
                 Преподаватель назначил {assignedIds.length} билетов.

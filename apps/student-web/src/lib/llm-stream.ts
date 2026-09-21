@@ -5,6 +5,7 @@ export type LlmStream = {
   kickoff(): void;
   sendUserFinal(id: string, text: string): void;
   analyze(text?: string): void;
+  intervene(command: string, note?: string): void;
   stop(): Promise<void>;
 };
 
@@ -169,6 +170,14 @@ export function createLlmStream(options: {
     sendJson(payload);
   }
 
+  function intervene(command: string, note?: string) {
+    const trimmed = command.trim();
+    if (!trimmed) {
+      return;
+    }
+    sendJson({ type: 'intervention', command: trimmed, note: note?.trim() || '' });
+  }
+
   async function stop(): Promise<void> {
     if (stopped) {
       return;
@@ -195,7 +204,7 @@ export function createLlmStream(options: {
     }
   }
 
-  return { start, kickoff, sendUserFinal, analyze, stop };
+  return { start, kickoff, sendUserFinal, analyze, intervene, stop };
 }
 
 export function warmupLesson(options: {

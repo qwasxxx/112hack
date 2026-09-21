@@ -45,7 +45,7 @@ export function trainingBindingFor(scenario: TrainingScenario): TrainingBinding 
         : scenario.services[0] === 'fire'
           ? '1050101'
           : scenario.services[0] === 'ambulance' || scenario.services.includes('ambulance')
-            ? '2020000'
+            ? '22530000'
             : '18070000');
   const record = rowByNumber(classifierId);
   return {

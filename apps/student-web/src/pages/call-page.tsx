@@ -7,6 +7,7 @@ import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
 import { enqueueTtsAudio, stopTtsAudio, takeSpeechChunks, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
 import type { TranscriptTurn } from '../progress';
+import { patchLive, takePendingLlmCues } from '../progress';
 
 type Line = {
   id: string;
@@ -30,6 +31,7 @@ type Props = {
   hint?: string;
   panelTitle?: string;
   onCallEnded?: (payload: { lines: TranscriptTurn[]; seconds: number }) => void;
+  operatorLogin?: string;
 };
 
 export function CallPage(props: Props) {
@@ -78,6 +80,37 @@ export function CallPage(props: Props) {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
   }, [lines]);
   linesRef.current = lines;
+
+  useEffect(() => {
+    const login = props.operatorLogin;
+    if (!login) {
+      return;
+    }
+    patchLive(login, {
+      transcript: lines
+        .filter((line) => line.text.trim())
+        .slice(-12)
+        .map((line) => ({
+          role: line.role === 'operator' ? 'student' : 'caller',
+          text: line.text,
+          at: typeof line.at === 'number' ? new Date(line.at).toISOString() : new Date().toISOString(),
+        })),
+    });
+  }, [lines, props.operatorLogin]);
+
+  useEffect(() => {
+    const login = props.operatorLogin;
+    if (!login) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const pending = takePendingLlmCues(login);
+      for (const cue of pending) {
+        llmRef.current?.intervene(cue.type, cue.note);
+      }
+    }, 1200);
+    return () => window.clearInterval(timer);
+  }, [props.operatorLogin]);
 
   useEffect(() => {
     let armed = false;

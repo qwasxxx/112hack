@@ -1,7 +1,12 @@
-export { appendLesson, lessonsNewestFirst, listLessonLogins, patchLesson, readAllLessons, readLessons } from './store';
-export { assignedScenarioIds, assignScenario, isScenarioAssigned, unassignScenario } from './assignments';
-export { clearLive, readLiveSessions, upsertLive } from './live-presence';
+export { appendLesson, absorbLessons, lessonsNewestFirst, listLessonLogins, patchLesson, readAllLessons, readLessons } from './store';
+export { assignedScenarioIds, assignScenario, isScenarioAssigned, replaceAssignments, unassignScenario } from './assignments';
+export { clearLive, mergeRemoteLive, patchLive, readLiveSessions, subscribeLive, upsertLive } from './live-presence';
 export type { LivePresence } from './live-presence';
+export { clearDdsHint, liveCardSnapshot, writeDdsHint } from './card-progress';
+export type { LiveCardRow, LiveCardSnapshot } from './card-progress';
+export { readClassSession, replaceClassSession, startClass, stopClass } from './class-session';
+export { hydrateFromApi } from './hydrate';
+export { activeCues, pushTeacherCue, takePendingLlmCues } from './teacher-cues';
 export { scoreTrainingLesson } from './score-training';
 export { scoreCard50 } from './score-card';
 export type { FieldCheck } from './score-card';

@@ -7,6 +7,8 @@ export type TicketFacts = {
   situation: string;
   what: string;
   callerFio: string;
+  callerRole: string;
+  injuredName: string;
   phone: string;
   injuredKnown: boolean;
   hasInjured: boolean | null;
@@ -40,14 +42,15 @@ export function ticketFactsFrom(scenario: TrainingScenario): TicketFacts {
     /(?:тел\.?\s*)?(?:\+?7|8)?[\s\-()]*9\d{2}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}|\b9\d{9}\b|\b\d{10,11}\b/,
   );
   const phone = phoneMatch ? digitsPhone(phoneMatch[0]) : '';
-  const names = situation.match(FIO) ?? [];
-  const callerFio = names.at(-1)?.trim() ?? '';
+  const people = namesFromTicket(situation);
   const injured = parseInjured(situation);
   return {
     address,
     situation,
-    what: situationCore(situation, callerFio, phone),
-    callerFio,
+    what: situationCore(situation, people.injuredName || people.callerFio, phone),
+    callerFio: people.callerFio,
+    callerRole: people.callerRole,
+    injuredName: people.injuredName,
     phone,
     injuredKnown: injured.known,
     hasInjured: injured.hasInjured,
@@ -159,10 +162,50 @@ function parseInjured(situation: string): { known: boolean; hasInjured: boolean 
   if (/пострадавших нет|без пострадавших|пострадавших людей нет|пострадавших не видят|б\/п/.test(t)) {
     return { known: true, hasInjured: false, count: 0 };
   }
-  if (/пострадал|ожог|без сознания|травм|кров|задыха|утоп|нож/.test(t)) {
+  if (
+    /пострадал|ожог|без сознания|травм|кров|задыха|утоп|нож|упал|отек|отёк|перелом|ушибли|велосипед/.test(
+      t,
+    )
+  ) {
     return { known: true, hasInjured: true, count: null };
   }
   return { known: false, hasInjured: null, count: null };
+}
+
+export function namesFromTicket(situation: string): { callerFio: string; callerRole: string; injuredName: string } {
+  const names = situation.match(FIO) ?? [];
+  let callerRole = '';
+  if (/вызывает мама|звонит мама/i.test(situation)) {
+    callerRole = 'мама';
+  } else if (/вызывает отец|звонит отец/i.test(situation)) {
+    callerRole = 'отец';
+  } else if (/вызывает супруг/i.test(situation)) {
+    callerRole = 'супруг';
+  } else if (/подруга/i.test(situation)) {
+    callerRole = 'подруга';
+  } else if (/соседк|сосед/i.test(situation)) {
+    callerRole = 'сосед';
+  } else if (/бабушка/i.test(situation)) {
+    callerRole = 'бабушка';
+  }
+  const injuredMatch =
+    situation.match(/ребенок[^.]{0,48}?([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+)+)/i) ||
+    situation.match(/([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+)+)\s+упал/i);
+  const injuredName = injuredMatch?.[1]?.trim() ?? '';
+  const afterCall = situation.match(
+    /вызывает(?:\s+себе)?[,\s]+([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2})/,
+  );
+  const calledName = afterCall?.[1]?.trim() ?? '';
+  const roleWords = new Set(['мама', 'папа', 'отец', 'мать', 'супруг', 'супруга', 'сосед', 'соседка', 'подруга', 'бабушка']);
+  let callerFio = '';
+  if (/вызывает себе|звонит сама/.test(situation.toLowerCase()) && names.length) {
+    callerFio = names[0]?.trim() ?? '';
+  } else if (calledName && !roleWords.has(calledName.toLowerCase()) && calledName !== injuredName) {
+    callerFio = calledName;
+  } else if (!callerRole) {
+    callerFio = names.filter((item) => item !== injuredName).at(-1)?.trim() ?? '';
+  }
+  return { callerFio, callerRole, injuredName };
 }
 
 function callerStatusFrom(situation: string): string {

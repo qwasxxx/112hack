@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TrainingScenario } from '../../data/scenarios';
 import { ddsWorkplaceName, readDdsLane } from '../../dds-lanes';
+import { writeDdsHint } from '../../progress';
 import { CallPage } from '../../pages/call-page';
 import type { DdsFinish } from '../../pages/debrief-page';
 import { unlockTtsAudio } from '../../lib/tts-player';
@@ -50,6 +51,17 @@ export function DdsTrainingPage(props: Props) {
   useEffect(() => {
     setCallbackOn(false);
   }, [session.activeId]);
+
+  useEffect(() => {
+    const done = session.queue.filter((item) => item.decision).length;
+    const active = session.queue.find((item) => item.id === session.activeId);
+    writeDdsHint(props.operatorLogin, {
+      scenarioId: props.scenario.id,
+      done,
+      total: session.queue.length,
+      services: active?.draft.services.length ?? 0,
+    });
+  }, [props.operatorLogin, props.scenario.id, session.activeId, session.queue]);
 
   function finishShift() {
     if (closing.current || !session.allDone) {
@@ -111,6 +123,10 @@ export function DdsTrainingPage(props: Props) {
       {session.view === 'journal' ? null : (
         <header className="dds-bar">
           <span>ДДС · {ddsWorkplaceName(lane)}</span>
+          <span className="dds-bar-hint">
+            Службы внизу: тёмный чип = привлечена, серый = нет. 101 пожар, 102 полиция, 103 скорая, 104 газ. Лишние
+            снимите, нужные добавьте. Карандаш — статус своей ДДС. Трубка — перезвон. × закрывает карточку в 112.
+          </span>
           <button type="button" onClick={props.onLeave}>
             К уроку
           </button>
@@ -164,6 +180,7 @@ export function DdsTrainingPage(props: Props) {
               section="training"
               variant="panel"
               autoStart
+              operatorLogin={props.operatorLogin}
               systemPrompt={buildDdsCallbackPrompt(active.scenario, active.facts)}
               opening={ddsCallbackOpening()}
               hint="Вы — диспетчер ДДС. Уточните адрес, пострадавших и телефон для связи."
