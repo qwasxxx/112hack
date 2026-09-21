@@ -2,24 +2,41 @@
 
 Тренажёр операторов системы 112: АРМ-карточка, живой звонок (STT + Qwen + TTS), ДДС и локальный PostgreSQL.
 
+## Быстрый старт (одна команда)
+
+Нужен только **Docker Desktop**. Node, Python и модели ставить не надо.
+
+```bash
+git clone https://github.com/qwasxxx/112hack.git
+cd 112hack
+docker compose up --build
+```
+
+Windows: `.\scripts\up.ps1`  
+Linux/macOS: `./scripts/up.sh`
+
+Первый запуск скачает образы и модели: STT T-one (~130 МБ), Qwen3-4B GGUF (~2.5 ГБ), Silero TTS. Нужны интернет и примерно 8 ГБ RAM. Дальше файлы лежат в `./models` и кэше Docker. Если занят порт `5173` (локальный Vite) — остановите его.
+
+Откройте http://localhost:5173  
+Учётки: `smirnova` / `petrov` / `volkova`, пароль `112`.
+
+Остановка: `docker compose down` или `pnpm down`.
+
 ## Демо для жюри (обязательный путь)
 
 Один origin: `http://localhost:5173`. Не открывайте teacher-web на `:5174`.
 
 Учётки: `smirnova` (ученик), `petrov` (преподаватель), `volkova` (админ). Пароль у всех `112`.
 
-1. Node 20+, pnpm 10, Python 3.11, Docker Desktop (для Postgres).
-2. `pnpm install`
-3. `.\scripts\setup-postgres.ps1` — локальная БД `sys112` на `127.0.0.1:5435` (не публикуется).
-4. `pnpm dev:api` — Nest на :3000, пишет занятия/назначения/live в Postgres.
-5. `pnpm --filter @sys112/student-web dev` → http://localhost:5173
-6. Голос: `pnpm dev:llm`, `pnpm dev:stt`, `pnpm dev:tts`.
+```bash
+docker compose up --build
+```
 
-Две вкладки Chrome: `smirnova` и `petrov`. Занятия, назначения и результаты уходят в Postgres; без API остаётся кэш в браузере.
+Две вкладки Chrome: `smirnova` и `petrov`. Postgres, API, STT, Qwen и Silero поднимаются сами.
 
-## Запуск моделей
+## Разработка без полного Docker
 
-Требования: Node.js 20+, pnpm 10. Для голоса — Python 3.11.
+Требования: Node.js 20+, pnpm 10. Для голоса — Python 3.11. Docker — только для Postgres.
 
 ```bash
 pnpm install

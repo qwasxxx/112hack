@@ -19,7 +19,9 @@
     "format:check": "prettier --check .",
     "db:generate": "pnpm --filter @sys112/api db:generate",
     "db:migrate": "pnpm --filter @sys112/api db:migrate",
-    "db:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-postgres.ps1"
+    "db:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-postgres.ps1",
+    "up": "docker compose up --build",
+    "down": "docker compose down"
   },
   "devDependencies": {
     "prettier": "^3.5.3",

@@ -1,11 +1,66 @@
 services:
+  models:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.models
+    container_name: sys112-models
+    environment:
+      STT_MODEL_PATH: /models/sherpa-onnx-streaming-t-one-russian-2025-09-08
+      LLM_MODEL_PATH: /models/llm/Qwen3-4B-Q4_K_M.gguf
+    volumes:
+      - ../../models:/models
+    restart: "no"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sys112
+      POSTGRES_PASSWORD: sys112
+      POSTGRES_DB: sys112
+    volumes:
+      - sys112-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sys112 -d sys112"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    container_name: sys112-api
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      API_PORT: "3000"
+      DATABASE_URL: postgres://sys112:sys112@postgres:5432/sys112
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      MIGRATIONS_DIR: /repo/infra/database/migrations
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
   stt:
     build:
       context: ../..
       dockerfile: apps/stt/Dockerfile
     container_name: sys112-stt
-    ports:
-      - "8090:8090"
     environment:
       STT_MODE: local
       STT_MODEL_PATH: /models/sherpa-onnx-streaming-t-one-russian-2025-09-08
@@ -16,8 +71,15 @@ services:
       STT_ENDPOINT_RULE1: "1.2"
       STT_ENDPOINT_RULE2: "0.7"
       STT_ENDPOINT_CONFIRM: "0.12"
+      STT_HOST: 0.0.0.0
+      STT_PORT: "8090"
     volumes:
       - ../../models:/models
+    ports:
+      - "8090:8090"
+    depends_on:
+      models:
+        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -26,24 +88,41 @@ services:
         ]
       interval: 10s
       timeout: 5s
-      retries: 12
+      retries: 18
+      start_period: 40s
+    restart: unless-stopped
 
   llama:
     image: ghcr.io/ggml-org/llama.cpp:server
     container_name: sys112-llama
-    command: >
-      -m /models/Qwen3-4B-Q4_K_M.gguf
-      --host 0.0.0.0
-      --port 8080
-      -c 1536
-      --jinja
-      --cache-type-k q8_0
-      --cache-type-v q8_0
-      -ngl 0
+    command:
+      - -m
+      - /models/Qwen3-4B-Q4_K_M.gguf
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - -c
+      - "2048"
+      - --jinja
+      - --chat-template-kwargs
+      - '{"enable_thinking": false}'
+      - -ngl
+      - "0"
     volumes:
       - ../../models/llm:/models
     ports:
       - "8080:8080"
+    depends_on:
+      models:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8080'"]
+      interval: 10s
+      timeout: 3s
+      retries: 36
+      start_period: 40s
+    restart: unless-stopped
 
   llm:
     build:
@@ -55,26 +134,49 @@ services:
       LLM_PROVIDER: local
       LLM_RUNTIME: llama_cpp
       LLM_MODEL_NAME: Qwen3-4B
+      LLM_MODEL_PATH: /models/llm/Qwen3-4B-Q4_K_M.gguf
       LLM_BASE_URL: http://llama:8080
       LLM_HOST: 0.0.0.0
       LLM_PORT: "8091"
+      LLM_TEMPERATURE: "0.3"
+      LLM_TOP_P: "0.8"
+      LLM_MAX_TOKENS: "48"
+      LLM_CONTEXT_SIZE: "2048"
+    volumes:
+      - ../../models:/models
     ports:
       - "8091:8091"
     depends_on:
-      - llama
+      llama:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/health')\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 24
+      start_period: 120s
+    restart: unless-stopped
 
   tts:
     build:
       context: ../..
       dockerfile: apps/tts/Dockerfile
     container_name: sys112-tts
-    ports:
-      - "8092:8092"
     environment:
       TTS_HOST: 0.0.0.0
       TTS_PORT: "8092"
       TTS_LANGUAGE: ru
       TTS_THREADS: "4"
+      TTS_BACKEND: silero
+      TTS_DEVICE: cpu
+    volumes:
+      - tts-cache:/root/.cache
+    ports:
+      - "8092:8092"
     healthcheck:
       test:
         [
@@ -83,23 +185,24 @@ services:
         ]
       interval: 15s
       timeout: 5s
-      retries: 8
-      start_period: 20s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
 
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: sys112-postgres
-    environment:
-      POSTGRES_USER: sys112
-      POSTGRES_PASSWORD: sys112
-      POSTGRES_DB: sys112
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/student-web/Dockerfile
+    container_name: sys112-web
     ports:
-      - "5432:5432"
-    volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-      - ../database/migrations:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sys112 -d sys112"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      - "5173:5173"
+    depends_on:
+      - api
+      - stt
+      - llm
+      - tts
+    restart: unless-stopped
+
+volumes:
+  sys112-pgdata:
+  tts-cache:

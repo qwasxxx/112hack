@@ -13,7 +13,9 @@ async function migrate(): Promise<void> {
     throw new Error('DATABASE_URL is not set');
   }
   const sql = postgres(url, { max: 1 });
-  const dir = resolve(process.cwd(), '../../infra/database/migrations');
+  const dir = process.env.MIGRATIONS_DIR
+    ? resolve(process.env.MIGRATIONS_DIR)
+    : resolve(process.cwd(), '../../infra/database/migrations');
   const files = (await readdir(dir)).filter((name) => name.endsWith('.sql')).sort();
   await sql`
     CREATE TABLE IF NOT EXISTS schema_migrations (

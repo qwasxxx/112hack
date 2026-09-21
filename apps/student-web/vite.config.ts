@@ -8,6 +8,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@sys112/shared-types': fileURLToPath(new URL('../../packages/shared-types/src/index.ts', import.meta.url)),
+      '@sys112/api-client': fileURLToPath(new URL('../../packages/api-client/src/index.ts', import.meta.url)),
     },
   },
   optimizeDeps: {

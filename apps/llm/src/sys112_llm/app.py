@@ -5,6 +5,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -60,10 +61,19 @@ async def lifespan(_app: FastAPI):
     async def boot() -> None:
         global llama_process, llm_status
         try:
-            if await client.ready():
-                llm_status = "ready"
-                logger.info("[LLM] Model ready (external server %s)", LLM_BASE_URL)
-                return
+            host = (urlparse(LLM_BASE_URL).hostname or "").lower()
+            external = host not in {"127.0.0.1", "localhost", ""}
+            deadline = asyncio.get_running_loop().time() + (300 if external else 0)
+            while True:
+                if await client.ready():
+                    llm_status = "ready"
+                    logger.info("[LLM] Model ready (%s)", LLM_BASE_URL)
+                    return
+                if asyncio.get_running_loop().time() >= deadline:
+                    break
+                await asyncio.sleep(2)
+            if external:
+                raise RuntimeError(f"llama.cpp not ready at {LLM_BASE_URL}")
             from sys112_llm.runtime import start_llama_process
 
             llama_process = await asyncio.to_thread(start_llama_process)
