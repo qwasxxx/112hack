@@ -27,8 +27,15 @@ const ALLOWED: ServiceKind[] = ['fire', 'ambulance', 'police', 'gas'];
 const SERVICE_HINTS: Array<{ id: ServiceKind; pattern: RegExp }> = [
   { id: 'fire', pattern: /пожар|задымл|огонь|горит|возгоран|пламя|торф/i },
   { id: 'gas', pattern: /\bгаз\b|запах газа|утечк/i },
-  { id: 'ambulance', pattern: /скорая|без сознания|инфаркт|инсульт|ранен|кровотеч|медицин/i },
+  { id: 'ambulance', pattern: /скорая|без сознания|инфаркт|инсульт|ранен|кровотеч|медицин|выпал|упал|паден|из окна|с этажа|не дышит|потерял сознание/i },
   { id: 'police', pattern: /\bдтп\b|драка|кража|ограбл|полиц|убийств|розыск|избиен/i },
+];
+
+const OFFTOPIC: Array<{ junk: RegExp; allowed: RegExp }> = [
+  { junk: /пожар|горен|густой дым|тушить|пламя|задымл|огонь|горит/i, allowed: /пожар|задым|огонь|горит|пламя|торф/i },
+  { junk: /\bдтп\b|водитель потерял|варшавск/i, allowed: /дтп|авари|водитель/i },
+  { junk: /дерут|драка/i, allowed: /драка|избиен/i },
+  { junk: /\bгаз\b|запах газа/i, allowed: /\bгаз\b|утечк/i },
 ];
 
 const STOPWORDS = new Set(['этот', 'этой', 'этом', 'билет', 'когда', 'после', 'звонит']);
@@ -44,13 +51,16 @@ function titleKeywords(title: string): string[] {
 
 export function ticketMatchesTitle(ticket: Pick<GeneratedTicket, 'situation' | 'opening'>, title?: string): boolean {
   const keys = titleKeywords(title ?? '');
-  if (!keys.length) {
-    return true;
-  }
   const blob = `${ticket.situation} ${ticket.opening}`.toLowerCase();
-  const hits = keys.filter((word) => blob.includes(word)).length;
-  const need = keys.length === 1 ? 1 : Math.max(2, Math.ceil(keys.length / 2));
-  return hits >= Math.min(need, keys.length);
+  const titleLow = (title ?? '').toLowerCase();
+  if (keys.length) {
+    const hits = keys.filter((word) => blob.includes(word)).length;
+    const need = keys.length === 1 ? 1 : Math.max(2, Math.ceil(keys.length / 2));
+    if (hits < Math.min(need, keys.length)) {
+      return false;
+    }
+  }
+  return !OFFTOPIC.some((item) => item.junk.test(`${blob} ${titleLow}`) && !item.allowed.test(titleLow));
 }
 
 function keep(current: string | undefined, fallback: string): string {
@@ -60,29 +70,23 @@ function keep(current: string | undefined, fallback: string): string {
 export function synthesizeTicket(input: TicketDraftInput, services: ServiceKind[]): GeneratedTicket {
   const title = input.title?.trim() || '';
   const low = title.toLowerCase();
-  const chosen = services.length ? services : inferServices(title, input.note) ;
+  const inferred = inferServices(title, input.note, input.situation, input.opening);
+  const chosen = inferred.length ? inferred : services;
   const kinds = chosen.length ? chosen : (['police'] as ServiceKind[]);
   const caller = keep(input.caller, 'Козлов Андрей Петрович');
   const phone = '9162401188';
   let address = keep(input.address, 'Москва, ул. Берзарина, дом 21, корп. 1');
   if (!input.address?.trim() && /лес|лесопарк|роща/.test(low)) {
     address = 'Москва, лесопарк Кузьминки, близ ул. Головачёва';
+  } else if (!input.address?.trim() && /окно|этаж|двор|подъезд|квартир/.test(low)) {
+    address = 'Москва, ул. Народного Ополчения, дом 22, корп. 1, под. 2';
   }
-  let opening = keep(input.opening, title ? `${title}, помогите` : 'Помогите, приезжайте');
-  if (!input.opening?.trim() && low.startsWith('драка')) {
-    const place = title.slice(5).trim() || 'здесь';
-    opening = `${place.charAt(0).toUpperCase()}${place.slice(1)} дерутся, вызовите полицию`;
-  } else if (!input.opening?.trim() && /пожар/.test(low)) {
-    opening = `${title}, помогите, горит`;
-  }
-  const detail = /драка/.test(low)
-    ? 'несколько человек бьют друг друга руками, пострадавших уточняет'
-    : /пожар|задым/.test(low)
-      ? 'видно дым и открытое горение, пострадавших на месте не видит'
-      : 'происшествие продолжается, пострадавших уточняет';
+  const opening = keep(input.opening, title ? `${title}, помогите` : 'Помогите, приезжайте');
   const situation = keep(
     input.situation,
-    title ? `${title}. ${detail}. Звонит ${caller}, 916-240-11-88. Служб на месте нет.` : `${detail}. Звонит ${caller}, 916-240-11-88`,
+    title
+      ? `${title}. Звонит ${caller}, 916-240-11-88. Служб на месте нет.`
+      : `Звонит ${caller}, 916-240-11-88`,
   );
   return { situation, address, opening, services: kinds, caller, phone, source: 'local' };
 }
@@ -91,9 +95,9 @@ export async function generateTicket(
   input: TicketDraftInput,
 ): Promise<{ ok: true; ticket: GeneratedTicket } | { ok: false; message: string }> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 25000);
+  const timer = window.setTimeout(() => controller.abort(), 40000);
   const inferred = inferServices(input.title, input.situation, input.opening, input.note);
-  const services = inferred.length ? inferred : input.services;
+  const services = inferred.length ? inferred : input.title?.trim() ? [] : input.services;
   try {
     const response = await fetch('/api/llm/generate-ticket', {
       method: 'POST',

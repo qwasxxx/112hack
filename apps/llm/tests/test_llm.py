@@ -455,6 +455,87 @@ def test_generate_ticket_title_overrides_default_police(monkeypatch):
     assert "пожар" in repaired["situation"].lower()
 
 
+def test_generate_ticket_fell_from_window_not_fire(monkeypatch):
+    from fastapi.testclient import TestClient
+    import sys112_llm.app as appmod
+    from sys112_llm.ticket_gen import infer_services_from_text, synthesize_from_draft, ticket_matches_draft
+
+    monkeypatch.setattr(appmod, "LLM_MODE", "mock")
+    monkeypatch.setattr(appmod, "llm_status", "mock")
+    assert infer_services_from_text("Мужчина выпал из окна") == ["ambulance"]
+    with TestClient(appmod.app) as client:
+        body = client.post(
+            "/api/llm/generate-ticket",
+            json={"services": ["fire"], "title": "Мужчина выпал из окна"},
+        ).json()
+    assert body["ok"] is True, body
+    blob = f"{body['situation']} {body['opening']}".lower()
+    assert "выпал" in blob or "окн" in blob
+    assert "горен" not in blob
+    assert "дым" not in blob
+    assert "тушить" not in blob
+    assert body["services"] == ["ambulance"]
+    garbage = {
+        "situation": "Мужчина выпал из окна. открытое горение и густой дым, тушить нечем.",
+        "address": "Москва, ул. Грина, дом 11",
+        "opening": "Мужчина выпал из окна",
+        "services": ["fire"],
+        "caller": "Сидорова",
+        "phone": "9168975623",
+        "source": "local",
+    }
+    assert not ticket_matches_draft(garbage, {"title": "Мужчина выпал из окна"})
+    fixed = synthesize_from_draft(["fire"], "", {"title": "Мужчина выпал из окна"})
+    assert fixed["services"] == ["ambulance"]
+    assert "горен" not in fixed["situation"].lower()
+    assert "дым" not in fixed["situation"].lower()
+    assert "выпал" in fixed["situation"].lower() or "окн" in fixed["situation"].lower()
+
+
+def test_generate_ticket_repairs_offtopic_with_model():
+    import asyncio
+    from sys112_llm.ticket_gen import generate_ticket
+
+    class FakeClient:
+        def __init__(self) -> None:
+            self.n = 0
+
+        async def complete_chat(self, messages, **_kwargs):
+            self.n += 1
+            if self.n == 1:
+                return (
+                    '{"situation":"открытое горение и густой дым, тушить нечем",'
+                    '"address":"Москва, ул. Грина, дом 11","opening":"Горит всё",'
+                    '"services":["fire"],"caller":"Иванов","phone":"9161112233"}'
+                )
+            return (
+                '{"situation":"Мужчина выпал из окна, лежит во дворе, дышит. '
+                'Звонит Петрова Анна, 916-320-11-22. Служб нет.",'
+                '"address":"Москва, ул. Народного Ополчения, дом 22",'
+                '"opening":"Мужчина выпал из окна, нужна скорая",'
+                '"services":["ambulance"],"caller":"Петрова Анна","phone":"9163201122"}'
+            )
+
+    fake = FakeClient()
+    out = asyncio.run(
+        generate_ticket(
+            fake,  # type: ignore[arg-type]
+            services=["fire"],
+            note="",
+            mock=False,
+            ready=True,
+            draft={"title": "Мужчина выпал из окна"},
+        )
+    )
+    assert fake.n == 2
+    blob = f"{out['situation']} {out['opening']}".lower()
+    assert "выпал" in blob
+    assert "горен" not in blob
+    assert "тушить" not in blob
+    assert out["services"] == ["ambulance"]
+    assert out["source"] == "local"
+
+
 def test_teacher_nudge_not_in_transcript():
     from sys112_llm.conversation import (
         ConversationManager,

@@ -148,7 +148,7 @@ function ScenarioForm({
     setGenOk('');
     const inferred = inferServices(draft.title, draft.description, draft.callerOpening, coach.note);
     const result = await generateTicket({
-      services: inferred.length ? inferred : services.length ? services : ['fire'],
+      services: inferred.length ? inferred : services.length ? services : [],
       note: coach.note,
       title: draft.title,
       situation: draft.description,

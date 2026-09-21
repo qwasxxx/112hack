@@ -16,26 +16,35 @@ SERVICE_RU = {
 }
 
 _TICKET_PROMPT = """Ты методист АГС службы 112 Москвы. Составляешь учебный билет оператора.
-Верни ТОЛЬКО один JSON, без markdown и без пояснений:
-{"situation":"...","address":"...","opening":"...","services":["police"],"caller":"...","phone":"9161234567"}
+Верни ТОЛЬКО один JSON, одной строкой, без markdown:
+{"situation":"...","address":"...","opening":"...","services":["ambulance"],"caller":"...","phone":"9161234567"}
 
-Жёсткие правила:
-- Тема билета = название и уже заполненные поля. Нельзя менять происшествие.
-- Если название «драка в лесу» — situation и opening только про драку в лесу. Нельзя писать ДТП, водителя, проспект, скорость.
-- Если название «пожар в лесу» — только про огонь/дым в лесу.
-- Непустые поля преподавателя копируй дословно.
-- situation: 2–3 коротких предложения: что случилось, ориентир на месте, кто звонит (ФИО), телефон, пострадавшие, что уже сделано.
-- address: Москва и конкретное место, уместное для названия.
-- opening: первая фраза заявителя про то же событие.
-- services только из fire, ambulance, police, gas.
-- phone — 10 цифр, начинается с 9.
+Тема билета — название. Детали (что видит заявитель, пострадавшие, что уже сделано) придумай сам под ЭТО название.
+Не копируй чужие сюжеты. Нельзя добавлять пожар, дым, ДТП, драку, газ, если этого нет в названии и заполненных полях.
+Непустые поля преподавателя копируй дословно. Пустые заполни.
+
+situation: 2–3 коротких предложения: событие из названия, ориентир, ФИО заявителя, телефон, пострадавшие, службы на месте.
+address: Москва, место уместное для названия.
+opening: первая фраза заявителя про то же событие.
+services: только fire, ambulance, police, gas — по смыслу названия, не по шаблону.
+phone: 10 цифр, начинается с 9.
 Пиши по-русски, как в реальном билете АГС."""
 
 _SERVICE_HINTS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("fire", re.compile(r"пожар|задымл|огонь|горит|возгоран|пламя|торф")),
     ("gas", re.compile(r"\bгаз\b|запах газа|утечк")),
-    ("ambulance", re.compile(r"скорая|без сознания|инфаркт|инсульт|ранен|кровотеч|медицин")),
+    ("ambulance", re.compile(
+        r"скорая|без сознания|инфаркт|инсульт|ранен|кровотеч|медицин|"
+        r"выпал|упал|паден|из окна|с этажа|не дышит|потерял сознание"
+    )),
     ("police", re.compile(r"\bдтп\b|драка|кража|ограбл|полиц|убийств|розыск|избиен")),
+)
+
+_OFFTOPIC = (
+    (re.compile(r"пожар|горен|густой дым|тушить|пламя|задымл|огонь|горит"), re.compile(r"пожар|задым|огонь|горит|пламя|торф")),
+    (re.compile(r"\bдтп\b|водитель потерял|варшавск"), re.compile(r"дтп|авари|водитель")),
+    (re.compile(r"дерут|драка"), re.compile(r"драка|избиен")),
+    (re.compile(r"\bгаз\b|запах газа"), re.compile(r"\bгаз\b|утечк")),
 )
 
 _STOPWORDS = {
@@ -86,7 +95,7 @@ _PLACE_ADDRESSES: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        r"двор|подъезд|квартир",
+        r"двор|подъезд|квартир|окно|этаж",
         (
             "Москва, ул. Народного Ополчения, дом 22, корп. 1, под. 2",
             "Москва, Бульвар Маршала Рокоссовского, дом 25, двор",
@@ -149,7 +158,10 @@ def resolve_services(requested: Any, draft: dict[str, str] | None, note: str = "
     )
     if inferred:
         return inferred
-    return normalize_services(requested) or ["police"]
+    requested_norm = normalize_services(requested)
+    if (locked.get("title") or "").strip():
+        return []
+    return requested_norm or ["police"]
 
 
 def title_keywords(title: str) -> list[str]:
@@ -165,6 +177,15 @@ def title_reflected(text: str, title: str) -> bool:
     hits = sum(1 for word in keys if word in blob)
     need = 1 if len(keys) == 1 else max(2, (len(keys) + 1) // 2)
     return hits >= min(need, len(keys))
+
+
+def situation_on_topic(text: str, title: str) -> bool:
+    blob = f"{text} {title}".lower().replace("ё", "е")
+    title_l = (title or "").lower().replace("ё", "е")
+    for junk, allowed in _OFFTOPIC:
+        if junk.search(blob) and not allowed.search(title_l):
+            return False
+    return True
 
 
 def draft_from_payload(payload: dict[str, Any] | None) -> dict[str, str]:
@@ -255,61 +276,25 @@ def _address_for(title: str, seed: str) -> str:
     return _seed_pick(seed, _DEFAULT_ADDRESSES)
 
 
-def _detail_for(title: str, services: list[str]) -> str:
-    text = title.lower().replace("ё", "е")
-    if "драка" in text or "изби" in text:
-        return "двое или трое бьют человека у тропы, крики, ножей не видно, крови не замечает, просит полицию"
-    if "дтп" in text or "авари" in text:
-        return "столкнулись две машины, одна на обочине, есть ли пострадавшие — уточняет, проезд затруднён"
-    if "краж" in text or "ограб" in text:
-        return "незнакомые люди убегают, имущество уносят, пострадавших не видит, направление — к выходу"
-    if "пожар" in text or "задым" in text or "fire" in services:
-        return "открытое горение и густой дым, ветер на деревья, людей рядом не видит, тушить нечем"
-    if "газ" in text or "gas" in services:
-        return "сильный запах газа, плиту закрыли, окна открывают, людей выводят на лестницу"
-    if "ambulance" in services:
-        return "человек без сознания, дышит, вокруг собираются люди, что случилось до этого не видел"
-    return "происшествие продолжается, пострадавших уточняет, служб на месте нет"
-
-
-def _opening_for(title: str, services: list[str]) -> str:
-    core = re.sub(r"\s+", " ", title).strip().rstrip(".")
-    low = core.lower()
-    if low.startswith("драка"):
-        rest = core[5:].strip(" ,")
-        place = rest or "здесь"
-        return f"{place[0].upper() + place[1:] if place else 'Здесь'} дерутся, вызовите полицию"
-    if "пожар" in low or "задым" in low:
-        return f"{core}, помогите, горит"
-    if "дтп" in low:
-        return "ДТП, есть пострадавшие, приезжайте"
-    if "газ" in low:
-        return "Пахнет газом, помогите"
-    if "police" in services:
-        return f"{core}, вызовите полицию"
-    return f"{core}, помогите"
-
-
 def synthesize_from_draft(services: list[str], note: str, draft: dict[str, str] | None = None) -> dict[str, Any]:
     locked = draft or {}
     title = (locked.get("title") or "").strip()
-    wanted = services or ["police"]
+    wanted = resolve_services(services, locked, note)
     seed = title or note or "билет"
     caller_name, phone = _seed_pick(seed, _CALLERS)
     caller = locked.get("caller") or caller_name
     phone = _normalize_phone(locked.get("phone") or phone)
     address = locked.get("address") or _address_for(title, seed)
-    opening = locked.get("opening") or (_opening_for(title, wanted) if title else "Помогите, приезжайте")
+    core = re.sub(r"\s+", " ", title).strip().rstrip(".")
+    opening = locked.get("opening") or (f"{core}, помогите" if core else "Помогите, приезжайте")
     if locked.get("situation"):
         situation = locked["situation"]
     elif title:
         extra = f" {note.strip()}" if note.strip() else ""
-        situation = (
-            f"{title}. {_detail_for(title, wanted)}. "
-            f"Звонит {caller}, {_pretty_phone(phone)}. Служб на месте нет.{extra}"
-        ).strip()
+        situation = f"{title}. Звонит {caller}, {_pretty_phone(phone)}. Служб на месте нет.{extra}".strip()
     else:
-        situation = f"{_detail_for('', wanted)}, звонит {caller}, {_pretty_phone(phone)}"
+        label = SERVICE_RU.get(wanted[0], "112") if wanted else "112"
+        situation = f"Вызов: {label}. Звонит {caller}, {_pretty_phone(phone)}"
     if phone and phone not in re.sub(r"\D", "", situation):
         situation = f"{situation}, {_pretty_phone(phone)}"
     return {
@@ -345,6 +330,8 @@ def ticket_matches_draft(parsed: dict[str, Any], draft: dict[str, str]) -> bool:
     blob = f"{parsed.get('situation') or ''} {parsed.get('opening') or ''}"
     if title and not title_reflected(blob, title):
         return False
+    if title and not situation_on_topic(blob, title):
+        return False
     if draft.get("address") and draft["address"].lower() not in str(parsed.get("address") or "").lower():
         return False
     if draft.get("situation") and draft["situation"] != parsed.get("situation"):
@@ -352,13 +339,26 @@ def ticket_matches_draft(parsed: dict[str, Any], draft: dict[str, str]) -> bool:
     return True
 
 
+def _finalize_ticket(parsed: dict[str, Any], draft: dict[str, str], wanted: list[str], note: str) -> dict[str, Any]:
+    merged = merge_locked(parsed, draft)
+    inferred = infer_services_from_text(
+        draft.get("title") or "",
+        merged.get("situation") or "",
+        merged.get("opening") or "",
+        note,
+    )
+    if inferred:
+        merged["services"] = inferred
+    elif wanted:
+        merged["services"] = wanted
+    merged["source"] = "local"
+    return merged
+
+
 def align_ticket_to_title(parsed: dict[str, Any], draft: dict[str, str], wanted: list[str], note: str) -> dict[str, Any]:
     merged = merge_locked(parsed, draft)
     if ticket_matches_draft(merged, draft):
-        inferred = infer_services_from_text(draft.get("title") or "", draft.get("situation") or "", note)
-        if inferred:
-            merged["services"] = inferred
-        return merged
+        return _finalize_ticket(merged, draft, wanted, note)
     return synthesize_from_draft(wanted, note, draft)
 
 
@@ -366,22 +366,23 @@ def build_messages(services: list[str], note: str, draft: dict[str, str] | None 
     locked = draft or {}
     title = locked.get("title") or ""
     hint = note.strip()[:240]
-    labels = ", ".join(SERVICE_RU[item] for item in services) if services else "по названию"
     skeleton = {
         "situation": locked.get("situation") or "",
         "address": locked.get("address") or "",
         "opening": locked.get("opening") or "",
-        "services": services or ["police"],
+        "services": services,
         "caller": locked.get("caller") or "",
         "phone": "",
     }
     lines = ["/no_think"]
     if title:
         lines.append(f"Название билета (это и есть происшествие): {title}.")
-        lines.append("situation и opening обязаны быть про это название. Чужую тему выдумывать нельзя.")
-    lines.append(f"Службы: {labels}.")
-    if "дтп" not in title.lower() and "police" in services:
-        lines.append("Это не ДТП, если в названии нет слова ДТП.")
+        lines.append("Придумай правдоподобные детали только про это название. Чужую тему выдумывать нельзя.")
+    if services:
+        labels = ", ".join(SERVICE_RU[item] for item in services)
+        lines.append(f"Службы по смыслу названия: {labels}. Не подменяй ими сюжет.")
+    else:
+        lines.append("Службы подбери сам по названию: fire, ambulance, police, gas.")
     if locked.get("difficulty"):
         lines.append(f"Сложность: {locked['difficulty']}.")
     labels_ru = {
@@ -407,6 +408,51 @@ def build_messages(services: list[str], note: str, draft: dict[str, str] | None 
     ]
 
 
+def build_repair_messages(
+    bad: dict[str, Any],
+    services: list[str],
+    note: str,
+    draft: dict[str, str],
+) -> list[dict[str, str]]:
+    title = (draft.get("title") or "").strip()
+    lines = [
+        "/no_think",
+        f"Название билета: {title}.",
+        "Ты сменил тему. Это ошибка. Верни новый JSON строго про название.",
+        "Нельзя писать пожар, дым, горение, ДТП, водителя, драку, газ — если этого нет в названии.",
+        f"Твой прошлый situation: {str(bad.get('situation') or '')[:280]}",
+        f"Твой прошлый opening: {str(bad.get('opening') or '')[:120]}",
+    ]
+    if note.strip():
+        lines.append(f"Указание преподавателя: {note.strip()[:240]}.")
+    lines.append("Верни один JSON, одной строкой.")
+    return [
+        {"role": "system", "content": _TICKET_PROMPT},
+        {"role": "user", "content": "\n".join(lines)},
+    ]
+
+
+async def _complete_ticket(
+    client: LlamaClient,
+    messages: list[dict[str, str]],
+    wanted: list[str],
+    locked: dict[str, str],
+    *,
+    timeout_sec: float,
+) -> dict[str, Any] | None:
+    try:
+        raw = await client.complete_chat(
+            messages,
+            max_tokens=400,
+            temperature=0.6,
+            think=False,
+            timeout_sec=timeout_sec,
+        )
+        return parse_ticket_json(raw, wanted, locked)
+    except Exception:
+        return None
+
+
 async def generate_ticket(
     client: LlamaClient,
     *,
@@ -420,18 +466,23 @@ async def generate_ticket(
     wanted = resolve_services(services, locked, note)
     if mock or not ready:
         return synthesize_from_draft(wanted, note, locked)
-    messages = build_messages(wanted, note, locked)
-    try:
-        raw = await client.complete_chat(
-            messages,
-            max_tokens=360,
-            temperature=0.55,
-            think=False,
-            timeout_sec=18.0,
+    parsed = await _complete_ticket(
+        client,
+        build_messages(wanted, note, locked),
+        wanted,
+        locked,
+        timeout_sec=22.0,
+    )
+    if parsed and ticket_matches_draft(merge_locked(parsed, locked), locked):
+        return _finalize_ticket(parsed, locked, wanted, note)
+    if parsed and locked.get("title"):
+        repaired = await _complete_ticket(
+            client,
+            build_repair_messages(parsed, wanted, note, locked),
+            wanted,
+            locked,
+            timeout_sec=14.0,
         )
-        parsed = parse_ticket_json(raw, wanted, locked)
-    except Exception:
-        parsed = None
-    if parsed is None:
-        return synthesize_from_draft(wanted, note, locked)
-    return align_ticket_to_title(parsed, locked, wanted, note)
+        if repaired and ticket_matches_draft(merge_locked(repaired, locked), locked):
+            return _finalize_ticket(repaired, locked, wanted, note)
+    return synthesize_from_draft(wanted, note, locked)
