@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { SERVICE_LABEL } from '../../data/scenarios';
+import { useEffect, useRef, useState } from 'react';
 import type { TrainingScenario } from '../../data/scenarios';
-import { ddsLaneLabel, readDdsLane } from '../../dds-lanes';
-import { appendLesson, scoreDdsLesson } from '../../progress';
+import { ddsWorkplaceName, readDdsLane } from '../../dds-lanes';
+import { CallPage } from '../../pages/call-page';
+import type { DdsFinish } from '../../pages/debrief-page';
+import { unlockTtsAudio } from '../../lib/tts-player';
+import { buildDdsCallbackPrompt, ddsCallbackOpening } from './callback-prompt';
 import { DdsCard } from './dds-card';
 import { DdsJournal } from './dds-journal';
 import { useDdsSession, type DdsCheckResult } from './use-dds-session';
@@ -13,6 +15,7 @@ type Props = {
   operatorLogin: string;
   onLeave: () => void;
   onCompleted?: (result: DdsCheckResult) => void;
+  onFinished: (finish: DdsFinish) => void;
 };
 
 const WEEKDAYS = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
@@ -32,27 +35,12 @@ const MONTHS = [
 ];
 
 export function DdsTrainingPage(props: Props) {
-  const session = useDdsSession(props.scenario);
   const lane = readDdsLane();
+  const session = useDdsSession(props.scenario, lane);
   const [query, setQuery] = useState('');
   const [now, setNow] = useState(() => new Date());
-  const reported = useRef(false);
-  const savedRef = useRef<string | null>(null);
-  const lesson = useMemo(() => {
-    if (!session.result) {
-      return null;
-    }
-    const completedAt = new Date(Date.parse(session.startedAt) + session.result.elapsedMs).toISOString();
-    return scoreDdsLesson({
-      scenario: props.scenario,
-      operatorLogin: props.operatorLogin,
-      draft: session.draft,
-      facts: session.facts,
-      startedAt: session.startedAt,
-      completedAt,
-      elapsedMs: session.result.elapsedMs,
-    });
-  }, [props.operatorLogin, props.scenario, session.draft, session.facts, session.result, session.startedAt]);
+  const [callbackOn, setCallbackOn] = useState(false);
+  const closing = useRef(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -60,107 +48,148 @@ export function DdsTrainingPage(props: Props) {
   }, []);
 
   useEffect(() => {
-    if (!session.result || reported.current) {
-      return;
-    }
-    reported.current = true;
-    props.onCompleted?.(session.result);
-  }, [props.onCompleted, session.result]);
+    setCallbackOn(false);
+  }, [session.activeId]);
 
-  useEffect(() => {
-    if (!lesson) {
+  function finishShift() {
+    if (closing.current || !session.allDone) {
       return;
     }
-    const key = `${lesson.completedAt}:${lesson.scenarioId}`;
-    if (savedRef.current === key) {
-      return;
-    }
-    savedRef.current = key;
-    appendLesson(props.operatorLogin, lesson);
-  }, [lesson, props.operatorLogin]);
+    closing.current = true;
+    session.closeShift();
+    const finish: DdsFinish = {
+      scenario: props.scenario,
+      workplace: session.workplace,
+      startedAt: session.startedAt,
+      cards: session.queue.map((item) => ({
+        id: item.id,
+        scenario: item.scenario,
+        role: item.role,
+        sourceLabel: sourceLabel(item.source),
+        draft: item.draft,
+        facts: item.facts,
+        decision: item.decision ?? 'dispatch',
+        elapsedMs: item.elapsedMs,
+        defects: item.defects,
+        naryad: item.naryad,
+        workplaceStatus: item.workplaceStatus,
+        callback: item.callbackDone,
+      })),
+    };
+    const own = finish.cards.filter((item) => item.role === 'own');
+    const check: DdsCheckResult = {
+      servicesOk: own.every((item) => {
+        const extra = item.draft.services.filter((kind) => !item.facts.services.includes(kind));
+        const missing = item.facts.services.filter((kind) => !item.draft.services.includes(kind));
+        return extra.length === 0 && missing.length === 0;
+      }),
+      injuredOk: own.every((item) => item.draft.injured === item.facts.injured),
+      phoneOk: own.every((item) => {
+        const need = item.facts.callerPhone.replace(/\D/g, '');
+        const got = item.draft.callerPhone.replace(/\D/g, '');
+        return !need || need === got;
+      }),
+      extra: [],
+      missing: [],
+      elapsedMs: finish.cards.reduce((sum, item) => sum + item.elapsedMs, 0),
+      cards: [],
+      transferredOk: finish.cards
+        .filter((item) => item.role === 'foreign')
+        .every((item) => item.decision === 'transfer'),
+    };
+    props.onCompleted?.(check);
+    props.onFinished(finish);
+  }
 
   const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const seconds = String(now.getSeconds()).padStart(2, '0');
   const weekday = `${WEEKDAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+  const active = session.queue.find((item) => item.id === session.activeId) ?? null;
 
   return (
-    <div className="dds-page">
-      <header className="dds-bar">
-        <div>
-          <h1>ДДС · {ddsLaneLabel(lane)}</h1>
-          <p>
-            Поступила карточка оператора 112 · {props.scenario.code}
-            {session.result ? ' · Бригада направлена' : ''}
-          </p>
-        </div>
-        <div>
-          {session.view === 'card' && !session.result ? (
-            <button type="button" onClick={session.closeCard}>
-              К списку
-            </button>
-          ) : null}
+    <div className={`dds-page${session.view === 'journal' ? ' is-journal' : ''}`}>
+      {session.view === 'journal' ? null : (
+        <header className="dds-bar">
+          <span>ДДС · {ddsWorkplaceName(lane)}</span>
           <button type="button" onClick={props.onLeave}>
             К уроку
           </button>
-        </div>
-      </header>
-      <div className="dds-shell">
+        </header>
+      )}
+      <div className={`dds-shell${callbackOn ? ' is-call' : ''}`}>
         {session.view === 'journal' ? (
           <DdsJournal
             query={query}
             onQuery={setQuery}
             items={session.items}
-            activeId={null}
             clock={clock}
+            seconds={seconds}
             weekday={weekday}
-            onOpen={() => session.openCard()}
+            readyToClose={session.allDone}
+            onOpen={(id) => session.openCard(id)}
+            onLeave={props.onLeave}
+            onFinishShift={finishShift}
           />
         ) : (
           <DdsCard
             card={session.card}
             draft={session.draft}
+            workplace={session.workplace}
+            role={session.role}
+            workplaceStatus={session.workplaceStatus}
+            naryad={session.naryad}
+            history={session.history}
+            editingStatus={session.editingStatus}
+            statusForm={session.statusForm}
+            statusOptions={session.statusOptions}
+            canEditStatus={session.canEditStatus}
+            callbackDone={session.callbackDone}
             onPatch={session.patch}
             onToggleService={session.toggleService}
-            onDispatch={session.dispatchCard}
+            onStartStatus={session.startStatusEdit}
+            onCancelStatus={session.cancelStatusEdit}
+            onPatchStatus={session.patchStatusForm}
+            onApplyStatus={session.applyStatus}
+            onCallback={() => {
+              unlockTtsAudio();
+              setCallbackOn(true);
+            }}
             onClose={session.closeCard}
           />
         )}
-        {session.result && lesson ? (
-          <section className="dds-result" aria-label="Результат проверки">
-            <h2>
-              {lesson.passed ? 'Зачёт' : 'Незачёт'} · {lesson.score}
-            </h2>
-            <p className="dds-brigade">Бригада направлена</p>
-            <p>Результат записан в «Мои сессии». Удалить его нельзя.</p>
-            <ul>
-              <li>
-                Службы:{' '}
-                {session.result.servicesOk
-                  ? 'совпали с происшествием'
-                  : [
-                      ...session.result.missing.map((item) => `не хватает: ${SERVICE_LABEL[item]}`),
-                      ...session.result.extra.map((item) => `лишняя: ${SERVICE_LABEL[item]}`),
-                    ].join('; ')}
-              </li>
-              <li>Пострадавшие: {session.result.injuredOk ? 'верно' : 'надо было исправить по тексту карточки'}</li>
-              <li>Телефон: {session.result.phoneOk ? 'на месте' : 'в карточке не хватало номера'}</li>
-              <li>
-                Время: {lesson.elapsedSeconds} с / норматив {lesson.cardTimerLimitSec} с
-              </li>
-              {lesson.findings.map((item) => (
-                <li key={`${item.code}-${item.field}`}>
-                  {item.field}: {item.message}
-                </li>
-              ))}
-            </ul>
-            {lesson.recommendations[0] ? <p>{lesson.recommendations[0]}</p> : null}
-            <p>
-              <button type="button" onClick={props.onLeave}>
-                К уроку
-              </button>
-            </p>
-          </section>
+        {callbackOn && active ? (
+          <aside className="dds-call" aria-label="Обратный звонок заявителю">
+            <CallPage
+              scenario={active.scenario}
+              section="training"
+              variant="panel"
+              autoStart
+              systemPrompt={buildDdsCallbackPrompt(active.scenario, active.facts)}
+              opening={ddsCallbackOpening()}
+              hint="Вы — диспетчер ДДС. Уточните адрес, пострадавших и телефон для связи."
+              panelTitle="Обратный звонок"
+              onLeave={() => {
+                session.markCallback();
+                setCallbackOn(false);
+              }}
+              onCallEnded={() => {
+                session.markCallback();
+                setCallbackOn(false);
+              }}
+            />
+          </aside>
         ) : null}
       </div>
     </div>
   );
+}
+
+function sourceLabel(source: '112' | 'lane' | 'foreign'): string {
+  if (source === '112') {
+    return 'Карточка от оператора 112';
+  }
+  if (source === 'lane') {
+    return 'Лента смены';
+  }
+  return 'Карточка другой ДДС';
 }

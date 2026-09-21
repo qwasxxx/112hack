@@ -1,22 +1,32 @@
+import { useState } from 'react';
 import { journalTime } from './adapter';
-import type { DdsQueueItemState, DdsIncidentCardViewModel } from './types';
+import { splitDdsAddress } from './display';
+import type { DdsQueueItemState, DdsIncidentCardViewModel, DdsServiceStatus } from './types';
 
 type Item = {
   card: DdsIncidentCardViewModel;
   state: DdsQueueItemState;
+  sourceLabel?: string;
+  role?: 'own' | 'foreign';
+  workplaceStatus?: DdsServiceStatus;
+  shortLine?: string;
 };
 
 type Props = {
   query: string;
   onQuery: (value: string) => void;
   items: Item[];
-  activeId: string | null;
   clock: string;
+  seconds: string;
   weekday: string;
+  readyToClose?: boolean;
   onOpen: (id: string) => void;
+  onLeave: () => void;
+  onFinishShift?: () => void;
 };
 
 export function DdsJournal(props: Props) {
+  const [searchOpen, setSearchOpen] = useState(false);
   const visible = props.items.filter((item) => {
     const hay = `${item.card.number} ${item.card.typeCode} ${item.card.description} ${item.card.addressLine}`.toLowerCase();
     return hay.includes(props.query.trim().toLowerCase());
@@ -25,76 +35,214 @@ export function DdsJournal(props: Props) {
   return (
     <div className="dds-journal">
       <header className="dds-journal-head">
-        <div>
+        <div className="dds-journal-search">
           <h2>Поиск происшествий</h2>
-          <div className="dds-search-row">
-            <span>расширенный по параметрам</span>
+          <button type="button" className="dds-linkish">
+            расширенный по параметрам
+            <span aria-hidden="true">▾</span>
+          </button>
+        </div>
+        <div className="dds-journal-tools">
+          {searchOpen || props.query ? (
             <input
+              autoFocus
               value={props.query}
               onChange={(event) => props.onQuery(event.target.value)}
               aria-label="Поиск происшествий"
             />
-            <button type="button" onClick={() => props.onQuery('')}>
-              сбросить
-            </button>
-          </div>
+          ) : null}
+          <button
+            type="button"
+            className="dds-icon-btn"
+            onClick={() => setSearchOpen((value) => !value)}
+            aria-label="Поиск"
+          >
+            <SearchIcon />
+          </button>
+          <button type="button" className="dds-reset" onClick={() => props.onQuery('')}>
+            сбросить
+          </button>
         </div>
         <div className="dds-clock">
-          <span>{props.weekday}</span>
-          <strong>{props.clock}</strong>
-          <span>УМЦ О n</span>
+          <div className="dds-clock-date">
+            <span>{props.weekday}</span>
+            <span className="dds-clock-icons">
+              <i />
+              <i />
+              <i />
+            </span>
+          </div>
+          <div className="dds-clock-meta">
+            <span>УМЦ О n</span>
+            <button type="button" onClick={props.onLeave}>
+              выйти
+            </button>
+          </div>
+          <div className="dds-clock-time">
+            {props.clock}
+            <small>{props.seconds}</small>
+          </div>
         </div>
       </header>
+
       <div className="dds-list-wrap">
-        <p className="dds-list-title">Список происшествий</p>
+        <div className="dds-list-head">
+          <p className="dds-list-title">
+            Список происшествий <span>▴</span>
+          </p>
+          <label className="dds-notify">
+            <i className="dds-bell" />
+            уведомления
+            <select defaultValue="">
+              <option value="">Выберите что показать</option>
+            </select>
+          </label>
+        </div>
+
         <div className="dds-cols">
+          <span />
           <span>Связи</span>
           <span>ЧС</span>
           <span>Опер.</span>
           <span>АРМ</span>
           <span>Номер</span>
-          <span>Дата</span>
+          <span>
+            Дата <span className="dds-sort">↓</span>
+          </span>
           <span>Время</span>
           <span>Тип происшествия</span>
+          <span />
           <span>Постр.</span>
           <span>Адрес</span>
           <span>Статус службы</span>
           <span />
         </div>
+
         {visible.map((item) => {
           const time = journalTime(item.card);
-          const service = item.card.services.find((chip) => chip.status === 'Добавлена');
+          const status = statusLabel(item);
+          const address = splitDdsAddress(item.card.addressLine);
+          const addr = address.okrug ? `${address.title.replace(/^Россия,\s*/u, '')}` : item.card.addressLine;
           return (
             <article key={item.card.id} className="dds-row-block">
               <button
                 type="button"
-                className={`dds-row${item.state === 'selected' || item.state === 'editing' ? ' is-active' : ''}${item.state === 'completed' ? ' is-done' : ''}`}
+                className={`dds-row${item.state === 'completed' || item.state === 'transferred' ? ' is-done' : ''}`}
                 onClick={() => props.onOpen(item.card.id)}
               >
+                <span className="dds-chevron">▾</span>
                 <span />
-                <span />
-                <span>0</span>
+                <span className="dds-chs">
+                  <LightningIcon />
+                  <TargetIcon />
+                </span>
+                <span className="dds-oper">0</span>
                 <span>4</span>
-                <b>{item.card.number}</b>
+                <span>{item.card.number}</span>
                 <span>{time.date}</span>
-                <span>{time.time}</span>
-                <span>{item.card.typeCode}</span>
-                <span>{item.card.injured}</span>
-                <span>{item.card.addressLine}</span>
-                <span className="dds-status-cell">{service?.status ?? 'Добавлена'}</span>
+                <span className="dds-time">{time.time}</span>
+                <span className="dds-type">{item.card.typeCode}</span>
                 <span />
+                <span>{item.card.injured}</span>
+                <span className="dds-row-addr">{addr}</span>
+                <span className="dds-status-cell">
+                  <FlagIcon />
+                  {status}
+                </span>
+                <span className="dds-doc-ico">
+                  <DocIcon />
+                </span>
               </button>
               <div className="dds-desc">
-                Описание: {item.card.createdAt} УМЦ О n. {item.card.description}
+                Описание: {item.card.createdAt} УМЦ О n.{' '}
+                <b>{item.shortLine || shortLine(item.card.description)}</b>
               </div>
             </article>
           );
         })}
+
         <div className="dds-page-row">
-          <span>Страница: 1</span>
-          <span>Записей на странице: {visible.length} из {visible.length}</span>
+          <span>
+            Страница: <u>1</u>
+          </span>
+          <span>Записей на странице: 10</span>
+          <span>
+            1-{visible.length} из {visible.length}
+          </span>
+          <button type="button" disabled>
+            ‹
+          </button>
+          <button type="button" disabled>
+            ›
+          </button>
         </div>
+        {props.readyToClose ? (
+          <div className="dds-finish-bar">
+            <p>Все карточки закрыты.</p>
+            <button type="button" onClick={props.onFinishShift}>
+              Завершить смену
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+function statusLabel(item: Item): string {
+  if (item.state === 'completed') {
+    return item.workplaceStatus ?? 'Работы завершены';
+  }
+  if (item.state === 'transferred') {
+    return 'Не принято';
+  }
+  return item.workplaceStatus ?? 'Добавлена';
+}
+
+function shortLine(text: string): string {
+  const cut = text.split(/[,.]/)[0]?.trim() ?? text;
+  return cut.length > 42 ? `${cut.slice(0, 40)}…` : cut;
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <circle cx="10" cy="10" r="6" fill="none" stroke="currentColor" strokeWidth="2" />
+      <path d="M15 15l6 6" fill="none" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function LightningIcon() {
+  return (
+    <svg viewBox="0 0 12 16" width="10" height="14" aria-hidden="true">
+      <path fill="#cfd3d6" d="M7 0 0 9h5L3 16l9-10H7z" />
+    </svg>
+  );
+}
+
+function TargetIcon() {
+  return (
+    <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
+      <circle cx="7" cy="7" r="5.5" fill="none" stroke="#c62828" strokeWidth="1.4" />
+      <circle cx="7" cy="7" r="2" fill="#c62828" />
+    </svg>
+  );
+}
+
+function FlagIcon() {
+  return (
+    <svg viewBox="0 0 10 12" width="10" height="12" aria-hidden="true">
+      <path fill="#e67a2a" d="M1 0v12h1.4V7.2L9 4.6 2.4 2.2V0z" />
+    </svg>
+  );
+}
+
+function DocIcon() {
+  return (
+    <svg viewBox="0 0 14 16" width="12" height="14" aria-hidden="true">
+      <path fill="#ddd" d="M3 0h6l4 4v12H3z" />
+      <path fill="#8e9498" d="M9 0v4h4" />
+    </svg>
   );
 }

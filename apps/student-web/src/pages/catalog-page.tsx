@@ -18,6 +18,7 @@ import {
 import { HandbookBoard } from './handbook-page';
 import { SessionsBoard } from './sessions-page';
 import { DDS_LANES, readDdsLane, scenarioMatchesDdsLane, writeDdsLane, type DdsLaneId } from '../dds-lanes';
+import { assignedScenarioIds } from '../progress';
 
 export type CatalogView = 'catalog' | 'sessions' | 'handbook';
 
@@ -69,6 +70,8 @@ export function CatalogPage(props: Props) {
   const [duration, setDuration] = useState<DurationFilter>('all');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [lane, setLane] = useState<DdsLaneId>(() => readDdsLane());
+  const assignedIds = assignedScenarioIds(props.operatorLogin);
+  const [scope, setScope] = useState<'assigned' | 'all'>(assignedIds.length ? 'assigned' : 'all');
   const view = props.view ?? 'catalog';
 
   function resetWorkspace() {
@@ -96,9 +99,10 @@ export function CatalogPage(props: Props) {
         (duration === 'short' && scenario.durationMin <= 8) ||
         (duration === 'long' && scenario.durationMin >= 10);
       const matchesLane = props.track !== 'dds' || scenarioMatchesDdsLane(scenario, lane);
-      return matchesQuery && matchesService && matchesDifficulty && matchesDuration && matchesLane;
+      const matchesAssigned = scope !== 'assigned' || assignedIds.includes(scenario.id);
+      return matchesQuery && matchesService && matchesDifficulty && matchesDuration && matchesLane && matchesAssigned;
     });
-  }, [difficulty, duration, lane, props.track, query, service]);
+  }, [assignedIds, difficulty, duration, lane, props.track, query, scope, service]);
 
   return (
     <div className={`catalog-screen${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}>
@@ -135,12 +139,15 @@ export function CatalogPage(props: Props) {
             difficulty={difficulty}
             duration={duration}
             lane={lane}
+            scope={scope}
+            assignedCount={assignedIds.length}
             found={visible.length}
             onQuery={setQuery}
             onService={setService}
             onDifficulty={setDifficulty}
             onDuration={setDuration}
             onLane={changeLane}
+            onScope={setScope}
             onRandom={() => {
               if (!visible.length) {
                 return;
@@ -149,6 +156,12 @@ export function CatalogPage(props: Props) {
             }}
           />
           <section className="catalog-board" aria-labelledby="catalog-title">
+            {assignedIds.length ? (
+              <p className="catalog-assign">
+                Преподаватель назначил {assignedIds.length} билетов.
+                {scope === 'assigned' ? ' Показаны только они.' : ' Сейчас открыт весь каталог.'}
+              </p>
+            ) : null}
             <CatalogTheoryEntry onOpen={props.onTheory} />
             <ScenarioListShell>
               <div className="scenario-list-head">
@@ -394,12 +407,15 @@ function ScenarioToolbar(props: {
   difficulty: DifficultyFilter;
   duration: DurationFilter;
   lane: DdsLaneId;
+  scope: 'assigned' | 'all';
+  assignedCount: number;
   found: number;
   onQuery: (value: string) => void;
   onService: (value: ServiceFilter) => void;
   onDifficulty: (value: DifficultyFilter) => void;
   onDuration: (value: DurationFilter) => void;
   onLane: (value: DdsLaneId) => void;
+  onScope: (value: 'assigned' | 'all') => void;
   onRandom: () => void;
 }) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -444,6 +460,18 @@ function ScenarioToolbar(props: {
           icon="people"
         />
       )}
+      <CatalogMenu
+        label="Назначение"
+        value={props.scope}
+        open={openMenu === 'scope'}
+        onOpenChange={(open) => setOpenMenu(open ? 'scope' : null)}
+        onChange={(value) => props.onScope(value as 'assigned' | 'all')}
+        options={[
+          { value: 'assigned', label: `Назначенные (${props.assignedCount})` },
+          { value: 'all', label: 'Все билеты' },
+        ]}
+        icon="people"
+      />
       <CatalogMenu
         label="Уровень"
         value={props.difficulty}
@@ -632,7 +660,7 @@ function ScenarioRow(props: {
   const scenario = props.scenario;
   const description =
     props.track === 'dds'
-      ? 'Карточка от оператора 112. Проверяете данные и направляете службы.'
+      ? 'Очередь карточек на рабочее место ДДС. Свои исправляете и направляете, чужой профиль передаёте.'
       : scenario.summary;
 
   return (

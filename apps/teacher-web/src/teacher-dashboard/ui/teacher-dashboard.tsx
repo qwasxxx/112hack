@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import type { InterventionType } from '@sys112/shared-types';
 import sidebarBase from '../../../../student-web/src/assets/catalog/catalog-sidebar-base.webp';
 import { useTeacherDashboard } from '../application/hooks/use-teacher-dashboard';
+import type { TeacherDashboardRepository } from '../application/ports/teacher-dashboard-repository';
 import { MockTeacherDashboardRepository } from '../infrastructure/mock/mock-teacher-dashboard-repository';
 import { TeacherSystemStatuses } from './components/teacher-analytics-panels';
 import { ActivePage } from './pages/active-page';
@@ -33,6 +34,9 @@ export function TeacherDashboard({
   legacyStatus,
   examPanel,
   accountBar,
+  repository,
+  pollMs,
+  storageLabel,
 }: {
   apiStatus: ConnectionStatus;
   realtimeStatus: ConnectionStatus;
@@ -40,10 +44,16 @@ export function TeacherDashboard({
   legacyStatus: ReactNode;
   examPanel: ReactNode;
   accountBar?: ReactNode;
+  repository?: TeacherDashboardRepository;
+  pollMs?: number;
+  storageLabel?: string;
 }) {
-  const repository = useMemo(() => new MockTeacherDashboardRepository(), []);
+  const resolvedRepository = useMemo(
+    () => repository ?? new MockTeacherDashboardRepository(),
+    [repository],
+  );
   const { state, notice, retry, saveScenario, toggleArchive, intervene, saveComment, adjustScore } =
-    useTeacherDashboard(repository);
+    useTeacherDashboard(resolvedRepository, pollMs);
   const [section, setSection] = useState<Section>('overview');
   const [observedId, setObservedId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -90,7 +100,7 @@ export function TeacherDashboard({
       <main className="td-loading" aria-live="polite">
         <div className="td-loader" />
         <h1>Загружаем преподавательскую панель</h1>
-        <p>Mock-репозиторий подготавливает демонстрационные данные…</p>
+        <p>{storageLabel ? 'Читаем результаты учеников с этого компьютера…' : 'Mock-репозиторий подготавливает демонстрационные данные…'}</p>
       </main>
     );
   if (state.error || !state.snapshot)
@@ -153,8 +163,12 @@ export function TeacherDashboard({
             ))}
           </nav>
           <div className="td-sidebar-foot">
-            <span className="td-demo-label">DEMO · MOCK DATA</span>
-            <p>Данные сбросятся после перезагрузки страницы.</p>
+            <span className="td-demo-label">{storageLabel ?? 'DEMO · MOCK DATA'}</span>
+            <p>
+              {storageLabel
+                ? 'Результаты учеников с этого компьютера. Назначьте билет кнопкой «Восстановить».'
+                : 'Данные сбросятся после перезагрузки страницы.'}
+            </p>
           </div>
           <div className="td-sidebar-art" aria-hidden="true">
             <img src={sidebarBase} alt="" />

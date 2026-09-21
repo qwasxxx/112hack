@@ -141,7 +141,12 @@ export function App() {
       userLogin: session.login,
       scenarioCode: scenario.code,
       scenarioTitle: scenario.title,
-      score: scoreFromChecks([result.servicesOk, result.injuredOk, result.phoneOk]),
+      score: scoreFromChecks([
+        result.servicesOk,
+        result.injuredOk,
+        result.phoneOk,
+        result.transferredOk,
+      ]),
     });
   }
 

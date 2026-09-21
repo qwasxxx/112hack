@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Session } from './auth/accounts';
 import { AccountBar } from './auth/account-bar';
 import type { TrainingScenario } from './data/scenarios';
@@ -10,7 +10,8 @@ import { readLearnerTrack, writeLearnerTrack, type LearnerTrack } from './learne
 import { lessonScreenFor } from './lesson-routing';
 import { BriefingPage } from './pages/briefing-page';
 import { CatalogPage, type CatalogView } from './pages/catalog-page';
-import { DebriefPage, type TrainingFinish } from './pages/debrief-page';
+import { DebriefPage, DdsDebriefPage, type DdsFinish, type TrainingFinish } from './pages/debrief-page';
+import { clearLive, upsertLive } from './progress';
 
 type Screen =
   | { name: CatalogView }
@@ -18,6 +19,7 @@ type Screen =
   | { name: 'theory' }
   | { name: 'training'; scenario: TrainingScenario }
   | { name: 'debrief'; briefing: TrainingScenario; finish: TrainingFinish }
+  | { name: 'dds-debrief'; briefing: TrainingScenario; finish: DdsFinish }
   | { name: 'exam'; scenario: TrainingScenario }
   | { name: 'dds'; scenario: TrainingScenario };
 
@@ -34,7 +36,44 @@ type Props = {
 export function StudentApp(props: Props) {
   const [screen, setScreen] = useState<Screen>({ name: 'catalog' });
   const [track, setTrack] = useState<LearnerTrack>(() => readLearnerTrack());
+  const liveStarted = useRef<string | null>(null);
   const bar = <AccountBar user={props.operator} onLogout={props.onLogout} />;
+
+  useEffect(() => {
+    const live =
+      screen.name === 'training' || screen.name === 'exam' || screen.name === 'dds'
+        ? screen
+        : null;
+    if (!live) {
+      liveStarted.current = null;
+      clearLive(props.operator.login);
+      return;
+    }
+    if (!liveStarted.current) {
+      liveStarted.current = new Date().toISOString();
+    }
+    const startedAt = liveStarted.current;
+    const scenario = live.scenario;
+    const mode = live.name;
+    function beat() {
+      upsertLive({
+        login: props.operator.login,
+        name: props.operator.name,
+        scenarioId: scenario.id,
+        scenarioTitle: scenario.title,
+        mode,
+        startedAt,
+        cardProgress: mode === 'dds' ? 45 : 35,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    beat();
+    const timer = window.setInterval(beat, 3000);
+    return () => {
+      window.clearInterval(timer);
+      clearLive(props.operator.login);
+    };
+  }, [props.operator.login, props.operator.name, screen]);
 
   function changeTrack(next: LearnerTrack) {
     setTrack(next);
@@ -78,6 +117,7 @@ export function StudentApp(props: Props) {
             ? (result) => props.onDdsTrainingComplete?.(result, screen.scenario)
             : undefined
         }
+        onFinished={(finish) => setScreen({ name: 'dds-debrief', briefing: screen.scenario, finish })}
       />
     );
   }
@@ -96,6 +136,21 @@ export function StudentApp(props: Props) {
         onLeave={() => setScreen({ name: 'briefing', scenario: screen.scenario })}
         onCompleted={props.onArmTrainingComplete}
         onFinished={(finish) => setScreen({ name: 'debrief', briefing: screen.scenario, finish })}
+      />
+    );
+  }
+
+  if (screen.name === 'dds-debrief') {
+    return (
+      <DdsDebriefPage
+        finish={screen.finish}
+        operatorLogin={props.operator.login}
+        operatorName={props.operator.name}
+        accountBar={bar}
+        onCatalog={() => setScreen({ name: 'catalog' })}
+        onSessions={() => setScreen({ name: 'sessions' })}
+        onHandbook={() => setScreen({ name: 'handbook' })}
+        onBriefing={() => setScreen({ name: 'briefing', scenario: screen.briefing })}
       />
     );
   }

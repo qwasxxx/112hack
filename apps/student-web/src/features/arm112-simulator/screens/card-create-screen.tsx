@@ -84,7 +84,7 @@ export function CardCreateScreen(props: Props) {
           {card.classification.selectedTypes.length === 0 ? (
             <IncidentTypePanel
               search={card.classification.searchQuery}
-              hits={w.searchHits}
+              catalog={w.typeCatalog}
               selected={card.classification.selectedTypes}
               frequentChips={w.frequentChips}
               significantTypes={w.significantTypes}
@@ -97,15 +97,9 @@ export function CardCreateScreen(props: Props) {
             <QuestionnairePanel
               selectedTypes={card.classification.selectedTypes}
               additionalQuery={card.classification.additionalTypeQuery}
-              hits={w.searchHits}
+              catalog={w.typeCatalog}
               items={w.activeQuestionnaire}
               answersByType={card.classification.answersByType}
-              classifier={card.classification.classifier}
-              priznak1={w.classifierOptions.priznak1}
-              priznak2={w.classifierOptions.priznak2}
-              priznak3={w.classifierOptions.priznak3}
-              extra={w.classifierOptions.extra}
-              matchedCount={w.classifierOptions.count}
               onAdditionalQuery={(value) =>
                 w.setCard({
                   ...card,
@@ -116,7 +110,6 @@ export function CardCreateScreen(props: Props) {
               onRemoveType={w.selectType}
               onToggle={w.toggleAnswer}
               onFreeText={(type, question, value) => w.setAnswer(type, question, value ? [value] : [])}
-              onSelectPriznak={w.selectPriznak}
             />
           )}
         </div>

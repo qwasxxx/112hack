@@ -3,23 +3,22 @@ import type { TrainingScenario } from '../../../data/scenarios';
 import {
   EVIDENCED_SIGNIFICANT_TYPES,
   EVIDENCED_WHAT_HAPPENED_CHIPS,
+  EVIDENCED_WHAT_HAPPENED_SEARCH_HITS,
 } from '../data/evidenced-questionnaires';
-import { displayTypeTitle, questionnaireForType } from '../data/questionnaire-lookup';
+import { displayTypeTitle, pruneHiddenAnswers, questionnaireForType } from '../data/questionnaire-lookup';
 import {
   assignedServices,
   childOptions,
   exactPriznakMatch,
   matchRecords,
   resolveLabel,
-  searchClassifier,
   uniqueServiceCatalog,
   type ClassifierFilter,
-  type SearchHit,
   type ServiceFlags,
 } from '../data/classifier-runtime';
 import { PHASE_AFTER_INCOMING_ACCEPT } from '../../../lesson-routing';
 import { trainingBindingFor } from '../data/training-bindings';
-import { EVIDENCED_SERVICES, type EvidencedService } from '../data/ui-catalog';
+import { EVIDENCED_SERVICES, mapClassifierServiceName, type EvidencedService } from '../data/ui-catalog';
 import type { CallSession, CallerStatus, ClassifierPath, IncidentCard, ServiceAssignment } from '../model/arm112-models';
 import { CALLER_STATUSES } from '../model/arm112-models';
 import { createEmptyIncidentCard } from '../model/factories';
@@ -84,7 +83,7 @@ function flagsFromCard(card: IncidentCard): ServiceFlags {
     threatToPeople: has('Угроза людям', 'Да'),
     victims: card.injured.hasInjured === true,
     notOnScene: card.flags.notOnSceneOrAmbulanceRefusal,
-    offense: has('Правонарушение', 'Да'),
+    offense: has('Правонарушение', 'Есть правонарушение') || has('Правонарушение', 'Да'),
     gasification: has('Проведена ли газификация', 'Да'),
     roadBlocked: has('Есть ли перекрытие движения', 'Да'),
   };
@@ -104,7 +103,7 @@ function applyClassifier(card: IncidentCard, path: ClassifierPath): IncidentCard
   };
   const auto = assignedServices(matched, flagsFromCard({ ...card, classification: { ...card.classification, classifier: nextPath } })).map(
     (item) => ({
-      name: item.name,
+      name: mapClassifierServiceName(item.name),
       autoAssigned: true,
       visMark: false,
       isMainForType: item.isMainForType,
@@ -186,11 +185,6 @@ export function useArm112Workspace(input: {
     }, 1000);
     return () => window.clearInterval(id);
   }, [card.timer.running, binding.cardTimerLimitSec]);
-
-  const searchHits: SearchHit[] = useMemo(() => {
-    const q = card.classification.searchQuery.trim();
-    return searchClassifier(q);
-  }, [card.classification.searchQuery]);
 
   const options = useMemo(
     () => childOptions(filterFromPath(card.classification.classifier)),
@@ -325,7 +319,10 @@ export function useArm112Workspace(input: {
   function setAnswer(type: string, question: string, values: string[]) {
     setCard((current) => {
       const currentAnswers = current.classification.answersByType[type] ?? [];
-      const nextAnswers = [...currentAnswers.filter((item) => item.questionLabel !== question), { questionLabel: question, values }];
+      const nextAnswers = pruneHiddenAnswers(type, [
+        ...currentAnswers.filter((item) => item.questionLabel !== question),
+        { questionLabel: question, values },
+      ]);
       let next: IncidentCard = {
         ...current,
         classification: {
@@ -363,7 +360,10 @@ export function useArm112Workspace(input: {
       } else {
         nextValues = row.values.includes(value) ? row.values.filter((item) => item !== value) : [...row.values, value];
       }
-      const nextAnswers = [...currentAnswers.filter((item) => item.questionLabel !== question), { questionLabel: question, values: nextValues }];
+      const nextAnswers = pruneHiddenAnswers(type, [
+        ...currentAnswers.filter((item) => item.questionLabel !== question),
+        { questionLabel: question, values: nextValues },
+      ]);
       let next: IncidentCard = {
         ...current,
         classification: {
@@ -491,12 +491,17 @@ export function useArm112Workspace(input: {
     .filter((item): item is { type: string; q: NonNullable<ReturnType<typeof questionnaireForType>> } => Boolean(item.q));
 
   const serviceCatalog = useMemo(() => {
-    const fromClassifier = uniqueServiceCatalog().map((item) => ({ short: item.name, full: item.name, source: item.source }));
-    const extra = EVIDENCED_SERVICES.filter((item) => !fromClassifier.some((row) => row.short === item.short)).map((item) => ({
-      ...item,
-      source: 'ARM screenshot modal Добавьте службы',
-    }));
-    return [...fromClassifier, ...extra];
+    const rows = EVIDENCED_SERVICES.map((item) => ({ ...item, source: 'СЛУЖБЫ 112.docx' }));
+    const seen = new Set(rows.map((item) => item.short.toLowerCase()));
+    for (const item of uniqueServiceCatalog()) {
+      const short = mapClassifierServiceName(item.name);
+      if (seen.has(short.toLowerCase()) || seen.has(item.name.toLowerCase())) {
+        continue;
+      }
+      seen.add(short.toLowerCase());
+      rows.push({ short, full: item.name, source: item.source });
+    }
+    return rows;
   }, []);
 
   return {
@@ -514,7 +519,6 @@ export function useArm112Workspace(input: {
     card,
     setCard,
     patchCard,
-    searchHits,
     classifierOptions: options,
     acceptCall,
     acceptSms,
@@ -536,6 +540,7 @@ export function useArm112Workspace(input: {
     allServices: serviceCatalog,
     frequentChips: EVIDENCED_WHAT_HAPPENED_CHIPS,
     significantTypes: EVIDENCED_SIGNIFICANT_TYPES,
+    typeCatalog: EVIDENCED_WHAT_HAPPENED_SEARCH_HITS,
     result,
     actions,
     mode,

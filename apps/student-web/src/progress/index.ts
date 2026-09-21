@@ -1,4 +1,7 @@
-export { appendLesson, lessonsNewestFirst, patchLesson, readLessons } from './store';
+export { appendLesson, lessonsNewestFirst, listLessonLogins, patchLesson, readAllLessons, readLessons } from './store';
+export { assignedScenarioIds, assignScenario, isScenarioAssigned, unassignScenario } from './assignments';
+export { clearLive, readLiveSessions, upsertLive } from './live-presence';
+export type { LivePresence } from './live-presence';
 export { scoreTrainingLesson } from './score-training';
 export { scoreCard50 } from './score-card';
 export type { FieldCheck } from './score-card';

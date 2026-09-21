@@ -38,10 +38,10 @@ const COLLECT = [
 ];
 
 const DDS_COLLECT = [
-  'Проверить адрес и суть по уже заполненной карточке',
-  'Сверить пострадавших с описанием — оператор 112 мог ошибиться',
-  'Убедиться, что есть телефон для связи',
-  'Выбрать службы, которым нужна эта карточка, и направить',
+  'Подтвердить приём карточки 112 и зону ответственности: статус «Принята» или «Не принято»',
+  'При необходимости перезвонить заявителю и уточнить адрес, пострадавших, телефон',
+  'Направить силы: номер наряда и комментарий о выезде',
+  'Вести статусы: начало реагирования → прибытие → работы → завершены, затем закрыть карточку в 112',
 ];
 
 const GROUP_TILT = { x: 4.2, y: 4.8 } as const;
@@ -52,13 +52,15 @@ export function BriefingPage(props: Props) {
   const isDds = props.track === 'dds';
 
   useEffect(() => {
-    if (isDds) {
-      return;
-    }
     warmupLesson({
       conversationRole: 'victim',
-      systemPrompt: buildLessonSystemPrompt(scenario, 'training'),
-      opening: scenario.callerOpening,
+      systemPrompt: isDds
+        ? [
+            buildLessonSystemPrompt(scenario, 'training'),
+            'Это обратный звонок диспетчера ДДС. Ты заявитель, уже звонил в 112. Сейчас снимаешь трубку.',
+          ].join('\n')
+        : buildLessonSystemPrompt(scenario, 'training'),
+      opening: isDds ? 'Алло.' : scenario.callerOpening,
     });
   }, [isDds, scenario]);
 
@@ -95,7 +97,7 @@ function BriefingHero(props: {
   const services = scenario.services.map((item) => SERVICE_LABEL[item]).join(', ');
   const summary =
     props.track === 'dds'
-      ? 'Вам придёт карточка, которую уже заполнил оператор 112. Разговора нет: проверяете данные и направляете службы.'
+      ? 'Вам придёт очередь карточек на рабочее место выбранной ДДС. Принимаете карточку 112, при необходимости перезваниваете, направляете наряд и закрываете реагирование обратно в систему 112.'
       : scenario.summary;
 
   return (
@@ -155,7 +157,7 @@ function BriefingBrief(props: { scenario: TrainingScenario; track: LearnerTrack 
   const tilt = useStudentTilt<HTMLElement>(GROUP_TILT, 'medium');
   const isDds = props.track === 'dds';
   const note = isDds
-    ? 'Разговора нет. Работаете только с карточкой: исправляете ошибки оператора 112 и решаете, кому её передать.'
+    ? 'Сначала подтвердите приём. Если данных мало — перезвоните. Свой профиль ведите статусами до «Работы завершены», чужой — «Не принято» или передайте.'
     : 'Снимите обязательные данные на линии и заполните карточку.';
   const steps = isDds ? DDS_COLLECT : COLLECT;
 
@@ -179,7 +181,7 @@ function BriefingBrief(props: { scenario: TrainingScenario; track: LearnerTrack 
             </h3>
             <p>
               {isDds
-                ? 'Вы — диспетчер ДДС. Оператор 112 уже принял вызов и заполнил карточку. Ваша проверка: нет ли ошибок и каким службам её передать.'
+                ? 'Вы — диспетчер ДДС. Оператор 112 уже заполнил карточку, но мог ошибиться. Подтвердите зону, уточните данные, направьте наряд и верните карточку в 112.'
                 : 'Вы — оператор 112. Легенду билета выясняете на линии во время тренировки.'}
             </p>
           </article>

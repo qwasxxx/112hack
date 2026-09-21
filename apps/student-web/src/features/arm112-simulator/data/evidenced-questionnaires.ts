@@ -8,11 +8,20 @@ export type EvidencedOptionChip = {
   selectedInScreenshot?: boolean;
 };
 
+export type EvidencedQuestionControl = 'chips' | 'chips-exclusive' | 'yes-no' | 'yes-no-unknown' | 'text' | 'free-text-line';
+
+export type EvidencedShowWhen = {
+  question: string;
+  anyOf: string[];
+};
+
 export type EvidencedQuestion = {
   label: string;
-  control: 'chips' | 'yes-no' | 'yes-no-unknown' | 'text' | 'free-text-line';
+  control: EvidencedQuestionControl;
   options?: EvidencedOptionChip[];
   source: string;
+  showWhen?: EvidencedShowWhen[];
+  showWhenAny?: EvidencedShowWhen[];
 };
 
 export type EvidencedQuestionnaire = {
@@ -21,73 +30,142 @@ export type EvidencedQuestionnaire = {
   questions: EvidencedQuestion[];
 };
 
+const street = (extra: EvidencedShowWhen[] = []): EvidencedShowWhen[] => [{ question: 'Где', anyOf: ['Улица'] }, ...extra];
+const transport = (extra: EvidencedShowWhen[] = []): EvidencedShowWhen[] => [{ question: 'Где', anyOf: ['Транспорт'] }, ...extra];
+const house = (extra: EvidencedShowWhen[] = []): EvidencedShowWhen[] => [{ question: 'Где', anyOf: ['Дом'] }, ...extra];
+
 export const EVIDENCED_QUESTIONNAIRES: EvidencedQuestionnaire[] = [
   {
     title: 'Происшествие 101',
-    source: 'СКРИНШОТ КАРТОЧКИ 112ГСИ.docx image2/image4, 17.09.2026',
+    source: 'КАРТОЧКА 112.docx image14–39 + house path from СКРИНШОТ КАРТОЧКИ 112ГСИ',
     questions: [
       {
         label: 'Где',
-        control: 'chips',
+        control: 'chips-exclusive',
         options: [
           { label: 'Улица' },
           { label: 'Транспорт' },
-          { label: 'Дом', selectedInScreenshot: true },
+          { label: 'Дом' },
           { label: 'Здание / объект' },
           { label: 'Опасный объект' },
         ],
-        source: 'card-screens image2',
+        source: 'КАРТОЧКА 112.docx image14',
+      },
+      {
+        label: 'Признак пожара (улица)',
+        control: 'chips-exclusive',
+        options: [{ label: 'Открытое пламя / Дым' }, { label: 'Запах гари' }],
+        source: 'КАРТОЧКА 112.docx image15',
+        showWhen: street(),
+      },
+      {
+        label: 'Признак пожара (транспорт)',
+        control: 'chips-exclusive',
+        options: [{ label: 'Открытое пламя / Дым' }, { label: 'Сработала пожарная сигнализация' }],
+        source: 'КАРТОЧКА 112.docx image33',
+        showWhen: transport(),
       },
       {
         label: 'Признак пожара (дом)',
-        control: 'chips',
+        control: 'chips-exclusive',
         options: [
-          { label: 'Открытое пламя / Дым', selectedInScreenshot: true },
+          { label: 'Открытое пламя / Дым' },
           { label: 'Запах гари' },
           { label: 'Сработала пожарная сигнализация' },
         ],
-        source: 'card-screens image2',
+        source: 'СКРИНШОТ КАРТОЧКИ 112ГСИ image2',
+        showWhen: house(),
       },
       {
         label: 'Доступ',
         control: 'chips',
         options: [{ label: 'Нет доступа' }],
-        source: 'card-screens image2',
+        source: 'КАРТОЧКА 112.docx image15',
+        showWhen: [{ question: 'Где', anyOf: ['Улица', 'Транспорт', 'Дом'] }],
+      },
+      {
+        label: 'Улица (пламя, дым)',
+        control: 'chips',
+        options: [
+          { label: 'Мусор' },
+          { label: 'Трава, пух' },
+          { label: 'Парк' },
+          { label: 'Лес' },
+          { label: 'Торф' },
+          { label: 'Мачта освещения' },
+          { label: 'Опора контактной сети' },
+          { label: 'ЛЭП' },
+          { label: 'Провода' },
+          { label: 'Дерево, деревья' },
+          { label: 'Горит человек' },
+          { label: 'Что горит неизвестно' },
+        ],
+        source: 'КАРТОЧКА 112.docx image16',
+        showWhen: street([{ question: 'Признак пожара (улица)', anyOf: ['Открытое пламя / Дым'] }]),
+      },
+      {
+        label: 'Место происшествия',
+        control: 'chips-exclusive',
+        options: [{ label: 'Тоннель' }, { label: 'Пешеходный переход' }],
+        source: 'КАРТОЧКА 112.docx image15',
+        showWhen: street(),
+      },
+      {
+        label: 'Транспорт (пламя, дым)',
+        control: 'chips',
+        options: [
+          { label: 'Общественный транспорт' },
+          { label: 'Автомашина' },
+          { label: 'ДТП с пожаром' },
+          { label: 'Опасный груз' },
+          { label: 'Воздушный транспорт' },
+          { label: 'Аэропорт' },
+          { label: 'Ж/Д транспорт' },
+          { label: 'Вокзал Ж/Д, платформа Ж/Д' },
+          { label: 'Транспорт прочее' },
+          { label: 'Водный' },
+          { label: 'Мост' },
+          { label: 'Эстакада' },
+          { label: 'Тоннель' },
+          { label: 'Переход подземный/наземный' },
+          { label: 'Метро' },
+          { label: 'МЦК, МЦД' },
+          { label: 'Ж/Д пути' },
+          { label: 'Релейный шкаф Ж/Д' },
+        ],
+        source: 'КАРТОЧКА 112.docx image34',
+        showWhen: transport([{ question: 'Признак пожара (транспорт)', anyOf: ['Открытое пламя / Дым'] }]),
       },
       {
         label: 'Дом (пламя, дым)',
         control: 'chips',
         options: [
-          { label: 'Дом многоквартирный', selectedInScreenshot: true },
+          { label: 'Дом многоквартирный' },
           { label: 'Дом частный' },
           { label: 'Дача' },
           { label: 'Сарай / бытовка / хоз. постройка' },
           { label: 'Выселенное здание' },
         ],
-        source: 'card-screens image2',
+        source: 'СКРИНШОТ КАРТОЧКИ 112ГСИ image2',
+        showWhen: house([{ question: 'Признак пожара (дом)', anyOf: ['Открытое пламя / Дым'] }]),
       },
       {
         label: 'Этажность здания',
         control: 'free-text-line',
-        source: 'card-screens image2 (empty underline, no options visible)',
-      },
-      {
-        label: 'Угроза людям',
-        control: 'yes-no',
-        options: [{ label: 'Да' }, { label: 'Нет' }],
-        source: 'card-screens image2',
+        source: 'СКРИНШОТ КАРТОЧКИ 112ГСИ image2',
+        showWhen: house([{ question: 'Признак пожара (дом)', anyOf: ['Открытое пламя / Дым'] }]),
       },
       {
         label: 'Внутридомовые объекты (пламя/дым)',
         control: 'chips',
         options: [
-          { label: 'Квартира', selectedInScreenshot: true },
+          { label: 'Квартира' },
           { label: 'Балкон' },
-          { label: 'Газовая колонка', selectedInScreenshot: true },
+          { label: 'Газовая колонка' },
           { label: 'Газовая плита' },
           { label: 'Лифт' },
           { label: 'Мусоропровод' },
-          { label: 'Подъезд', selectedInScreenshot: true },
+          { label: 'Подъезд' },
           { label: 'Счетчик электричества' },
           { label: 'Электрическая проводка' },
           { label: 'Электрощит' },
@@ -96,106 +174,71 @@ export const EVIDENCED_QUESTIONNAIRES: EvidencedQuestionnaire[] = [
           { label: 'Прочие внутридомовые объекты' },
           { label: 'Крыша' },
         ],
-        source: 'card-screens image2 / image4',
+        source: 'СКРИНШОТ КАРТОЧКИ 112ГСИ image2',
+        showWhen: house([{ question: 'Признак пожара (дом)', anyOf: ['Открытое пламя / Дым'] }]),
       },
       {
         label: 'Есть ли перекрытие движения',
         control: 'yes-no',
         options: [{ label: 'Да' }, { label: 'Нет' }],
-        source: 'card-screens image2',
-      },
-      {
-        label: 'Проведена ли газификация',
-        control: 'yes-no-unknown',
-        options: [{ label: 'Да' }, { label: 'Нет' }, { label: 'Нет данных' }],
-        source: 'card-screens image2',
-      },
-      {
-        label: 'Описание',
-        control: 'text',
-        source: 'card-screens image2',
-      },
-    ],
-  },
-  {
-    title: 'Происшествие 101',
-    source: 'Инструкция_по_заведению_карточки_2507ГСИ.docx image46 (улица)',
-    questions: [
-      {
-        label: 'Где',
-        control: 'chips',
-        options: [
-          { label: 'Улица', selectedInScreenshot: true },
-          { label: 'Транспорт' },
-          { label: 'Дом' },
-          { label: 'Здание/объект' },
-          { label: 'Опасный объект' },
-        ],
-        source: 'card-manual image46',
-      },
-      {
-        label: 'Признак пожара (улица)',
-        control: 'chips',
-        options: [
-          { label: 'Дым' },
-          { label: 'Открытое пламя', selectedInScreenshot: true },
-          { label: 'Запах гари' },
-        ],
-        source: 'card-manual image46',
-      },
-      {
-        label: 'Доступ',
-        control: 'chips',
-        options: [{ label: 'Нет доступа' }],
-        source: 'card-manual image46',
-      },
-      {
-        label: 'Улица (пламя)',
-        control: 'chips',
-        options: [
-          { label: 'мусор' },
-          { label: 'трава' },
-          { label: 'пух', selectedInScreenshot: true },
-          { label: 'парк' },
-          { label: 'лес' },
-          { label: 'торф' },
-          { label: 'мачта освещения' },
-          { label: 'опора контактной сети' },
-          { label: 'ЛЭП' },
-          { label: 'провода' },
-          { label: 'дерево, деревья' },
-        ],
-        source: 'card-manual image46',
-      },
-      {
-        label: 'Место происшествия',
-        control: 'chips',
-        options: [{ label: 'Тоннель' }, { label: 'Пешеходный переход' }],
-        source: 'card-manual image46',
+        source: 'СКРИНШОТ КАРТОЧКИ 112ГСИ image2',
+        showWhen: house([{ question: 'Признак пожара (дом)', anyOf: ['Открытое пламя / Дым'] }]),
       },
       {
         label: 'Угроза людям',
         control: 'yes-no',
         options: [{ label: 'Да' }, { label: 'Нет' }],
-        source: 'card-manual image46',
+        source: 'КАРТОЧКА 112.docx image16 / image34',
+        showWhenAny: [
+          { question: 'Признак пожара (улица)', anyOf: ['Открытое пламя / Дым'] },
+          { question: 'Признак пожара (транспорт)', anyOf: ['Открытое пламя / Дым'] },
+          { question: 'Признак пожара (дом)', anyOf: ['Открытое пламя / Дым'] },
+        ],
       },
       {
         label: 'Правонарушение',
         control: 'chips',
         options: [{ label: 'Есть правонарушение' }],
-        source: 'card-manual image46',
+        source: 'КАРТОЧКА 112.docx image19',
+        showWhen: street([{ question: 'Улица (пламя, дым)', anyOf: ['Мусор'] }]),
+      },
+      {
+        label: 'Описание правонарушения',
+        control: 'free-text-line',
+        source: 'КАРТОЧКА 112.docx image24',
+        showWhen: [{ question: 'Правонарушение', anyOf: ['Есть правонарушение'] }],
       },
       {
         label: 'Медицинская помощь',
         control: 'yes-no',
         options: [{ label: 'Да' }, { label: 'Нет' }],
-        source: 'card-manual image46',
+        source: 'КАРТОЧКА 112.docx image16 / image34',
+        showWhenAny: [
+          { question: 'Признак пожара (улица)', anyOf: ['Открытое пламя / Дым'] },
+          { question: 'Признак пожара (транспорт)', anyOf: ['Открытое пламя / Дым'] },
+        ],
       },
       {
         label: 'Требуется эвакуация',
         control: 'yes-no',
         options: [{ label: 'Да' }, { label: 'Нет' }],
-        source: 'card-manual image46',
+        source: 'КАРТОЧКА 112.docx image16 / image34',
+        showWhenAny: [
+          { question: 'Признак пожара (улица)', anyOf: ['Открытое пламя / Дым'] },
+          { question: 'Признак пожара (транспорт)', anyOf: ['Открытое пламя / Дым'] },
+        ],
+      },
+      {
+        label: 'Проведена ли газификация',
+        control: 'yes-no-unknown',
+        options: [{ label: 'Да' }, { label: 'Нет' }, { label: 'Нет данных' }],
+        source: 'КАРТОЧКА 112.docx image16',
+        showWhen: street([{ question: 'Признак пожара (улица)', anyOf: ['Открытое пламя / Дым'] }]),
+      },
+      {
+        label: 'Описание',
+        control: 'free-text-line',
+        source: 'КАРТОЧКА 112.docx image14',
       },
     ],
   },
@@ -287,7 +330,7 @@ export const EVIDENCED_QUESTIONNAIRES: EvidencedQuestionnaire[] = [
       {
         label: 'Отказ',
         control: 'chips',
-        options: [{ label: 'Отказ от реагирования Скорой', selectedInScreenshot: true }],
+        options: [{ label: 'Отказ от реагирования Скорой' }],
         source: 'card-manual image18 / card-manual §4.2 «Отказ от реагирования»',
       },
       {
@@ -312,38 +355,111 @@ export const EVIDENCED_QUESTIONNAIRES: EvidencedQuestionnaire[] = [
   },
 ];
 
-/** Frequent-type chips visible on empty «ЧТО СЛУЧИЛОСЬ?» panel (2026 screenshot). */
+/** Frequent-type chips on empty «ЧТО СЛУЧИЛОСЬ?» (КАРТОЧКА 112.docx image1). */
 export const EVIDENCED_WHAT_HAPPENED_CHIPS = [
-  'ДТП',
-  'Ошибочно набран номер',
-  '104',
-  'Человек в опасности',
   'Отмена вызова',
   'Тестовый вызов',
   'Передача дежурства',
+  'ДТП',
   'Консультация',
   'Вызов на иностранном языке',
+  'Ошибочно набран номер',
   'Справка-101',
+  'Справка-102',
+  'Справка-103',
 ] as const;
 
-/** Search hits visible under «ЧТО СЛУЧИЛОСЬ?» in screenshots. */
+/** Full type dropdown from КАРТОЧКА 112.docx image2–13, screenshot spellings. */
 export const EVIDENCED_WHAT_HAPPENED_SEARCH_HITS = [
   '101',
   '102',
   '103',
   '104',
   'Аварии и происшествия в городском хозяйстве',
+  'Аварии и происшествия на транспортных объектах',
   'Аварии на гидротехнических сооружениях',
   'Аварии на опасных и производственных объектах',
   'Благодарность службам',
-  'ЕПЛА',
+  'БПЛА',
   'Взрыв',
+  'Внутренний звонок (звонок от работников)',
+  'Вызов на иностранном языке',
+  'Дополнительный звонок от заявителя',
+  'Дорожные помехи',
+  'ДТП',
+  'Жалоба на действие или бездействие служб',
+  'Животные',
+  'Консультация',
+  'Нецелевой вызов',
+  'Обрушение',
+  'Отзыв о работе 112 Москва',
+  'Отмена вызова',
+  'Ошибочно набран номер',
+  'Передача дежурства',
+  'Помощь службам',
+  'Природная стихия',
+  'Прочие происшествия',
+  'Радиация',
+  'Разбитый градусник',
+  'Ребенок в опасности',
+  'Сбор',
+  'Скопление воды',
+  'Смертельный исход',
+  'Социальная помощь',
+  'Справка-101',
+  'Справка-102',
+  'Справка-103',
+  'Справка-104',
+  'Справка-ГИБДД',
+  'Справка Городское Хозяйство',
+  'Справка-МЧС',
+  'Тестовый вызов',
+  'Технический сбой (сбой в работе оборудования 112 Москва)',
+  'Тренировка',
+  'Уведомление о ЧС',
+  'Угроза взрыва/террористического акта',
+  'Угроза выброса опасных веществ и радиации',
+  'Угроза обрушения',
+  'Человек в опасности',
+  'Экологические происшествия',
 ] as const;
 
-/** «Значимые типы происшествий» list from instruction screenshot image23. */
-export const EVIDENCED_SIGNIFICANT_TYPES = [
-  'Аварии и происшествия в городском хозяйстве',
-  '103',
-  'Экологические происшествия',
-  'Аварии и происшествия на транспортных объектах',
-] as const;
+/** Heading is on the empty panel; chips are not shown on КАРТОЧКА 112.docx image1. */
+export const EVIDENCED_SIGNIFICANT_TYPES = [] as const;
+
+export function answersMap(answers: Array<{ questionLabel: string; values: string[] }> | undefined): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const item of answers ?? []) {
+    map.set(item.questionLabel, item.values);
+  }
+  return map;
+}
+
+export function questionIsVisible(
+  question: EvidencedQuestion,
+  answers: Array<{ questionLabel: string; values: string[] }> | undefined,
+): boolean {
+  const map = answersMap(answers);
+  const match = (rule: EvidencedShowWhen) => {
+    const values = map.get(rule.question) ?? [];
+    return rule.anyOf.some((item) => values.includes(item));
+  };
+  if (question.showWhen && question.showWhen.length > 0 && !question.showWhen.every(match)) {
+    return false;
+  }
+  if (question.showWhenAny && question.showWhenAny.length > 0 && !question.showWhenAny.some(match)) {
+    return false;
+  }
+  return true;
+}
+
+export function visibleQuestions(
+  questionnaire: EvidencedQuestionnaire,
+  answers: Array<{ questionLabel: string; values: string[] }> | undefined,
+): EvidencedQuestion[] {
+  return questionnaire.questions.filter((question) => questionIsVisible(question, answers));
+}
+
+export function isExclusiveQuestion(question: EvidencedQuestion): boolean {
+  return question.control === 'yes-no' || question.control === 'yes-no-unknown' || question.control === 'chips-exclusive';
+}

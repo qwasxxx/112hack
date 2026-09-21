@@ -63,3 +63,22 @@ export function patchLesson(login: string, id: string, patch: Partial<Omit<Lesso
 export function lessonsNewestFirst(login: string): LessonRecord[] {
   return [...readLessons(login)].sort((a, b) => b.completedAt.localeCompare(a.completedAt));
 }
+
+export function listLessonLogins(): string[] {
+  if (!canUseStorage()) {
+    return [];
+  }
+  const prefix = 'sys112.lessons.v1.';
+  const logins: string[] = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key?.startsWith(prefix)) {
+      logins.push(key.slice(prefix.length));
+    }
+  }
+  return logins;
+}
+
+export function readAllLessons(): LessonRecord[] {
+  return listLessonLogins().flatMap((login) => readLessons(login));
+}

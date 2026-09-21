@@ -619,7 +619,7 @@
 
 .catalog-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1.45fr) repeat(3, minmax(148px, 0.68fr)) auto;
+  grid-template-columns: minmax(200px, 1.2fr) repeat(4, minmax(128px, 0.58fr)) auto auto;
   gap: 8px 10px;
   align-items: center;
   min-width: 0;
@@ -823,6 +823,12 @@
 
 .catalog-search input::placeholder {
   color: #667687;
+}
+
+.catalog-assign {
+  margin: 0 0 10px;
+  color: #4d5d6c;
+  font-size: 13px;
 }
 
 .catalog-found {

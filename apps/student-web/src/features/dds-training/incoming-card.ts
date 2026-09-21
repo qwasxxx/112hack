@@ -22,37 +22,77 @@ export type DdsDefect = 'service' | 'injured' | 'phone';
 
 const ALL_SERVICES: ServiceKind[] = ['fire', 'ambulance', 'police', 'gas'];
 
-const PHONE_TAIL = /(?:\+?7[\s-]?)?(?:\d{3}[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}|\d{10,11})\s*$/;
-const FIO = /([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,3})\s*$/;
+const FIO = /[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}/g;
+const PHONE =
+  /(?:тел\.?\s*)?(?:\+?7|8)?[\s\-()]*9\d{2}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}|\b9\d{9}\b|\b\d{10,11}\b/;
+const DOB = /дата рождения\s+\d{2}\.\d{2}\.\d{4}|д\/р\s*\d{2}\.\d{2}\.\d{4}/i;
 
 export function phoneDigits(value: string): string {
   return value.replace(/\D/g, '');
 }
 
+/** Билеты АГС пишут стенограммой. В карточке 112 для ДДС — нормальный текст. */
+export function expandTicketShorthand(text: string): string {
+  return text
+    .replace(/ч\s*\/\s*дом/gi, 'частный дом')
+    .replace(/\bд\/р\b/gi, 'дата рождения')
+    .replace(/\bА\/Д\b/g, 'АД')
+    .replace(/\bб\/п\b/gi, 'без пострадавших')
+    .replace(/\bб\/р\b/gi, 'без оружия')
+    .replace(/головная(?!\s+бол)/gi, 'головная боль')
+    .replace(/головные(?!\s+бол)/gi, 'головные боли')
+    .replace(/03 не треб[а-я.]*/gi, 'скорая не требуется')
+    .replace(/\s+,/g, ',')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function factsFromScenario(scenario: TrainingScenario): TicketFacts {
-  const situation = scenario.situation ?? scenario.summary;
-  const phoneMatch = situation.match(PHONE_TAIL);
+  const raw = `${scenario.situation ?? scenario.summary ?? ''}`.replace(/\u00a0/g, ' ');
+  const expanded = expandTicketShorthand(raw);
+  const phoneMatch = expanded.match(PHONE);
   const callerPhone = phoneMatch ? phoneMatch[0].trim() : '';
-  const beforePhone = (phoneMatch ? situation.slice(0, phoneMatch.index) : situation).replace(/[,\s]+$/g, '');
-  const nameMatch = beforePhone.match(FIO);
-  const callerName = nameMatch ? nameMatch[1].trim() : '';
-  const description = (nameMatch ? beforePhone.slice(0, nameMatch.index) : beforePhone).replace(/[,\s]+$/g, '').trim();
+  const names = expanded.match(FIO) ?? [];
+  const callerName = names.at(-1)?.trim() ?? '';
+  const dob = expanded.match(DOB)?.[0]?.replace(/^д\/р\s*/i, 'дата рождения ') ?? '';
+  let description = expanded;
+  if (callerName) {
+    description = description.replace(callerName, ' ');
+  }
+  if (callerPhone) {
+    description = description.replace(PHONE, ' ');
+  }
+  if (dob) {
+    description = description.replace(DOB, ' ');
+  }
+  description = description
+    .replace(/вызывает себе/gi, 'заявитель вызывает помощь себе')
+    .replace(/тел\.\s*/gi, ' ')
+    .replace(/[,\s]+$/g, '')
+    .replace(/^[,\s]+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const name = dob && callerName ? `${callerName}, ${dob}` : callerName;
   return {
-    callerName,
+    callerName: name,
     callerPhone,
-    address: scenario.address ?? '',
-    description: description || situation,
-    injured: injuredFrom(`${situation} ${scenario.summary}`),
+    address: expandTicketShorthand(scenario.address ?? ''),
+    description: description || expanded,
+    injured: injuredFrom(`${expanded} ${scenario.summary ?? ''}`),
     services: [...scenario.services],
   };
 }
 
 function injuredFrom(text: string): string {
   const t = text.toLowerCase();
-  if (/пострадавших нет|б\/п|03 не треб/.test(t) && !/травм|кров|ожог|нож|избит/.test(t)) {
+  if (/пострадавших нет|без пострадавших|б\/п|скорая не требуется|03 не треб/.test(t) && !/травм|кров|ожог|нож|избит|головн|сознан/.test(t)) {
     return 'Нет';
   }
-  if (/пострадав|травм|кров|ожог|без сознания|избит|нож|судорог|задыха/.test(t)) {
+  if (
+    /пострадав|травм|кров|ожог|без сознания|избит|нож|судорог|задыха|головн|вызывает себе|давление|а\/д|инсульт|рожает|топор|потеряла сознание|теряет сознание/.test(
+      t,
+    )
+  ) {
     return 'Есть';
   }
   return 'Нет';

@@ -1,9 +1,9 @@
-import type { SearchHit } from '../data/classifier-runtime';
+import { useState } from 'react';
 import { mergeClassName, useArmRegionProps } from '../guided/arm-region';
 
 type Props = {
   search: string;
-  hits: SearchHit[];
+  catalog: readonly string[];
   selected: string[];
   frequentChips: readonly string[];
   significantTypes: readonly string[];
@@ -13,6 +13,10 @@ type Props = {
 
 export function IncidentTypePanel(props: Props) {
   const region = useArmRegionProps('incident');
+  const [open, setOpen] = useState(false);
+  const q = props.search.trim().toLowerCase();
+  const hits = props.catalog.filter((item) => !q || item.toLowerCase().includes(q));
+  const showHits = open || q.length > 0;
   return (
     <section
       className={mergeClassName('arm112-what', region.className)}
@@ -25,20 +29,26 @@ export function IncidentTypePanel(props: Props) {
         <input
           className="arm112-underline"
           value={props.search}
-          onChange={(event) => props.onSearch(event.target.value)}
+          onChange={(event) => {
+            setOpen(true);
+            props.onSearch(event.target.value);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => window.setTimeout(() => setOpen(false), 180)}
         />
       </label>
       <h2>ЧТО СЛУЧИЛОСЬ?</h2>
-      {props.hits.length > 0 ? (
+      {showHits ? (
         <div className="arm112-search-hits">
-          {props.hits.map((hit) => (
+          {hits.map((item) => (
             <button
-              key={`${hit.kind}-${hit.label}`}
+              key={item}
               type="button"
-              className={props.selected.includes(hit.label) ? 'is-on' : undefined}
-              onClick={() => props.onSelect(hit.label)}
+              className={props.selected.includes(item) ? 'is-on' : undefined}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => props.onSelect(item)}
             >
-              {hit.label}
+              {item}
             </button>
           ))}
         </div>
@@ -57,18 +67,20 @@ export function IncidentTypePanel(props: Props) {
             ))}
           </div>
           <p className="arm112-significant">Значимые типы происшествий:</p>
-          <div className="arm112-chip-wrap">
-            {props.significantTypes.map((item) => (
-              <button
-                key={item}
-                type="button"
-                className={`arm112-chip${props.selected.includes(item) ? ' is-on' : ''}`}
-                onClick={() => props.onSelect(item)}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
+          {props.significantTypes.length > 0 ? (
+            <div className="arm112-chip-wrap">
+              {props.significantTypes.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  className={`arm112-chip${props.selected.includes(item) ? ' is-on' : ''}`}
+                  onClick={() => props.onSelect(item)}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </>
       )}
     </section>

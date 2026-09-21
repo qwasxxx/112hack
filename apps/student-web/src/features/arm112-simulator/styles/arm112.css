@@ -867,6 +867,9 @@
   flex-direction: column;
   border: 1px solid #e0e0e0;
   margin-top: 4px;
+  max-height: 280px;
+  overflow: auto;
+  background: #fff;
 }
 
 .arm112-search-hits button {
@@ -901,7 +904,6 @@
 
 .arm112-type-chip {
   display: inline-flex;
-  margin: 8px 8px 0;
   padding: 3px 10px;
   border: 1px solid #d0d0d0;
   background: #f7f7f7;
@@ -916,7 +918,6 @@
   background: #3a3a3a;
   color: #fff;
   padding: 6px 10px;
-  margin-top: 8px;
   font-size: 13px;
 }
 
@@ -1031,10 +1032,23 @@
 }
 
 .arm112-modal {
+  position: relative;
   width: min(520px, 92%);
   background: #fff;
   padding: 16px 18px 18px;
   border: 1px solid #bdbdbd;
+}
+
+.arm112-modal-close {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  border: 0;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  color: #777;
+  cursor: pointer;
 }
 
 .arm112-modal h2 {
@@ -1063,8 +1077,8 @@
 }
 
 .arm112-modal-list button.is-on {
-  background: var(--arm112-blue);
-  color: #fff;
+  background: #e3f2fd;
+  color: inherit;
 }
 
 .arm112-modal-actions {

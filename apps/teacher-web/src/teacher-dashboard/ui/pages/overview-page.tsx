@@ -23,7 +23,7 @@ export function OverviewPage({
           <p className="td-kicker">Оперативная сводка</p>
           <h2>Обзор учебной смены</h2>
         </div>
-        <StatusBadge tone="accent">Демонстрационные данные</StatusBadge>
+        <StatusBadge tone="accent">{snapshot.teacher.shift}</StatusBadge>
       </header>
       <section className="td-metrics" aria-label="Основные показатели">
         <MetricCard

@@ -17,6 +17,9 @@ export function ServicesModal(props: Props) {
   return (
     <div className="arm112-modal-backdrop">
       <div className="arm112-modal" role="dialog" aria-label="Добавьте службы">
+        <button type="button" className="arm112-modal-close" onClick={props.onClose} aria-label="Закрыть">
+          ×
+        </button>
         <h2>Добавьте службы</h2>
         <input className="arm112-underline" placeholder="Поиск ..." value={props.query} onChange={(event) => props.onQuery(event.target.value)} />
         <div className="arm112-modal-list">

@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { InterventionType } from '@sys112/shared-types';
 import { TeacherDashboard } from '../../../teacher-web/src/teacher-dashboard';
 import '../../../teacher-web/src/app.css';
 import type { Session } from '../auth/accounts';
 import { AccountBar } from '../auth/account-bar';
+import { LocalTeacherDashboardRepository } from './local-teacher-repository';
 
 const EXAM_ACTIONS: Array<{ type: InterventionType; label: string; hint: string }> = [
   {
@@ -38,6 +39,7 @@ function Dot(props: { tone: 'ok' | 'warn' | 'bad'; label: string }) {
 export function TeacherApp(props: Props) {
   const [apiStatus, setApiStatus] = useState<'ok' | 'bad' | 'pending'>('pending');
   const [realtimeStatus, setRealtimeStatus] = useState<'ok' | 'bad' | 'pending'>('pending');
+  const repository = useMemo(() => new LocalTeacherDashboardRepository(), []);
 
   useEffect(() => {
     void fetch('/api/v1/health')
@@ -74,6 +76,9 @@ export function TeacherApp(props: Props) {
       apiStatus={apiStatus}
       realtimeStatus={realtimeStatus}
       examActions={EXAM_ACTIONS}
+      repository={repository}
+      pollMs={4000}
+      storageLabel="ЛОКАЛЬНЫЕ РЕЗУЛЬТАТЫ"
       accountBar={<AccountBar user={props.operator} onLogout={props.onLogout} />}
       legacyStatus={
         <div className="status">

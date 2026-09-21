@@ -27,7 +27,31 @@ export const DDS_FOLLOWUP_STATUSES: DdsServiceStatus[] = [
 export const DDS_TERMINAL_STATUSES: DdsServiceStatus[] = [
   'Работы завершены',
   'Отказ от выполнения работ',
+  'Не принято',
 ];
+
+export function nextDdsStatuses(current: DdsServiceStatus): DdsServiceStatus[] {
+  if (current === 'Добавлена' || current === 'Получена службой') {
+    return [...DDS_FIRST_RESPONSE_STATUSES];
+  }
+  if (current === 'Принята') {
+    return ['Начало реагирования', 'Отказ от выполнения работ', 'Работы завершены'];
+  }
+  if (current === 'Начало реагирования') {
+    return ['Прибытие', 'Проведение работ', 'Работы завершены', 'Отказ от выполнения работ'];
+  }
+  if (current === 'Прибытие') {
+    return ['Проведение работ', 'Работы завершены'];
+  }
+  if (current === 'Проведение работ') {
+    return ['Работы завершены'];
+  }
+  return [];
+}
+
+export function isDdsTerminal(status: DdsServiceStatus): boolean {
+  return (DDS_TERMINAL_STATUSES as readonly string[]).includes(status);
+}
 
 export type DdsSourceKind =
   | 'dds-screenshot'
@@ -88,7 +112,8 @@ export type DdsIncidentCardViewModel = {
   classifierRow: number | null;
 };
 
-export type DdsQueueItemState = 'queued' | 'selected' | 'editing' | 'completed';
+export type DdsQueueItemState = 'queued' | 'selected' | 'editing' | 'completed' | 'transferred';
+export type DdsCardDecision = 'dispatch' | 'transfer';
 
 export type DdsLoggedAction = {
   at: string;
@@ -102,7 +127,10 @@ export type DdsLoggedAction = {
     | 'comment'
     | 'naryad'
     | 'confirm_status'
-    | 'complete_card';
+    | 'complete_card'
+    | 'transfer_card'
+    | 'callback'
+    | 'close_to_112';
   detail: string;
 };
 

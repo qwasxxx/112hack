@@ -25,6 +25,10 @@ type Props = {
   onLeave: () => void;
   variant?: 'page' | 'panel';
   autoStart?: boolean;
+  systemPrompt?: string;
+  opening?: string;
+  hint?: string;
+  panelTitle?: string;
   onCallEnded?: (payload: { lines: TranscriptTurn[]; seconds: number }) => void;
 };
 
@@ -123,7 +127,8 @@ export function CallPage(props: Props) {
     setRecording(true);
     setCallState('listening');
     const opening =
-      conversationRole === 'victim' ? props.scenario.callerOpening.trim() : '';
+      props.opening?.trim() ||
+      (conversationRole === 'victim' ? props.scenario.callerOpening.trim() : '');
     if (opening) {
       setLines([
         {
@@ -149,7 +154,7 @@ export function CallPage(props: Props) {
       callId,
       conversationRole,
       opening: opening || undefined,
-      systemPrompt: buildLessonSystemPrompt(props.scenario, props.section),
+      systemPrompt: props.systemPrompt ?? buildLessonSystemPrompt(props.scenario, props.section),
       lessonId: props.scenario.id,
       onEvent: (event) => {
         if ('gen' in event && typeof event.gen === 'number' && staleGensRef.current.has(event.gen)) {
@@ -455,7 +460,7 @@ export function CallPage(props: Props) {
         <header className="call-bar call-bar-panel">
           <div>
             <p className={`call-live${callState === 'listening' ? ' call-live-on' : ''}`}>{liveLabel}</p>
-            <h1>Разговор</h1>
+            <h1>{props.panelTitle ?? 'Разговор'}</h1>
           </div>
           {callState === 'ended' ? null : (
             <button
@@ -501,9 +506,10 @@ export function CallPage(props: Props) {
           <div className="log" ref={logRef}>
             {lines.length === 0 ? (
               <p className="hint">
-                {conversationRole === 'victim'
-                  ? 'После соединения заявитель начнёт разговор. Отвечайте как оператор 112.'
-                  : 'Вы заявитель. Задайте оператору вопросы по ситуации — в ответ будут эталонные формулировки.'}
+                {props.hint ??
+                  (conversationRole === 'victim'
+                    ? 'После соединения заявитель начнёт разговор. Отвечайте как оператор 112.'
+                    : 'Вы заявитель. Задайте оператору вопросы по ситуации — в ответ будут эталонные формулировки.')}
               </p>
             ) : null}
             {lines.map((line) => (

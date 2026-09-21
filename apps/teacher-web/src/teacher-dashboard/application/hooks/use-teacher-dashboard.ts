@@ -22,7 +22,7 @@ export interface DashboardState {
   error: string | null;
 }
 
-export function useTeacherDashboard(repository: TeacherDashboardRepository) {
+export function useTeacherDashboard(repository: TeacherDashboardRepository, pollMs?: number) {
   const [state, setState] = useState<DashboardState>({
     snapshot: null,
     sessions: [],
@@ -68,6 +68,15 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository) {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    if (!pollMs) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void load();
+    }, pollMs);
+    return () => window.clearInterval(timer);
+  }, [load, pollMs]);
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(null), 3200);

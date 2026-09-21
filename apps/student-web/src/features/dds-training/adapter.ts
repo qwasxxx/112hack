@@ -1,6 +1,7 @@
 import { SERVICE_LABEL, type ServiceKind, type TrainingScenario } from '../../data/scenarios';
 import type { IncidentCard, ServiceAssignment } from '../arm112-simulator/model/arm112-models';
 import { createEmptyIncidentCard } from '../arm112-simulator/model/factories';
+import { ddsClassLabel, ddsTags, primaryServiceCode, splitDdsAddress } from './display';
 import { incomingFromFacts, factsFromScenario, serviceCaption, type DdsDraft } from './incoming-card';
 import type { DdsIncidentCardViewModel, DdsServiceChip, DdsServiceStatus } from './types';
 
@@ -65,9 +66,12 @@ export function cardFromDraft(
   draft: DdsDraft,
   number: string,
   createdAt: string,
+  cardId = `dds-${scenario.id}`,
 ): DdsIncidentCardViewModel {
   const services = chipsFor(draft.services);
-  const typeTitle = SERVICE_LABEL[draft.services[0] ?? scenario.services[0] ?? 'police'];
+  const typeCode = primaryServiceCode(draft.services.length ? draft.services : scenario.services);
+  const typeTitle = `Происшествие ${typeCode}`;
+  const address = splitDdsAddress(draft.address);
   const incident: IncidentCard = createEmptyIncidentCard({
     number,
     createdAt,
@@ -90,7 +94,7 @@ export function cardFromDraft(
       subject: '',
       settlement: '',
       object: '',
-      okrug: '',
+      okrug: address.okrug,
       district: '',
       street: '',
       house: '',
@@ -124,21 +128,21 @@ export function cardFromDraft(
     services: chipsToAssignments(services),
   });
   return {
-    id: `dds-${scenario.id}`,
+    id: cardId,
     scenarioId: scenario.id,
     number,
     createdAt,
     operatorArm: 'АРМ 4',
     operatorName: 'Оператор 112',
-    typeCode: typeTitle,
+    typeCode,
     typeTitle,
     description: draft.description,
     addressLine: draft.address,
-    okrug: '',
+    okrug: address.okrug,
     injured: draft.injured,
     callerName: draft.callerName,
-    tags: draft.description,
-    classifierClass: typeTitle,
+    tags: ddsTags(draft.description, draft.address, draft.injured, draft.services),
+    classifierClass: ddsClassLabel(scenario, draft.description, draft.services),
     visClass: '',
     aon: draft.callerPhone,
     providedPhone: draft.callerPhone,
@@ -158,7 +162,7 @@ export function incidentFromViewModel(card: DdsIncidentCardViewModel): IncidentC
   };
 }
 
-export function buildIncoming(scenario: TrainingScenario): {
+export function buildIncoming(scenario: TrainingScenario, cardId?: string): {
   card: DdsIncidentCardViewModel;
   facts: ReturnType<typeof factsFromScenario>;
   draft: DdsDraft;
@@ -173,7 +177,7 @@ export function buildIncoming(scenario: TrainingScenario): {
     facts,
     draft: incoming.draft,
     defects: incoming.defects,
-    card: cardFromDraft(scenario, incoming.draft, number, createdAt),
+    card: cardFromDraft(scenario, incoming.draft, number, createdAt, cardId),
   };
 }
 

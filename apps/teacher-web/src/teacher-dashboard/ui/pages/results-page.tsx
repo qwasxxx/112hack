@@ -216,7 +216,7 @@ export function ResultsPage({
           (!student || item.student.id === student) &&
           (!scenario || item.scenarioId === scenario) &&
           (!outcome || String(item.passed) === outcome) &&
-          (period === 'all' || new Date(item.completedAt) >= new Date('2026-09-13T00:00:00+05:00')),
+          (period === 'all' || Date.parse(item.completedAt) >= Date.now() - 7 * 24 * 60 * 60 * 1000),
       ),
     [results, group, student, scenario, outcome, period],
   );
@@ -228,10 +228,7 @@ export function ResultsPage({
           <p className="td-kicker">Качество подготовки</p>
           <h2>Результаты и аналитика</h2>
         </div>
-        <StatusBadge tone="accent">
-          Средний балл{' '}
-          {Math.round(results.reduce((sum, item) => sum + item.finalScore, 0) / results.length)}%
-        </StatusBadge>
+        <StatusBadge tone="accent">{results.length ? `${Math.round(results.reduce((sum, item) => sum + item.finalScore, 0) / results.length)}% средний` : 'Нет попыток'}</StatusBadge>
       </header>
       <TeacherFilterBar label="Фильтры результатов">
         <TeacherFilterMenu

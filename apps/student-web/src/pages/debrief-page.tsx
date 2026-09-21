@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { TrainingScenario } from '../data/scenarios';
+import { SERVICE_LABEL, type TrainingScenario } from '../data/scenarios';
 import type { Arm112PracticalResult } from '../features/arm112-simulator/model/training-result';
+import type { DdsDefect, DdsDraft, TicketFacts as DdsTicketFacts } from '../features/dds-training/incoming-card';
 import {
   appendLesson,
   clearArmDraft,
   patchLesson,
+  printLessonCertificate,
   requestCallAiScore,
   scoreCard50,
+  scoreDdsLesson,
   scoreTrainingLesson,
-  printLessonCertificate,
+  PASS_SCORE,
   type FieldCheck,
   type LessonRecord,
   type TranscriptTurn,
@@ -17,6 +20,28 @@ import { cardView, ticketFactsFrom } from '../progress/ticket-facts';
 import { StudentShell } from '../student-shell/student-shell';
 import './sessions-page.css';
 import './debrief-page.css';
+
+export type DdsFinishCard = {
+  id: string;
+  scenario: TrainingScenario;
+  role: 'own' | 'foreign';
+  sourceLabel: string;
+  draft: DdsDraft;
+  facts: DdsTicketFacts;
+  decision: 'dispatch' | 'transfer';
+  elapsedMs: number;
+  defects: DdsDefect[];
+  naryad?: string;
+  workplaceStatus?: string;
+  callback?: boolean;
+};
+
+export type DdsFinish = {
+  scenario: TrainingScenario;
+  workplace: string;
+  startedAt: string;
+  cards: DdsFinishCard[];
+};
 
 export type TrainingFinish = {
   scenario: TrainingScenario;
@@ -182,20 +207,29 @@ export function DebriefPage(props: Props) {
   );
 }
 
-function JudgeScreen(props: { operatorName: string; step: number; reduced: boolean }) {
+function JudgeScreen(props: {
+  operatorName: string;
+  step: number;
+  reduced: boolean;
+  mark?: string;
+  title?: string;
+  lead?: string;
+  steps?: string[];
+}) {
+  const steps = props.steps ?? JUDGE_STEPS;
   return (
     <div className="debrief-judge" role="status" aria-live="polite">
       <div className="debrief-orb" aria-hidden="true">
         <i />
         <i />
         <i />
-        <b>112</b>
+        <b>{props.mark ?? '112'}</b>
       </div>
       <p className="sessions-kicker">Разбор занятия · {props.operatorName}</p>
-      <h1>Сверяю с эталоном билета</h1>
-      <p>Карточка сравнивается с реальными данными ситуации, стенограмма разбирается отдельно.</p>
+      <h1>{props.title ?? 'Сверяю с эталоном билета'}</h1>
+      <p>{props.lead ?? 'Карточка сравнивается с реальными данными ситуации, стенограмма разбирается отдельно.'}</p>
       <ol className="debrief-steps">
-        {JUDGE_STEPS.map((label, index) => (
+        {steps.map((label, index) => (
           <li key={label} className={index === props.step || props.reduced ? 'is-on' : index < props.step ? 'is-done' : ''}>
             <span />
             {label}
@@ -419,4 +453,351 @@ function useReducedMotion() {
     return () => media.removeEventListener('change', sync);
   }, []);
   return reduced;
+}
+
+const DDS_JUDGE_STEPS = [
+  'Читаю карточки от оператора 112',
+  'Проверяю подтверждение приёма',
+  'Сверяю службы с происшествием',
+  'Смотрю наряд и статусы реагирования',
+  'Проверяю закрытие карточки в 112',
+  'Считаю норматив обработки',
+];
+
+type DdsDebriefProps = {
+  finish: DdsFinish;
+  operatorLogin: string;
+  operatorName: string;
+  accountBar: ReactNode;
+  onCatalog: () => void;
+  onSessions: () => void;
+  onHandbook?: () => void;
+  onBriefing: () => void;
+};
+
+export function DdsDebriefPage(props: DdsDebriefProps) {
+  const finish = props.finish;
+  const base = useMemo(() => {
+    const first = finish.cards[0];
+    const elapsedMs = finish.cards.reduce((sum, item) => sum + item.elapsedMs, 0);
+    return scoreDdsLesson({
+      scenario: finish.scenario,
+      operatorLogin: props.operatorLogin,
+      draft: first?.draft ?? {
+        callerName: '',
+        callerPhone: '',
+        address: '',
+        description: '',
+        injured: 'Нет',
+        services: [],
+      },
+      facts: first?.facts ?? {
+        callerName: '',
+        callerPhone: '',
+        address: '',
+        description: '',
+        injured: 'Нет',
+        services: [],
+      },
+      startedAt: finish.startedAt,
+      completedAt: new Date(Date.parse(finish.startedAt) + elapsedMs).toISOString(),
+      elapsedMs,
+      cards: finish.cards.map((item) => ({
+        scenario: item.scenario,
+        draft: item.draft,
+        facts: item.facts,
+        role: item.role,
+        decision: item.decision,
+        elapsedMs: item.elapsedMs,
+        naryad: item.naryad,
+        workplaceStatus: item.workplaceStatus,
+        callback: item.callback,
+      })),
+    });
+  }, [finish, props.operatorLogin]);
+  const [record, setRecord] = useState<LessonRecord>(() => ({ ...base, id: 'pending' }));
+  const [revealed, setRevealed] = useState(false);
+  const [step, setStep] = useState(0);
+  const savedId = useRef<string | null>(null);
+  const reduced = useReducedMotion();
+  const checks = useMemo(() => ddsFieldChecks(finish.cards), [finish.cards]);
+  const rows = useMemo(() => ddsScoreRows(finish.cards), [finish.cards]);
+
+  useEffect(() => {
+    const saved = appendLesson(props.operatorLogin, base);
+    savedId.current = saved.id;
+    setRecord(saved);
+  }, [base, props.operatorLogin]);
+
+  useEffect(() => {
+    if (reduced) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setStep((current) => (current + 1) % DDS_JUDGE_STEPS.length);
+    }, 900);
+    return () => window.clearInterval(timer);
+  }, [reduced]);
+
+  useEffect(() => {
+    const wait = window.setTimeout(() => setRevealed(true), reduced ? 0 : 1100);
+    return () => window.clearTimeout(wait);
+  }, [reduced]);
+
+  const findings = record.findings.filter((item) => item.code !== 'ai-note');
+  return (
+    <StudentShell
+      accountBar={props.accountBar}
+      onCatalog={props.onCatalog}
+      onSessions={props.onSessions}
+      onHandbook={props.onHandbook}
+    >
+      <div className={`debrief-body${revealed ? ' is-revealed' : ' is-judging'}`}>
+        {!revealed ? (
+          <JudgeScreen
+            operatorName={props.operatorName}
+            step={step}
+            reduced={reduced}
+            mark="ДДС"
+            title="Проверяю обработку смены"
+            lead="Карточки сверяются с эталоном: службы, пострадавшие, телефон, приём, наряд и закрытие в 112."
+            steps={DDS_JUDGE_STEPS}
+          />
+        ) : (
+          <>
+            <header className="debrief-head">
+              <p className="sessions-kicker">Разбор смены ДДС · {props.operatorName}</p>
+              <p>
+                {finish.workplace} · {finish.scenario.code} · {finish.cards.length} карточек
+              </p>
+            </header>
+            <div className="debrief-hero">
+              <ScoreRing value={record.score} max={100} passed={record.passed} play={!reduced} />
+              <div>
+                <p className={`debrief-verdict${record.passed ? ' is-pass' : ''}`}>{record.passed ? 'Зачёт' : 'Незачёт'}</p>
+                <p className="debrief-hero-lead">{ddsVerdictLead(record)}</p>
+              </div>
+            </div>
+            <ul className="debrief-bars">
+              {rows.map((row, index) => (
+                <ScoreRow key={row.label} {...row} delay={index * 280} play={!reduced} />
+              ))}
+            </ul>
+            <section className="debrief-compare" aria-label="Сверка карточек смены">
+              <h2>Сверка карточек с эталоном</h2>
+              <ul>
+                {checks.map((item, index) => (
+                  <li key={item.id} className={`is-${item.state}`} style={{ animationDelay: `${1200 + index * 90}ms` }}>
+                    <div>
+                      <strong>{item.label}</strong>
+                      <b>
+                        {item.points}/{item.max}
+                      </b>
+                    </div>
+                    <p>
+                      <span>Эталон</span>
+                      {item.expected || '—'}
+                    </p>
+                    <p>
+                      <span>Сделали</span>
+                      {item.got || '—'}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+            <div className="debrief-notes-grid">
+              <section className="debrief-notes">
+                <h2>Замечания</h2>
+                {findings.length ? (
+                  <ul>
+                    {findings.map((item) => (
+                      <li key={`${item.code}-${item.field}-${item.message}`}>
+                        <span>{item.field}</span>
+                        {item.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>Расхождений с эталоном нет.</p>
+                )}
+              </section>
+              <section className="debrief-notes">
+                <h2>Что улучшить</h2>
+                {record.recommendations.length ? (
+                  <ul>
+                    {record.recommendations.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>Держите тот же разбор на следующей смене.</p>
+                )}
+              </section>
+            </div>
+            <div className="debrief-actions">
+              <button type="button" className="debrief-primary" onClick={props.onSessions}>
+                Мои сессии
+              </button>
+              {record.passed ? (
+                <button type="button" onClick={() => printLessonCertificate(record, props.operatorName)}>
+                  Справка о зачёте
+                </button>
+              ) : null}
+              <button type="button" onClick={props.onBriefing}>
+                К уроку
+              </button>
+              <button type="button" onClick={props.onCatalog}>
+                К списку
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </StudentShell>
+  );
+}
+
+function ddsVerdictLead(record: LessonRecord): string {
+  const miss = record.findings.find((item) => item.code === 'dds-services-missing');
+  const extra = record.findings.find((item) => item.code === 'dds-services-extra');
+  const transfer = record.findings.find((item) => item.code === 'dds-transfer');
+  const accept = record.findings.find((item) => item.code === 'dds-accept');
+  const close = record.findings.find((item) => item.code === 'dds-close');
+  if (miss) {
+    return `${miss.message} Пропуск эталонной службы — незачёт, даже если остальные баллы набраны.`;
+  }
+  if (record.passed) {
+    return `Зачёт от ${PASS_SCORE}. Результат уже в «Мои сессии».`;
+  }
+  if (transfer) {
+    return `${transfer.message} Порог ${PASS_SCORE}.`;
+  }
+  if (accept) {
+    return `${accept.message} Порог ${PASS_SCORE}.`;
+  }
+  if (close) {
+    return `${close.message} Порог ${PASS_SCORE}.`;
+  }
+  if (extra) {
+    return `${extra.message} Порог ${PASS_SCORE}.`;
+  }
+  return `Нужно ${PASS_SCORE} баллов. Сейчас ${record.score}.`;
+}
+
+function ddsScoreRows(cards: DdsFinishCard[]) {
+  const own = cards.filter((item) => item.role === 'own');
+  const foreign = cards.filter((item) => item.role === 'foreign');
+  const avg = (values: number[]) => (values.length ? Math.round(values.reduce((sum, item) => sum + item, 0) / values.length) : 0);
+  const services = avg(
+    own.map((item) => {
+      const extra = item.draft.services.filter((kind) => !item.facts.services.includes(kind)).length;
+      const missing = item.facts.services.filter((kind) => !item.draft.services.includes(kind)).length;
+      return extra === 0 && missing === 0 ? 40 : Math.max(0, 40 - (extra + missing) * 12);
+    }),
+  );
+  const injured = avg(own.map((item) => (item.draft.injured === item.facts.injured ? 25 : 0)));
+  const phone = avg(
+    own.map((item) => {
+      const need = item.facts.callerPhone.replace(/\D/g, '');
+      const got = item.draft.callerPhone.replace(/\D/g, '');
+      return !need || need === got ? 15 : 0;
+    }),
+  );
+  const process = avg(
+    own.map((item) => {
+      const status = item.workplaceStatus ?? '';
+      let value = 10;
+      if (!['Принята', 'Начало реагирования', 'Прибытие', 'Проведение работ', 'Работы завершены'].includes(status)) {
+        value -= 4;
+      }
+      if (!(item.naryad ?? '').trim()) {
+        value -= 3;
+      }
+      if (status !== 'Работы завершены') {
+        value -= 3;
+      }
+      return Math.max(0, value);
+    }),
+  );
+  const timer = avg(own.map((item) => (item.elapsedMs / 1000 > 30 ? (item.elapsedMs / 1000 > 60 ? 0 : 4) : 10)));
+  const transfer = foreign.length
+    ? Math.round((foreign.filter((item) => item.decision === 'transfer').length / foreign.length) * 10)
+    : 10;
+  return [
+    { label: 'Службы', value: services, max: 40, hint: 'Пропуск эталонной службы — незачёт' },
+    { label: 'Пострадавшие', value: injured, max: 25, hint: 'По тексту карточки, не по отметке 112' },
+    { label: 'Телефон', value: phone, max: 15, hint: 'Номер для связи, при необходимости обратный звонок' },
+    { label: 'Реагирование', value: process, max: 10, hint: 'Принята → наряд → работы завершены' },
+    { label: 'Норматив', value: timer, max: 10, hint: '30 секунд на карточку' },
+    { label: 'Профиль ленты', value: transfer, max: 10, hint: 'Свои направить, чужие передать' },
+  ];
+}
+
+function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
+  return cards.flatMap((card) => {
+    const own = card.role === 'own';
+    const extra = card.draft.services.filter((kind) => !card.facts.services.includes(kind));
+    const missing = card.facts.services.filter((kind) => !card.draft.services.includes(kind));
+    const servicesOk = extra.length === 0 && missing.length === 0;
+    const injuredOk = card.draft.injured === card.facts.injured;
+    const need = card.facts.callerPhone.replace(/\D/g, '');
+    const got = card.draft.callerPhone.replace(/\D/g, '');
+    const phoneOk = !need || need === got;
+    const profileOk = own ? card.decision === 'dispatch' : card.decision === 'transfer';
+    return [
+      {
+        id: `${card.id}-profile`,
+        label: `${card.scenario.code} · профиль`,
+        expected: own ? 'Направить бригаду своей ДДС' : 'Передать в другую ДДС',
+        got: card.decision === 'dispatch' ? 'Бригада направлена' : 'Передана',
+        state: profileOk ? 'match' : 'miss',
+        points: profileOk ? 1 : 0,
+        max: 1,
+      },
+      ...(own
+        ? [
+            {
+              id: `${card.id}-svc`,
+              label: `${card.scenario.code} · службы`,
+              expected: card.facts.services.map((kind) => SERVICE_LABEL[kind]).join(', ') || '—',
+              got: card.draft.services.map((kind) => SERVICE_LABEL[kind]).join(', ') || '—',
+              state: servicesOk ? 'match' : 'miss',
+              points: servicesOk ? 1 : 0,
+              max: 1,
+            } satisfies FieldCheck,
+            {
+              id: `${card.id}-inj`,
+              label: `${card.scenario.code} · пострадавшие`,
+              expected: card.facts.injured,
+              got: card.draft.injured,
+              state: injuredOk ? 'match' : 'miss',
+              points: injuredOk ? 1 : 0,
+              max: 1,
+            } satisfies FieldCheck,
+            {
+              id: `${card.id}-phone`,
+              label: `${card.scenario.code} · телефон`,
+              expected: card.facts.callerPhone || '—',
+              got: card.draft.callerPhone || 'пусто',
+              state: phoneOk ? 'match' : 'miss',
+              points: phoneOk ? 1 : 0,
+              max: 1,
+            } satisfies FieldCheck,
+            {
+              id: `${card.id}-flow`,
+              label: `${card.scenario.code} · реагирование`,
+              expected: 'Принята → наряд → Работы завершены',
+              got: `${card.workplaceStatus ?? 'нет статуса'}${card.naryad ? ` · наряд ${card.naryad}` : ''}`,
+              state:
+                card.workplaceStatus === 'Работы завершены' && Boolean(card.naryad)
+                  ? 'match'
+                  : 'miss',
+              points: card.workplaceStatus === 'Работы завершены' && card.naryad ? 1 : 0,
+              max: 1,
+            } satisfies FieldCheck,
+          ]
+        : []),
+    ];
+  });
 }
