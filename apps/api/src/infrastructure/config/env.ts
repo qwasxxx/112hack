@@ -22,6 +22,10 @@ const envSchema = z.object({
   TTS_PROVIDER: z.string().default('mock'),
   EMBEDDINGS_PROVIDER: z.string().default('mock'),
   EVALUATION_PROVIDER: z.string().default('mock'),
+  STT_HEALTH_URL: z.string().default('http://127.0.0.1:8090/health'),
+  LLM_HEALTH_URL: z.string().default('http://127.0.0.1:8091/health'),
+  TTS_HEALTH_URL: z.string().default('http://127.0.0.1:8092/health'),
+  BACKUP_DIR: z.string().optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

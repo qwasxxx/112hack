@@ -109,7 +109,7 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository, poll
               ? current.scenarios.map((item) => (item.id === saved.id ? saved : item))
               : [...current.scenarios, saved],
           }));
-          setNotice('Билет назначен ученикам');
+          setNotice('Билет сохранён и доступен ученикам');
         } catch (error) {
           setNotice(error instanceof Error ? error.message : 'Не удалось назначить билет');
         }

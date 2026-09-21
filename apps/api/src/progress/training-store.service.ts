@@ -24,11 +24,17 @@ export class TrainingStoreService {
     };
   }
 
-  async listLessons() {
+  async listLessons(login?: string) {
     const sql = this.database.requireSql();
-    const rows = await sql<{ payload: unknown }[]>`
-      SELECT payload FROM lesson_records ORDER BY completed_at DESC
-    `;
+    const rows = login
+      ? await sql<{ payload: unknown }[]>`
+          SELECT payload FROM lesson_records
+          WHERE operator_login = ${login}
+          ORDER BY completed_at DESC
+        `
+      : await sql<{ payload: unknown }[]>`
+          SELECT payload FROM lesson_records ORDER BY completed_at DESC
+        `;
     return rows.map((row) => row.payload);
   }
 
@@ -91,12 +97,17 @@ export class TrainingStoreService {
       started_at: Date | string | null;
       teacher_login: string;
       title: string;
-    }[]>`SELECT active, started_at, teacher_login, title FROM class_state WHERE id = 'default'`;
+      categories: unknown;
+    }[]>`SELECT active, started_at, teacher_login, title, categories FROM class_state WHERE id = 'default'`;
+    const categories = Array.isArray(row?.categories)
+      ? row.categories.filter((item): item is string => typeof item === 'string')
+      : [];
     return {
       active: Boolean(row?.active),
       startedAt: toIso(row?.started_at),
       teacherLogin: row?.teacher_login ?? '',
       title: row?.title ?? '',
+      categories,
     };
   }
 
@@ -105,18 +116,23 @@ export class TrainingStoreService {
     startedAt?: string;
     teacherLogin?: string;
     title?: string;
+    categories?: string[];
   }) {
     const sql = this.database.requireSql();
     const active = Boolean(input.active);
     const startedAt = input.startedAt ? toIso(input.startedAt) || null : null;
+    const categories = Array.isArray(input.categories)
+      ? input.categories.filter((item) => typeof item === 'string' && item.trim())
+      : [];
     await sql`
-      INSERT INTO class_state (id, active, started_at, teacher_login, title, updated_at)
+      INSERT INTO class_state (id, active, started_at, teacher_login, title, categories, updated_at)
       VALUES (
         'default',
         ${active},
         ${startedAt},
         ${input.teacherLogin || ''},
         ${input.title || ''},
+        ${asJson(categories)}::jsonb,
         now()
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -124,6 +140,7 @@ export class TrainingStoreService {
         started_at = EXCLUDED.started_at,
         teacher_login = EXCLUDED.teacher_login,
         title = EXCLUDED.title,
+        categories = EXCLUDED.categories,
         updated_at = now()
     `;
     return this.getClass();

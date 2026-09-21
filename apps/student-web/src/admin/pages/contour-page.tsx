@@ -61,7 +61,7 @@ export function ContourPage(props: Props) {
   const lastBackup = props.backups[0];
   const backupOk = props.settings.lastBackupStatus === 'ok';
   const contourOk =
-    running === props.services.length &&
+    running === props.services.filter((item) => item.id !== 'sip').length &&
     props.apiStatus !== 'bad' &&
     props.realtimeStatus !== 'bad' &&
     dbLive;
@@ -157,7 +157,7 @@ export function ContourPage(props: Props) {
           {props.services.map((service) => {
             const view = resolveServiceView(service, live);
             const tone = serviceTone(view);
-            const disabled = serviceActionDisabled(view);
+            const disabled = serviceActionDisabled(view) || service.id === 'sip';
             return (
               <article key={service.id} className={`ad-service ad-ops-card is-${tone}`}>
                 <span className="ad-service-rail" aria-hidden="true" />
@@ -245,7 +245,7 @@ export function ContourPage(props: Props) {
               <p className="ad-kicker">Стенд</p>
               <h2>Локальная среда</h2>
             </div>
-            <span className="ad-help">SIP и политики учебного контура</span>
+            <span className="ad-help">Программная эмуляция телефона, не Asterisk</span>
           </div>
           <div className="ad-env-list">
             <article className="ad-env-item">
@@ -259,10 +259,15 @@ export function ContourPage(props: Props) {
             <article className="ad-env-item">
               <span>TLS / RBAC</span>
               <strong>
-                {props.settings.tls ? 'TLS вкл.' : 'TLS выкл.'} · {props.settings.rbac ? 'RBAC вкл.' : 'RBAC выкл.'}
+                {props.settings.tls ? 'политика TLS' : 'HTTP контура'} · {props.settings.rbac ? 'RBAC вкл.' : 'RBAC выкл.'}
               </strong>
             </article>
           </div>
+          <p className="ad-lead">
+            Входящий вызов идёт через микрофон браузера и распознавание речи. Поля SIP-хост и кодек
+            сохранены для учебного стенда и не поднимают телефонный сервер. TLS на localhost не
+            включается: контур и так без интернета, сертификат только пугал бы браузер.
+          </p>
           <form className="card-form" onSubmit={(event) => event.preventDefault()}>
             <label className="field">
               <span>SIP-хост</span>

@@ -57,14 +57,15 @@ export function readAssignments(): AssignmentStore {
   }
 }
 
-const KNOWN = new Set(SCENARIOS.map((item) => item.id));
+const KNOWN = () => new Set(SCENARIOS.map((item) => item.id));
 
 export function assignedScenarioIds(_login?: string): string[] {
-  return readAssignments().scenarioIds.filter((id) => KNOWN.has(id));
+  const known = KNOWN();
+  return readAssignments().scenarioIds.filter((id) => known.has(id));
 }
 
 export function assignScenario(id: string, teacherLogin = 'petrov'): void {
-  if (!KNOWN.has(id)) {
+  if (!KNOWN().has(id)) {
     return;
   }
   const current = readAssignments();

@@ -7,6 +7,7 @@ import {
 } from './avatars';
 import { hashPassword, verifyPassword } from './password';
 import { readAllUsers, writeAllUsers } from './user-db';
+import { listRemoteUsers, loginRemote, registerRemote, createRemoteUser } from '../admin/data/admin-remote';
 
 const LEGACY_ACCOUNTS_KEY = 'sys112.accounts';
 const SESSION_KEY = 'sys112.session';
@@ -483,6 +484,46 @@ export async function loadAccounts(): Promise<Account[]> {
   if (changed) {
     await persistAccounts(merged);
   }
+
+  const remote = await listRemoteUsers();
+  if (remote?.length) {
+    const byLogin = new Map(remote.map((item) => [item.login, item]));
+    merged = merged.map((account) => {
+      const hit = byLogin.get(account.login);
+      if (!hit) {
+        return account;
+      }
+      return {
+        ...account,
+        id: hit.id,
+        name: hit.name,
+        email: hit.email,
+        role: hit.role,
+        status: hit.status,
+        createdAt: hit.createdAt,
+      };
+    });
+    for (const user of remote) {
+      if (!merged.some((account) => account.login === user.login)) {
+        const parts = user.name.split(/\s+/);
+        merged.push({
+          id: user.id,
+          name: user.name,
+          firstName: parts[1] || user.login,
+          lastName: parts[0] || user.login,
+          login: user.login,
+          email: user.email,
+          role: user.role,
+          status: user.status,
+          avatar: { kind: 'builtin', id: BUILTIN_AVATAR_IDS[0] },
+          createdAt: user.createdAt,
+          updatedAt: user.createdAt,
+          source: 'admin',
+        });
+      }
+    }
+  }
+
   return merged.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 }
 
@@ -542,6 +583,25 @@ export async function authenticate(
   login: string,
   password: string,
 ): Promise<{ ok: true; session: Session } | { ok: false; message: string }> {
+  const remote = await loginRemote(login, password);
+  if (remote?.ok && remote.user) {
+    const existing = findAccount(accounts, remote.user.login) ?? findAccount(accounts, remote.user.id);
+    return {
+      ok: true,
+      session: existing
+        ? toSession({ ...existing, id: remote.user.id, name: remote.user.name, role: remote.user.role, status: remote.user.status })
+        : {
+            id: remote.user.id,
+            name: remote.user.name,
+            login: remote.user.login,
+            role: remote.user.role,
+          },
+    };
+  }
+  if (remote && remote.ok === false && remote.message) {
+    return { ok: false, message: remote.message };
+  }
+
   const account = findAccount(accounts, login);
   if (!account || !account.passwordHash) {
     return { ok: false, message: 'Нет такой учётной записи.' };
@@ -597,6 +657,12 @@ export async function registerAccount(
       message: 'Не удалось сохранить учётную запись.',
     };
   }
+  void registerRemote({
+    login: account.login,
+    email: account.email,
+    name: account.name,
+    password: input.password,
+  });
   return { ok: true, account, session: toSession(account), accounts: next };
 }
 
@@ -678,7 +744,7 @@ export async function createManagedAccount(accounts: Account[], input: ManagedAc
     login = email;
   }
   const now = new Date().toISOString();
-  return {
+  const account: Account = {
     id: crypto.randomUUID(),
     name: displayName(lastName, firstName, middleName),
     firstName,
@@ -694,6 +760,16 @@ export async function createManagedAccount(accounts: Account[], input: ManagedAc
     updatedAt: now,
     source: 'admin',
   };
+  const remote = await createRemoteUser({
+    login: account.login,
+    name: account.name,
+    role: account.role,
+    password: input.password,
+  });
+  if (remote?.user) {
+    account.id = remote.user.id;
+  }
+  return account;
 }
 
 export function hydrateSession(accounts: Account[], stored: Session | null): Session | null {

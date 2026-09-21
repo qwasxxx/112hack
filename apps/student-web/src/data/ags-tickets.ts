@@ -1,5 +1,6 @@
 import type { CallerTtsVoice, LessonSection, ServiceKind, TrainingScenario } from './scenarios';
 import tickets from './ags-tickets.json';
+import { coachPromptLine } from '../progress/coach-notes';
 
 export type AgsTicket = {
   ticket: number;
@@ -484,6 +485,7 @@ export function buildLessonSystemPrompt(scenario: TrainingScenario, section: Les
       : '',
     phone ? `ТЕЛЕФОН (назови, только если спросили): ${phone}` : '',
     'Чего нет в этих строках — не существует. Не додумывай улицы, этажи, имена, телефоны, службы и цифры.',
+    coachPromptLine(scenario.id),
   ]
     .filter(Boolean)
     .join('\n');

@@ -27,6 +27,7 @@ import {
   persistSettings,
   persistTraining,
 } from './data/system-persistence';
+import { createRemoteBackup, pullBackupStatus, pullContourStatus } from './data/admin-remote';
 import { bindAdminDashboardTilt, playAdminPress, useAdminTilt } from './admin-tilt';
 import { ContourPage } from './pages/contour-page';
 import { JournalPage } from './pages/journal-page';
@@ -126,6 +127,41 @@ export function AdminApp(props: Props) {
       .catch(() => setApiStatus('bad'));
 
     let cancelled = false;
+    const syncStatus = () => {
+      void pullContourStatus().then((status) => {
+        if (cancelled || !status) {
+          return;
+        }
+        const at = status.at;
+        setServices((current) =>
+          current.map((service) => {
+            const hit = status.services.find((item) => item.id === service.id);
+            if (!hit) {
+              return service;
+            }
+            return {
+              ...service,
+              running: service.id === 'sip' ? false : hit.running,
+              lastChangeAt: at,
+              startedAt: hit.running && service.id !== 'sip' ? service.startedAt || at : undefined,
+            };
+          }),
+        );
+      });
+      void pullBackupStatus().then((status) => {
+        if (cancelled || !status?.lastAt) {
+          return;
+        }
+        setSettings((current) =>
+          current.lastBackupAt === status.lastAt
+            ? current
+            : { ...current, lastBackupAt: status.lastAt as string, lastBackupStatus: 'ok' },
+        );
+      });
+    };
+    syncStatus();
+    const timer = window.setInterval(syncStatus, 5000);
+
     let disconnect: (() => void) | undefined;
     void import('@sys112/api-client')
       .then(({ RealtimeClient }) => {
@@ -152,6 +188,7 @@ export function AdminApp(props: Props) {
 
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
       disconnect?.();
     };
   }, []);
@@ -283,6 +320,16 @@ export function AdminApp(props: Props) {
   }
 
   function toggleService(id: ServiceRecord['id']) {
+    if (id === 'sip') {
+      log(
+        'Сервис остановлен',
+        'SIP / VoIP',
+        'service_stopped',
+        'SIP не входит в учебный контур',
+        'warn',
+      );
+      return;
+    }
     const service = services.find((item) => item.id === id);
     if (!service || busyRef.current.has(id)) {
       return;
@@ -320,29 +367,41 @@ export function AdminApp(props: Props) {
   }
 
   function backup() {
-    const at = new Date().toISOString();
-    const snapshot: BackupRecord = {
-      id: nextId('backup'),
-      at,
-      status: 'ok',
-      kind: 'manual',
-      note: 'ручной снимок локальной IndexedDB',
-      userCount: props.accounts.length,
-      auditCount: audit.length,
-    };
-    const nextSettings: ContourSettings = { ...settings, lastBackupAt: at, lastBackupStatus: 'ok' };
-    setBackups((current) => [snapshot, ...(backupsLive ? current : [])]);
-    setBackupsLive(true);
-    setSettings(nextSettings);
-    void persistBackup(snapshot);
-    void persistSettings(nextSettings);
-    log(
-      'Резервная копия',
-      'ручной снимок БД',
-      'backup_created',
-      'Локальный снимок метаданных контура, без выгрузки в облако',
-      'ok',
-    );
+    void createRemoteBackup().then((snapshot) => {
+      const at = new Date().toISOString();
+      const ok = Boolean(snapshot);
+      if (snapshot) {
+        const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+        const href = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = href;
+        link.download = `sys112-backup-${at.slice(0, 19).replace(/[:T]/g, '-')}.json`;
+        link.click();
+        URL.revokeObjectURL(href);
+      }
+      const record: BackupRecord = {
+        id: nextId('backup'),
+        at,
+        status: ok ? 'ok' : 'failed',
+        kind: 'manual',
+        note: ok ? 'снимок PostgreSQL: учётки, занятия, назначения' : 'нет связи с API',
+        userCount: props.accounts.length,
+        auditCount: audit.length,
+      };
+      const nextSettings: ContourSettings = { ...settings, lastBackupAt: at, lastBackupStatus: record.status };
+      setBackups((current) => [record, ...(backupsLive ? current : [])]);
+      setBackupsLive(true);
+      setSettings(nextSettings);
+      void persistBackup(record);
+      void persistSettings(nextSettings);
+      log(
+        'Резервная копия',
+        'снимок PostgreSQL',
+        'backup_created',
+        record.note,
+        ok ? 'ok' : 'error',
+      );
+    });
   }
 
   const page = PAGE_COPY[screen];

@@ -44,7 +44,9 @@ export function TeacherApp(props: Props) {
   const repository = useMemo(() => new LocalTeacherDashboardRepository(), []);
 
   useEffect(() => {
-    void hydrateFromApi().then(() => setClassActive(readClassSession().active));
+    void hydrateFromApi({ login: props.operator.login, role: props.operator.role }).then(() =>
+      setClassActive(readClassSession().active),
+    );
     void fetch('/api/v1/health')
       .then((response) => setApiStatus(response.ok ? 'ok' : 'bad'))
       .catch(() => setApiStatus('bad'));
@@ -74,11 +76,11 @@ export function TeacherApp(props: Props) {
     };
   }, []);
 
-  function toggleClass() {
+  function toggleClass(input?: { categories?: string[] }) {
     if (readClassSession().active) {
       stopClass();
     } else {
-      startClass(props.operator.login);
+      startClass(props.operator.login, 'Учебное занятие', input?.categories ?? []);
     }
     setClassActive(readClassSession().active);
   }

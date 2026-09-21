@@ -51,7 +51,12 @@ export function App() {
         setAccounts(next);
         setSession(hydrated);
         setReady(true);
-        void import('./progress').then(({ hydrateFromApi }) => hydrateFromApi());
+        void import('./data/scenarios').then(({ refreshScenarioCatalog }) => refreshScenarioCatalog());
+        if (hydrated) {
+          void import('./progress').then(({ hydrateFromApi }) =>
+            hydrateFromApi({ login: hydrated.login, role: hydrated.role }),
+          );
+        }
       })
       .catch(() => {
         if (!cancelled) {
@@ -81,6 +86,9 @@ export function App() {
       await recordAuthEvent(result.session, 'login', { role: result.session.role });
       setSession(result.session);
       writeSession(result.session);
+      void import('./progress').then(({ hydrateFromApi }) =>
+        hydrateFromApi({ login: result.session.login, role: result.session.role }),
+      );
     } catch {
       setError('Не удалось выполнить вход.');
     }
@@ -175,6 +183,9 @@ export function App() {
       return false;
     }
     persist(result.accounts);
+    void import('./admin/data/admin-remote').then(({ patchRemoteUser }) =>
+      patchRemoteUser(userId, { status: current.status === 'active' ? 'blocked' : 'active' }),
+    );
     return true;
   }
 
@@ -187,6 +198,9 @@ export function App() {
       return false;
     }
     persist(result.accounts);
+    void import('./admin/data/admin-remote').then(({ patchRemoteUser }) =>
+      patchRemoteUser(userId, { role }),
+    );
     if (userId === session.id && role !== Role.ADMIN) {
       logout();
     }
@@ -199,6 +213,9 @@ export function App() {
       return false;
     }
     persist(result.accounts);
+    void import('./admin/data/admin-remote').then(({ patchRemoteUser }) =>
+      patchRemoteUser(userId, { password }),
+    );
     return true;
   }
 

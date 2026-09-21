@@ -30,8 +30,8 @@ const SERVICE_VIEW: Record<ServiceId, { title: string; layer: string }> = {
   realtime: { title: 'Realtime', layer: 'Сессии вызовов' },
   stt: { title: 'STT', layer: 'Распознавание речи, локально' },
   llm: { title: 'LLM', layer: 'Диалоговый модуль, локально' },
-  postgres: { title: 'Локальная БД', layer: 'Снимок учебного контура' },
-  sip: { title: 'SIP / VoIP', layer: 'Эмуляция IP-телефонии' },
+  postgres: { title: 'Локальная БД', layer: 'PostgreSQL учебного контура' },
+  sip: { title: 'SIP / VoIP', layer: 'Не входит в контур' },
 };
 
 export function OverviewPage(props: Props) {
@@ -39,14 +39,15 @@ export function OverviewPage(props: Props) {
   const blocked = props.users.filter((user) => user.status === 'blocked').length;
   const students = props.users.filter((user) => user.role === 'STUDENT');
   const teachers = props.users.filter((user) => user.role === 'TEACHER');
-  const running = props.services.filter((item) => item.running).length;
-  const db = props.services.find((item) => item.id === 'postgres');
+  const required = props.services.filter((item) => item.id !== 'sip');
+  const running = required.filter((item) => item.running).length;
+  const dbService = props.services.find((item) => item.id === 'postgres');
   const avg =
     props.progress.length === 0
       ? 0
       : Math.round(props.progress.reduce((sum, item) => sum + item.lastScore, 0) / props.progress.length);
   const contourOk =
-    running === props.services.length && props.apiStatus !== 'bad' && props.realtimeStatus !== 'bad';
+    running === required.length && props.apiStatus !== 'bad' && props.realtimeStatus !== 'bad';
   const recentUsers = [...props.users]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
@@ -69,7 +70,7 @@ export function OverviewPage(props: Props) {
           <div>
             <strong>{contourOk ? 'Контур в штатном режиме' : 'Требует внимания'}</strong>
             <small>
-              {running}/{props.services.length} сервисов · API {liveLabel(props.apiStatus)}
+              {running}/{required.length} сервисов · API {liveLabel(props.apiStatus)}
             </small>
           </div>
         </div>
@@ -115,8 +116,8 @@ export function OverviewPage(props: Props) {
           </article>
           <article className="ad-metric">
             <span>Локальная БД</span>
-            <strong>{db?.running ? 'онлайн' : 'стоп'}</strong>
-            <small>IndexedDB учебного контура</small>
+            <strong>{dbService?.running ? 'онлайн' : 'стоп'}</strong>
+            <small>PostgreSQL учебного контура</small>
           </article>
         </div>
       </section>
@@ -138,7 +139,7 @@ export function OverviewPage(props: Props) {
             const state = resolveServiceView(service, {
               api: props.apiStatus,
               realtime: props.realtimeStatus,
-              dbLive: Boolean(db?.running),
+              dbLive: Boolean(dbService?.running),
             });
             const tone = serviceTone(state);
             return (

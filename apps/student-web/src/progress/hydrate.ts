@@ -7,14 +7,12 @@ import { pullAssignments, pullAudit, pullClass, pullLessons, pullLive, pullOverl
 const COMMENTS_KEY = 'sys112.teacher.comments.v1';
 const AUDIT_KEY = 'sys112.teacher.audit.v1';
 
-export async function hydrateFromApi(): Promise<void> {
-  const [lessons, assignments, classState, overlays, audit, live] = await Promise.all([
-    pullLessons(),
+export async function hydrateFromApi(scope?: { login: string; role: string }): Promise<void> {
+  const staff = !scope || scope.role === 'TEACHER' || scope.role === 'ADMIN';
+  const [lessons, assignments, classState] = await Promise.all([
+    pullLessons(staff ? undefined : scope?.login),
     pullAssignments(),
     pullClass(),
-    pullOverlays(),
-    pullAudit(),
-    pullLive(),
   ]);
   if (lessons.length) {
     absorbLessons(lessons);
@@ -29,6 +27,10 @@ export async function hydrateFromApi(): Promise<void> {
   if (classState) {
     replaceClassSession(classState);
   }
+  if (!staff) {
+    return;
+  }
+  const [overlays, audit, live] = await Promise.all([pullOverlays(), pullAudit(), pullLive()]);
   if (overlays && typeof localStorage !== 'undefined') {
     localStorage.setItem(COMMENTS_KEY, JSON.stringify(overlays));
   }

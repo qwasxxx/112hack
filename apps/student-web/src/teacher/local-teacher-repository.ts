@@ -13,7 +13,9 @@ import type {
 } from '../../../teacher-web/src/teacher-dashboard/domain/entities';
 import type { Account } from '../auth/accounts';
 import { loadAccounts } from '../auth/accounts';
-import { SCENARIOS, SERVICE_LABEL } from '../data/scenarios';
+import { SCENARIOS, SERVICE_LABEL, refreshScenarioCatalog } from '../data/scenarios';
+import type { ServiceKind } from '../data/scenarios';
+import { createCustomTicket, saveTicketPatch } from '../data/ticket-catalog';
 import {
   assignScenario,
   assignedScenarioIds,
@@ -27,6 +29,7 @@ import {
   unassignScenario,
   type LessonRecord,
 } from '../progress';
+import { ticketFactsFrom, serviceLabels } from '../progress/ticket-facts';
 import { latestCue } from '../progress/teacher-cues';
 import { hydrateFromApi } from '../progress/hydrate';
 import { pushAudit, pushOverlay } from '../progress/remote';
@@ -65,15 +68,16 @@ function toScenario(id: string): Scenario | null {
     return null;
   }
   const assigned = isScenarioAssigned(ticket.id);
+  const facts = ticketFactsFrom(ticket);
   return {
     id: ticket.id,
     title: `${ticket.code} ${ticket.title}`,
-    category: SERVICE_LABEL[ticket.services[0] ?? 'police'],
+    category: ticket.services.map((item) => SERVICE_LABEL[item]).join(', ') || SERVICE_LABEL.police,
     location: ticket.address ?? '',
     difficulty: mapDifficulty(ticket.difficulty),
-    description: ticket.summary,
+    description: ticket.situation || ticket.summary,
     timeLimitSec: 30,
-    requiredActions: ticket.checklist.slice(0, 6),
+    requiredActions: ticket.checklist.slice(0, 8),
     allowedErrors: 1,
     passThreshold: ticket.difficulty === 'сложный' ? 80 : 70,
     materials: ['Справочные материалы АРМ-112'],
@@ -82,25 +86,32 @@ function toScenario(id: string): Scenario | null {
     status: assigned ? 'active' : 'archived',
     assignments: assigned ? 1 : 0,
     updatedAt: new Date().toISOString(),
+    services: ticket.services,
+    callerOpening: ticket.callerOpening,
+    classifierNumber: ticket.classifierNumber,
+    etalon: {
+      what: facts.what,
+      address: facts.address,
+      phone: facts.phone,
+      caller: facts.callerFio || facts.callerRole,
+      services: serviceLabels(facts.services),
+    },
   };
 }
 
-function resolveTicket(draft: ScenarioDraft) {
-  if (draft.id) {
-    const byId = SCENARIOS.find((item) => item.id === draft.id);
-    if (byId) {
-      return byId;
-    }
+function toTicketDifficulty(value: Scenario['difficulty']): 'базовый' | 'стандарт' | 'сложный' {
+  if (value === 'intro') {
+    return 'базовый';
   }
-  const title = draft.title.trim().toLowerCase();
-  if (!title) {
-    return null;
+  if (value === 'advanced' || value === 'stress') {
+    return 'сложный';
   }
-  return (
-    SCENARIOS.find((item) => title.includes(item.code.toLowerCase()) || title.includes(item.id.toLowerCase())) ??
-    SCENARIOS.find((item) => item.title.toLowerCase() === title || title.includes(item.title.toLowerCase())) ??
-    null
-  );
+  return 'стандарт';
+}
+
+function asServices(values?: string[]): ServiceKind[] {
+  const allowed: ServiceKind[] = ['fire', 'ambulance', 'police', 'gas'];
+  return (values ?? []).filter((item): item is ServiceKind => allowed.includes(item as ServiceKind));
 }
 
 function emotionFromLogin(login: string): ActiveSession['emotionalState'] {
@@ -167,6 +178,9 @@ function lessonToResult(lesson: LessonRecord, students: Student[]): CompletedRes
     recommendations: lesson.recommendations,
     transcriptEvidence: [],
     teacherComment: overlay.comment ?? '',
+    cardTimerSeconds: lesson.cardTimerSeconds,
+    cardTimerLimitSec: lesson.cardTimerLimitSec,
+    cardTimerExceeded: lesson.cardTimerExceeded,
   };
 }
 
@@ -175,7 +189,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
 
   private hydrate(): Promise<void> {
     if (!this.pendingHydrate) {
-      this.pendingHydrate = hydrateFromApi().finally(() => {
+      this.pendingHydrate = hydrateFromApi({ login: 'petrov', role: 'TEACHER' }).finally(() => {
         this.pendingHydrate = undefined;
       });
     }
@@ -339,6 +353,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
 
   async getScenarios(): Promise<Scenario[]> {
     await this.hydrate();
+    refreshScenarioCatalog();
     return SCENARIOS.map((item) => toScenario(item.id)).filter((item): item is Scenario => Boolean(item));
   }
 
@@ -355,14 +370,27 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
   }
 
   async saveScenario(draft: ScenarioDraft): Promise<Scenario> {
-    const ticket = resolveTicket(draft);
-    if (!ticket) {
-      throw new Error('Назначайте существующий билет АГС: укажите код в названии, например «П-12». Новый сценарий ученик открыть не сможет.');
-    }
+    refreshScenarioCatalog();
+    const services = asServices(draft.services);
+    const patch = {
+      title: draft.title.trim(),
+      situation: draft.description.trim(),
+      address: draft.location.trim(),
+      services: services.length ? services : (['police'] as ServiceKind[]),
+      callerOpening: draft.callerOpening,
+      classifierNumber: draft.classifierNumber,
+      difficulty: toTicketDifficulty(draft.difficulty),
+      checklist: draft.requiredActions,
+    };
+    const ticket =
+      draft.id && SCENARIOS.some((item) => item.id === draft.id)
+        ? saveTicketPatch(draft.id, patch)
+        : createCustomTicket(patch);
+    refreshScenarioCatalog();
     assignScenario(ticket.id);
     const saved = toScenario(ticket.id);
     if (!saved) {
-      throw new Error('Билет не найден');
+      throw new Error('Билет не сохранён');
     }
     return saved;
   }

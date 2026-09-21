@@ -988,6 +988,61 @@
 .td-checkboxes input {
   width: auto;
 }
+.td-class-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin: 8px 0 4px;
+}
+.td-class-cats label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.td-ticket-builder .td-ticket-help {
+  margin: 0 0 16px;
+  color: var(--muted);
+  line-height: 1.45;
+  font-size: 13px;
+}
+.td-ticket-h {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.td-ticket-preview {
+  margin: 14px 0 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #151d26;
+}
+.td-ticket-preview dl {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0 0;
+}
+.td-ticket-preview dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.td-ticket-preview dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+}
+.td-ticket-search {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.td-scenario-card p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
 .td-form-actions,
 .td-card-actions {
   display: flex;

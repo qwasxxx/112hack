@@ -1,4 +1,5 @@
 import { AGS_SCENARIOS } from './ags-tickets';
+import { buildCatalog } from './ticket-catalog';
 
 export type ServiceKind = 'fire' | 'ambulance' | 'police' | 'gas';
 
@@ -86,6 +87,15 @@ export const DIFFICULTY_LABEL: Record<TrainingScenario['difficulty'], string> = 
 
 export const SCENARIOS: TrainingScenario[] = [...AGS_SCENARIOS];
 
+export function refreshScenarioCatalog(): TrainingScenario[] {
+  const next = buildCatalog();
+  SCENARIOS.splice(0, SCENARIOS.length, ...next);
+  return SCENARIOS;
+}
+
 export function getScenario(id: string): TrainingScenario | undefined {
+  if (!SCENARIOS.length) {
+    refreshScenarioCatalog();
+  }
   return SCENARIOS.find((item) => item.id === id);
 }

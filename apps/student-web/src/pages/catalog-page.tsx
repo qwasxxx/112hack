@@ -12,6 +12,7 @@ import {
   DIFFICULTY_LABEL,
   DIFFICULTY_ORDER,
   SERVICE_LABEL,
+  refreshScenarioCatalog,
   type ServiceKind,
   type TrainingScenario,
 } from '../data/scenarios';
@@ -73,15 +74,20 @@ export function CatalogPage(props: Props) {
   const [lane, setLane] = useState<DdsLaneId>(() => readDdsLane());
   const [assignedIds, setAssignedIds] = useState(() => assignedScenarioIds(props.operatorLogin));
   const [classLive, setClassLive] = useState(() => readClassSession().active);
+  const [liveCats, setLiveCats] = useState(() => readClassSession().categories);
   const [scope, setScope] = useState<'assigned' | 'all'>(assignedIds.length || classLive ? 'assigned' : 'all');
+  const [catalogRev, setCatalogRev] = useState(0);
   const view = props.view ?? 'catalog';
 
   useEffect(() => {
     const timer = window.setInterval(() => {
+      refreshScenarioCatalog();
+      setCatalogRev((value) => value + 1);
       setAssignedIds(assignedScenarioIds(props.operatorLogin));
-      const active = readClassSession().active;
-      setClassLive(active);
-      if (active) {
+      const session = readClassSession();
+      setClassLive(session.active);
+      setLiveCats(session.categories);
+      if (session.active) {
         setScope('assigned');
       }
     }, 4000);
@@ -114,9 +120,19 @@ export function CatalogPage(props: Props) {
         (duration === 'long' && scenario.durationMin >= 10);
       const matchesLane = props.track !== 'dds' || scenarioMatchesDdsLane(scenario, lane);
       const matchesAssigned = scope !== 'assigned' || assignedIds.includes(scenario.id);
-      return matchesQuery && matchesService && matchesDifficulty && matchesDuration && matchesLane && matchesAssigned;
+      const cats = classLive ? liveCats : [];
+      const matchesClass = cats.length === 0 || scenario.services.some((item) => cats.includes(item));
+      return (
+        matchesQuery &&
+        matchesService &&
+        matchesDifficulty &&
+        matchesDuration &&
+        matchesLane &&
+        matchesAssigned &&
+        matchesClass
+      );
     });
-  }, [assignedIds, difficulty, duration, lane, props.track, query, scope, service]);
+  }, [assignedIds, classLive, catalogRev, difficulty, duration, lane, liveCats, props.track, query, scope, service]);
 
   return (
     <div className={`catalog-screen${sidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}>

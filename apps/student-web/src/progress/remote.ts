@@ -5,7 +5,47 @@ import type { LivePresence } from './live-presence';
 
 type OverlayMap = Record<string, { expertScore?: number; comment?: string }>;
 
-async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
+type OutboxItem = {
+  path: string;
+  method: string;
+  body: string;
+  at: number;
+};
+
+const OUTBOX_KEY = 'sys112.outbox.v1';
+const OUTBOX_TTL_MS = 30_000;
+
+function readOutbox(): OutboxItem[] {
+  if (typeof localStorage === 'undefined') {
+    return [];
+  }
+  try {
+    const raw = localStorage.getItem(OUTBOX_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as OutboxItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeOutbox(items: OutboxItem[]): void {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+  localStorage.setItem(OUTBOX_KEY, JSON.stringify(items.slice(-40)));
+}
+
+function enqueue(path: string, method: string, body: string): void {
+  const now = Date.now();
+  const items = readOutbox().filter((item) => now - item.at < OUTBOX_TTL_MS);
+  items.push({ path, method, body, at: now });
+  writeOutbox(items);
+}
+
+async function request<T>(path: string, init?: RequestInit, queued = false): Promise<T | null> {
   try {
     const response = await fetch(`/api/v1/training${path}`, {
       ...init,
@@ -15,12 +55,44 @@ async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
       },
     });
     if (!response.ok) {
+      if (!queued && init?.method && init.method !== 'GET' && typeof init.body === 'string') {
+        enqueue(path, init.method, init.body);
+      }
       return null;
     }
     return (await response.json()) as T;
   } catch {
+    if (!queued && init?.method && init.method !== 'GET' && typeof init.body === 'string') {
+      enqueue(path, init.method, init.body);
+    }
     return null;
   }
+}
+
+async function flushOutbox(): Promise<void> {
+  const now = Date.now();
+  const pending = readOutbox().filter((item) => now - item.at < OUTBOX_TTL_MS);
+  if (!pending.length) {
+    writeOutbox([]);
+    return;
+  }
+  const kept: OutboxItem[] = [];
+  for (const item of pending) {
+    const ok = await request(item.path, { method: item.method, body: item.body }, true);
+    if (ok == null && Date.now() - item.at < OUTBOX_TTL_MS) {
+      kept.push(item);
+    }
+  }
+  writeOutbox(kept);
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    void flushOutbox();
+  });
+  window.setInterval(() => {
+    void flushOutbox();
+  }, 4000);
 }
 
 export function pushLesson(record: LessonRecord): void {
@@ -69,8 +141,9 @@ export function removeLive(login: string): void {
   void request(`/live/${encodeURIComponent(login)}`, { method: 'DELETE' });
 }
 
-export async function pullLessons(): Promise<LessonRecord[]> {
-  const rows = await request<LessonRecord[]>('/lessons');
+export async function pullLessons(login?: string): Promise<LessonRecord[]> {
+  const suffix = login ? `?login=${encodeURIComponent(login)}` : '';
+  const rows = await request<LessonRecord[]>(`/lessons${suffix}`);
   return Array.isArray(rows) ? rows : [];
 }
 

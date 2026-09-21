@@ -49,7 +49,7 @@ export function TeacherDashboard({
   pollMs?: number;
   storageLabel?: string;
   classActive?: boolean;
-  onToggleClass?: () => void;
+  onToggleClass?: (input?: { categories?: string[] }) => void;
 }) {
   const resolvedRepository = useMemo(
     () => repository ?? new MockTeacherDashboardRepository(),

@@ -206,7 +206,7 @@ export const INITIAL_SERVICES: ServiceRecord[] = [
   {
     id: 'postgres',
     title: 'Локальная БД',
-    detail: 'IndexedDB снимок учебного контура',
+    detail: 'PostgreSQL учебного контура',
     running: true,
     startedAt: SEED_CHANGE,
     lastChangeAt: SEED_CHANGE,
@@ -214,9 +214,8 @@ export const INITIAL_SERVICES: ServiceRecord[] = [
   {
     id: 'sip',
     title: 'SIP / VoIP',
-    detail: 'Эмуляция IP-телефонии учебного стенда',
-    running: true,
-    startedAt: SEED_CHANGE,
+    detail: 'Не входит в учебный контур',
+    running: false,
     lastChangeAt: SEED_CHANGE,
   },
 ];

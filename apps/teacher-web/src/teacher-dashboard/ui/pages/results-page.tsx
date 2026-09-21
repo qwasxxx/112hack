@@ -12,7 +12,7 @@ import {
   TeacherSystemStatuses,
 } from '../components/teacher-analytics-panels';
 import { TeacherFilterBar, TeacherFilterMenu } from '../components/teacher-filter-menu';
-import { downloadResultsCsv, printGroupReport, printResultCertificate } from '../teacher-export';
+import { downloadResultsCsv, downloadResultsXlsx, printGroupReport, printResultCertificate } from '../teacher-export';
 
 function ResultDetail({
   result,
@@ -235,6 +235,9 @@ export function ResultsPage({
           <StatusBadge tone="accent">{results.length ? `${Math.round(results.reduce((sum, item) => sum + item.finalScore, 0) / results.length)}% средний` : 'Нет попыток'}</StatusBadge>
           <button className="td-btn td-btn--secondary" type="button" onClick={() => downloadResultsCsv(visible)}>
             CSV группы
+          </button>
+          <button className="td-btn td-btn--secondary" type="button" onClick={() => downloadResultsXlsx(visible)}>
+            Excel группы
           </button>
           <button className="td-btn td-btn--ghost" type="button" onClick={() => printGroupReport(visible)}>
             Печать отчёта

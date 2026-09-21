@@ -100,6 +100,9 @@ export interface ScenarioDraft {
   passThreshold: number;
   materials: string[];
   allowedInterventions: InterventionType[];
+  services?: string[];
+  callerOpening?: string;
+  classifierNumber?: string;
 }
 
 export interface Scenario extends Omit<ScenarioDraft, 'id'> {
@@ -108,6 +111,16 @@ export interface Scenario extends Omit<ScenarioDraft, 'id'> {
   status: ScenarioStatus;
   assignments: number;
   updatedAt: string;
+    etalon?: {
+    what: string;
+    address: string;
+    phone: string;
+    caller: string;
+    services: string;
+  };
+  services?: string[];
+  callerOpening?: string;
+  classifierNumber?: string;
 }
 
 export interface TrainingMaterial {
@@ -136,6 +149,9 @@ export interface CompletedResult {
   recommendations: string[];
   transcriptEvidence: TranscriptLine[];
   teacherComment: string;
+  cardTimerSeconds?: number | null;
+  cardTimerLimitSec?: number;
+  cardTimerExceeded?: boolean;
 }
 
 export interface AuditRecord {

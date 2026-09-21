@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Inject, Param, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Inject, Param, Put, Query } from '@nestjs/common';
 import { TrainingStoreService } from './training-store.service';
 
 @Controller('api/v1/training')
@@ -11,8 +11,8 @@ export class ProgressController {
   }
 
   @Get('lessons')
-  lessons() {
-    return this.store.listLessons();
+  lessons(@Query('login') login?: string) {
+    return this.store.listLessons(login?.trim() || undefined);
   }
 
   @Put('lessons/:id')
@@ -43,6 +43,7 @@ export class ProgressController {
       startedAt?: string;
       teacherLogin?: string;
       title?: string;
+      categories?: string[];
     },
   ) {
     return this.store.putClass(body);

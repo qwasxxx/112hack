@@ -30,6 +30,9 @@ tools/llama.cpp
 *.onnx
 *.gguf
 data/llm-sessions/
+data/backups/
+apps/api/data/
+.tmp-tz-extract.txt
 .tmp-arm112-sources/
 .tmp-sidebar-art/
 .tmp-briefing-verify/
