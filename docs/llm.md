@@ -34,7 +34,7 @@ Training/exam kickoff: after `start`, the client sends `kickoff`. The manager in
 
 Hangup in training/exam: `analyze` (optional last operator line, no extra AI reply) → stream `analysis_partial` / `analysis_final` → `stop`.
 
-Exam teacher inject: WS `intervention` currently returns `intervention_ack` with `code=not_implemented`.
+Exam teacher inject: WS `intervention` updates the live system extra (`УКАЗАНИЕ ПРЕПОДАВАТЕЛЯ`) and, for emotions / sudden event / new circumstance / phase change, immediately generates a short caller line. Ticket facts stay locked. Scoring still uses the original etalon.
 
 ## Roles
 

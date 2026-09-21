@@ -235,7 +235,7 @@ export function bindTeacherDashboardTilt(root: HTMLElement | null) {
     );
     const inners = [...host.querySelectorAll<HTMLElement>(INNER_SELECTOR)].filter(
       (node) => !node.closest('.td-form') && !tooLargeForTilt(node),
-    );
+    ).slice(0, 18);
     const wanted = new Set<HTMLElement>([...surfaces, ...inners]);
     for (const [node, release] of bound) {
       if (!wanted.has(node) || !host.contains(node)) {

@@ -22,6 +22,7 @@ from sys112_llm.config import (
 from sys112_llm.conversation import (
     KICKOFF_ID,
     KICKOFF_TEXT,
+    TEACHER_NUDGE_TEXT,
     CallSession,
     ConversationManager,
     analysis_messages,
@@ -31,10 +32,12 @@ from sys112_llm.conversation import (
     last_user_text,
     repair_victim_reply,
     session_scenario_extra,
+    should_speak_intervention,
 )
 from sys112_llm.openai_score import openai_score, parse_score_json
 from sys112_llm.runtime import model_present
 from sys112_llm.think import ThinkFilter
+from sys112_llm.ticket_gen import draft_from_payload, generate_ticket, normalize_services
 
 logger = logging.getLogger("sys112_llm")
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -193,8 +196,31 @@ async def score_call(payload: dict[str, Any]) -> dict[str, Any]:
             "source": "rules",
         }
     parsed = parse_score_json(raw)
-    parsed["source"] = "local-think"
     return parsed
+
+
+@app.post("/generate-ticket")
+@app.post("/api/llm/generate-ticket")
+async def generate_ticket_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+    services = normalize_services(payload.get("services") or payload.get("categories") or [])
+    note = str(payload.get("note") or payload.get("hint") or "")
+    draft = draft_from_payload(payload)
+    mock = LLM_MODE == "mock" or llm_status == "mock"
+    ready = llm_status == "ready"
+    if not mock and llm_status != "ready":
+        return {
+            "ok": False,
+            "message": "Локальная модель Qwen ещё не готова.",
+            "code": "llm_not_ready",
+        }
+    try:
+        ticket = await generate_ticket(
+            client, services=services, note=note, mock=mock, ready=ready, draft=draft
+        )
+    except Exception:
+        logger.exception("[LLM] Ticket generation failed")
+        return {"ok": False, "message": "Не удалось собрать билет. Повторите или заполните вручную."}
+    return {"ok": True, **ticket}
 
 
 @app.websocket("/ws/llm")
@@ -311,6 +337,13 @@ async def llm_socket(ws: WebSocket) -> None:
                         "detail": detail,
                     }
                 )
+                if current.conversation_role == "victim" and should_speak_intervention(command):
+                    nudge_id = f"nudge-{uuid.uuid4()}"
+                    if current.busy:
+                        current.pending = [(nudge_id, TEACHER_NUDGE_TEXT)]
+                        current.cancel.set()
+                    elif manager.accept_user(call_id, TEACHER_NUDGE_TEXT, nudge_id) is not None:
+                        gen_task = asyncio.create_task(_reply_until_idle(call_id, ws))
                 continue
             if kind == "user_final":
                 if not call_id:

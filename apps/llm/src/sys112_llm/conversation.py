@@ -14,6 +14,7 @@ ConversationRole = Literal["victim", "operator"]
 
 KICKOFF_ID = "_kickoff"
 KICKOFF_TEXT = "Оператор снял трубку."
+TEACHER_NUDGE_TEXT = "Оператор молчит. Заявитель говорит по указанию преподавателя."
 
 ANALYSIS_PROMPT = (
     "/no_think\n"
@@ -68,6 +69,7 @@ VICTIM_SYSTEM_PROMPT = """/no_think
 
 Факты:
 - Адрес, имена, телефоны, возраст, этаж, число людей и что произошло — только из блока «Контекст сценария».
+- Если в контексте «освещение» или «фонари» — это свет, не пожар. Не говори про квартиру, дым и пламя, если их нет в контексте.
 - Если спросили адрес — назови адрес из контекста своими словами. Не говори «не знаю», если адрес в контексте есть.
 - Если спросили конкретный факт, которого в контексте нет — «не знаю». Не выдумывай улицы, этажи, имена, телефоны, службы, цифры и время.
 - Говори только обычные русские слова. Не коверкай и не сливай слова.
@@ -99,7 +101,10 @@ _ASK_ADDRESS = re.compile(
     r"адрес|где (?:это|вы|находи|происход)|куда ехать|какая улица|какой дом|где случилось",
     re.IGNORECASE,
 )
-_ASK_PHONE = re.compile(r"телефон|номер телефона|с какого номера|какой номер", re.IGNORECASE)
+_ASK_WHAT = re.compile(
+    r"что (?:там |случилось|произошло|горит)|какой (?:пожар|вызов)",
+    re.IGNORECASE,
+)
 _EXTRA_STOP = frozenset(
     "только если спросили назови назовите адрес кто звонит что случилось пострадавший билет ситуация контекст сценария".split()
 )
@@ -181,6 +186,8 @@ def fact_for_question(operator_text: str, extra: str) -> str:
         return field_from_extra(extra, "АДРЕС")
     if _ASK_PHONE.search(operator_text or ""):
         return field_from_extra(extra, "ТЕЛЕФОН")
+    if _ASK_WHAT.search(operator_text or ""):
+        return field_from_extra(extra, "ЧТО СЛУЧИЛОСЬ")
     return ""
 
 
@@ -196,6 +203,19 @@ def repair_caller_name(reply: str, operator_text: str, extra: str) -> str:
         return "Я мама."
     if "отец" in extra_l and re.search(r"имени", extra_l):
         return "Я отец."
+    return ""
+
+
+def repair_topic_shift(reply: str, extra: str) -> str:
+    extra_l = (extra or "").lower()
+    if "освещен" in extra_l and re.search(r"пожар|квартир|пламя|\bдым\b", reply, re.IGNORECASE):
+        what = field_from_extra(extra, "ЧТО СЛУЧИЛОСЬ")
+        if what:
+            return what.split(".")[0].strip() + "."
+    if "квартир" not in extra_l and re.search(r"квартир", reply, re.IGNORECASE):
+        what = field_from_extra(extra, "ЧТО СЛУЧИЛОСЬ")
+        if what:
+            return what.split(".")[0].strip() + "."
     return ""
 
 
@@ -225,6 +245,9 @@ def repair_victim_reply(
     named = repair_caller_name(text, op, extra)
     if named:
         return named
+    shifted = repair_topic_shift(text, extra)
+    if shifted:
+        return shifted
     ticket_fact = fact_for_question(op, extra)
     if ticket_fact and (blank or garbage or not grounded):
         return ticket_fact
@@ -244,15 +267,23 @@ def session_scenario_extra(session: CallSession) -> str:
 
 
 _INTERVENTION_HINTS = {
-    "set_emotional_state": "Говори в панике: короче, сбивчиво, повторяй главное.",
-    "add_circumstance": "Появилось новое обстоятельство. Сообщи его, если оператор спрашивает или сам по ходу.",
-    "inject_event": "Произошло внезапное событие. Отвечай рвано, можно переспросить «алло».",
+    "set_emotional_state": "Стиль речи с этой реплики: паника, злость или растерянность. Короче, сбивчиво. Адрес, ФИО и телефон из билета не меняй.",
+    "add_circumstance": "Появилось новое обстоятельство из указания преподавателя. Сообщи его сейчас одной фразой. Старые факты билета оставь.",
+    "inject_event": "Прямо сейчас внезапное событие из указания. Скажи об этом сам, рвано, можно «алло». Новые факты только из указания, адрес и ФИО билета не выдумывай заново.",
     "reveal_fact": "Теперь можно назвать точный факт из контекста сценария, если оператор спрашивает.",
     "conceal_fact": "Пока не называй точный адрес и ФИО, пока оператор не переспросит дважды.",
-    "adjust_difficulty": "Путай адрес и детали, пока оператор спокойно не уточнит.",
-    "force_state": "Ситуация изменилась. Держись новой обстановки из указания.",
+    "adjust_difficulty": "Путай адрес и детали, пока оператор спокойно не уточнит. Факты билета не заменяй на другие.",
+    "force_state": "Фаза сценария сменилась по указанию преподавателя. Держись новой обстановки. Эталонные адрес, телефон и ФИО не ломай, если указание их не меняет.",
     "end_call": "Разговор пора заканчивать. Коротко попрощайся, новых фактов не добавляй.",
 }
+
+_SPEAK_NOW = frozenset(
+    {"set_emotional_state", "add_circumstance", "inject_event", "force_state", "adjust_difficulty"}
+)
+
+
+def should_speak_intervention(command: str) -> bool:
+    return command in _SPEAK_NOW
 
 
 def apply_teacher_intervention(session: CallSession, command: str, note: str = "") -> str:
@@ -414,7 +445,7 @@ def format_transcript(session: CallSession) -> str:
     for item in session.messages:
         if item.role == "system":
             continue
-        if item.content == KICKOFF_TEXT:
+        if item.content in {KICKOFF_TEXT, TEACHER_NUDGE_TEXT}:
             continue
         label = names.get(item.role)
         if not label:

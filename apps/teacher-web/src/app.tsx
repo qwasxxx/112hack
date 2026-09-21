@@ -16,6 +16,7 @@ const EXAM_ACTIONS: Array<{ type: InterventionType; label: string; hint: string 
     hint: 'Дым усилился, появился пострадавший',
   },
   { type: 'inject_event', label: 'Внезапное событие', hint: 'Слышен удар, связь прерывается' },
+  { type: 'force_state', label: 'Смена фазы сценария', hint: 'Обстановка на месте резко меняется' },
   { type: 'adjust_difficulty', label: 'Усложнить диалог', hint: 'Заявитель путает адрес и факты' },
 ];
 
@@ -90,9 +91,9 @@ export function App() {
         <section className="exam td-legacy-exam">
           <h2>Экзамен</h2>
           <p className="muted">
-            На экзамене преподаватель сможет вмешиваться в разговор: эмоции, новые обстоятельства,
-            внезапные события. Пока команды только размечены — сервис диалога отвечает{' '}
-            <code>not_implemented</code>.
+            На экзамене и в живом наблюдении команды сразу меняют тон заявителя: эмоции, новое
+            обстоятельство, внезапное событие, смена фазы. Заявитель отвечает короткой репликой, факты
+            билета остаются.
           </p>
           <div className="exam-actions">
             {EXAM_ACTIONS.map((action) => (

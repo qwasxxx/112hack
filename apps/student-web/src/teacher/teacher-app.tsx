@@ -19,6 +19,7 @@ const EXAM_ACTIONS: Array<{ type: InterventionType; label: string; hint: string 
     hint: 'Дым усилился, появился пострадавший',
   },
   { type: 'inject_event', label: 'Внезапное событие', hint: 'Слышен удар, связь прерывается' },
+  { type: 'force_state', label: 'Смена фазы сценария', hint: 'Обстановка на месте резко меняется' },
   { type: 'adjust_difficulty', label: 'Усложнить диалог', hint: 'Заявитель путает адрес и факты' },
 ];
 

@@ -132,9 +132,9 @@ export function JournalPage(props: Props) {
         {rows.length === 0 ? (
           <p className="ad-lead">Нет записей по выбранным условиям.</p>
         ) : (
-          <div className="ad-audit-list">
+          <div className="ad-audit-list ad-flat-list">
             {rows.map((entry) => (
-              <article key={entry.id} className={`ad-event ad-audit-row is-${entry.severity}`}>
+              <article key={entry.id} className={`ad-event ad-audit-row ad-flat is-${entry.severity}`}>
                 <time className="mono" dateTime={entry.at}>
                   {formatWhenFull(entry.at)}
                 </time>

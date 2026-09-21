@@ -208,6 +208,18 @@ def test_apply_teacher_intervention_keeps_ticket_facts():
     assert "Вызывает мама" in extra
 
 
+def test_repair_topic_shift_lighting_not_apartment_fire():
+    from sys112_llm.conversation import repair_victim_reply
+
+    extra = (
+        "ЧТО СЛУЧИЛОСЬ: Горит уличное освещение на МКАД — фонари светят. Это не пожар и не квартира.\n"
+        "ЗАПРЕЩЕНО: Это НЕ пожар и НЕ квартира."
+    )
+    reply = repair_victim_reply("Пожар в квартире, на пятом этаже.", "что случилось?", "victim", extra)
+    assert "освещен" in reply.lower()
+    assert "квартир" not in reply.lower()
+
+
 def test_kickoff_analyze_and_intervention_mock():
     from fastapi.testclient import TestClient
     from sys112_llm.app import app
@@ -238,7 +250,13 @@ def test_kickoff_analyze_and_intervention_mock():
             assert ack["type"] == "intervention_ack"
             assert ack["accepted"] is True
             ws.send_json({"type": "stop"})
-            assert ws.receive_json()["type"] == "session_closed"
+            closed = None
+            for _ in range(8):
+                event = ws.receive_json()
+                if event["type"] == "session_closed":
+                    closed = event
+                    break
+            assert closed and closed["type"] == "session_closed"
 
 
 def test_not_ready_and_missing_model():
@@ -309,3 +327,148 @@ def test_repair_victim_does_not_play_blind_on_dispatch():
     assert "Волжск" in moscow
     assert "Тверск" not in moscow
     assert repair_victim_reply("Волжский какой-то.", "какой адрес?", "victim") == "Не знаю."
+
+
+def test_parse_ticket_json_strips_think():
+    from sys112_llm.ticket_gen import parse_ticket_json
+
+    raw = (
+        '<think>план</think>{"situation":"Горит контейнер, пострадавших нет, 916-126-34-71",'
+        '"address":"Москва, ул. Грина, дом 11","opening":"Горит мусор","services":["fire"],'
+        '"phone":"9161263471"}'
+    )
+    parsed = parse_ticket_json(raw, ["ambulance"])
+    assert parsed["services"] == ["fire"]
+    assert "контейнер" in parsed["situation"]
+    assert parsed["phone"] == "9161263471"
+
+
+def test_generate_ticket_mock_endpoint(monkeypatch):
+    from fastapi.testclient import TestClient
+    import sys112_llm.app as appmod
+
+    monkeypatch.setattr(appmod, "LLM_MODE", "mock")
+    monkeypatch.setattr(appmod, "llm_status", "mock")
+    with TestClient(appmod.app) as client:
+        body = client.post("/api/llm/generate-ticket", json={"services": ["fire"], "note": "без пострадавших"}).json()
+        assert body["ok"] is True, body
+        assert body["source"] == "mock"
+        assert body["address"]
+        assert "fire" in body["services"]
+        assert body["situation"]
+
+
+def test_generate_ticket_keeps_filled_draft(monkeypatch):
+    from fastapi.testclient import TestClient
+    import sys112_llm.app as appmod
+    from sys112_llm.ticket_gen import build_messages, mock_ticket
+
+    monkeypatch.setattr(appmod, "LLM_MODE", "mock")
+    monkeypatch.setattr(appmod, "llm_status", "mock")
+    draft = {
+        "title": "ДТП на МКАД, звонит свидетель",
+        "address": "Москва, МКАД, 47 километр, внешняя сторона",
+    }
+    with TestClient(appmod.app) as client:
+        body = client.post(
+            "/api/llm/generate-ticket",
+            json={"services": ["police"], **draft},
+        ).json()
+    assert body["ok"] is True, body
+    assert body["address"] == draft["address"]
+    assert "ДТП на МКАД" in body["situation"]
+    ticket = mock_ticket(["police"], "", draft)
+    assert ticket["address"] == draft["address"]
+    prompt = build_messages(["police"], "", draft)[1]["content"]
+    assert "Название билета" in prompt
+    assert "ДТП на МКАД" in prompt
+
+
+def test_generate_ticket_fight_in_forest_stays_on_topic(monkeypatch):
+    from fastapi.testclient import TestClient
+    import sys112_llm.app as appmod
+    from sys112_llm.ticket_gen import synthesize_from_draft, ticket_matches_draft
+
+    monkeypatch.setattr(appmod, "LLM_MODE", "mock")
+    monkeypatch.setattr(appmod, "llm_status", "mock")
+    with TestClient(appmod.app) as client:
+        body = client.post(
+            "/api/llm/generate-ticket",
+            json={"services": ["police"], "title": "Драка в лесу"},
+        ).json()
+    assert body["ok"] is True, body
+    blob = f"{body['situation']} {body['opening']}".lower()
+    assert "драка" in blob or "дерут" in blob
+    assert "лес" in blob
+    assert "водитель" not in blob
+    assert "варшавск" not in blob
+    assert body["services"] == ["police"]
+    garbage = {
+        "situation": "Водитель потерял связь с водителем, автомобиль на дороге",
+        "address": "Москва, пр. Варшавский, д. 12",
+        "opening": "Потерял связь",
+        "services": ["police"],
+        "caller": "водитель",
+        "phone": "9161234567",
+        "source": "local",
+    }
+    assert not ticket_matches_draft(garbage, {"title": "Драка в лесу"})
+    fixed = synthesize_from_draft(["police"], "", {"title": "Драка в лесу"})
+    assert "драка" in fixed["situation"].lower()
+    assert "лес" in f"{fixed['situation']} {fixed['address']} {fixed['opening']}".lower()
+
+
+def test_generate_ticket_title_overrides_default_police(monkeypatch):
+    from fastapi.testclient import TestClient
+    import sys112_llm.app as appmod
+    from sys112_llm.ticket_gen import align_ticket_to_title, infer_services_from_text, resolve_services
+
+    monkeypatch.setattr(appmod, "LLM_MODE", "mock")
+    monkeypatch.setattr(appmod, "llm_status", "mock")
+    assert infer_services_from_text("Пожар в лесу") == ["fire"]
+    assert resolve_services(["police"], {"title": "Пожар в лесу"}, "") == ["fire"]
+    with TestClient(appmod.app) as client:
+        body = client.post(
+            "/api/llm/generate-ticket",
+            json={"services": ["police"], "title": "Пожар в лесу"},
+        ).json()
+    assert body["ok"] is True, body
+    assert body["services"] == ["fire"]
+    assert "пожар" in body["situation"].lower()
+    assert "дтп" not in body["situation"].lower()
+    assert "инспектор" not in body["situation"].lower()
+    repaired = align_ticket_to_title(
+        {
+            "situation": "Полицейский инспектор выявил на дороге автомобиль",
+            "address": "Москва, ул. Смольная, дом 15",
+            "opening": "Нарушение скорости",
+            "services": ["police"],
+            "caller": "инспектор",
+            "phone": "9161234567",
+            "source": "local",
+        },
+        {"title": "Пожар в лесу"},
+        ["fire"],
+        "",
+    )
+    assert repaired["services"] == ["fire"]
+    assert "пожар" in repaired["situation"].lower()
+
+
+def test_teacher_nudge_not_in_transcript():
+    from sys112_llm.conversation import (
+        ConversationManager,
+        TEACHER_NUDGE_TEXT,
+        format_transcript,
+        should_speak_intervention,
+    )
+
+    manager = ConversationManager()
+    session = manager.create("cue-2", "victim", "Вызывает мама.")
+    manager.accept_user("cue-2", TEACHER_NUDGE_TEXT, "nudge-1")
+    text = format_transcript(session)
+    assert TEACHER_NUDGE_TEXT not in text
+    assert should_speak_intervention("inject_event")
+    assert should_speak_intervention("force_state")
+    assert not should_speak_intervention("end_call")
+

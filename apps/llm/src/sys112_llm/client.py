@@ -203,6 +203,7 @@ class LlamaClient:
         max_tokens: int,
         temperature: float = 0.3,
         think: bool = False,
+        timeout_sec: float | None = None,
     ) -> str:
         payload = self._chat_payload(messages, stream=False, max_tokens=max_tokens)
         payload["temperature"] = temperature
@@ -210,11 +211,17 @@ class LlamaClient:
         if think:
             payload["chat_template_kwargs"] = {"enable_thinking": True}
             payload["enable_thinking"] = True
+            payload["reasoning_effort"] = "medium"
+        extra: dict[str, float] = {}
+        if timeout_sec is not None:
+            extra["timeout"] = timeout_sec
+        elif think:
+            extra["timeout"] = 80.0
         response = await self._http.post(
             f"{self.base_url}/v1/chat/completions",
             json=payload,
             headers={"Content-Type": "application/json"},
-            **({"timeout": 80.0} if think else {}),
+            **extra,
         )
         response.raise_for_status()
         data = response.json()

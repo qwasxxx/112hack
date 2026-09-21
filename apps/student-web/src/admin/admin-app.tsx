@@ -90,8 +90,8 @@ export function AdminApp(props: Props) {
   const collapsePress = useRef(0);
 
   useEffect(
-    () => bindAdminDashboardTilt(contentRef.current),
-    [screen, services, audit, settings, progress, backups, busyIds],
+    () => (screen === 'journal' ? () => {} : bindAdminDashboardTilt(contentRef.current)),
+    [screen, services, settings, busyIds],
   );
   useEffect(() => () => cancelAnimationFrame(collapsePress.current), []);
   useEffect(() => {

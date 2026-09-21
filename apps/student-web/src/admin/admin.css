@@ -1574,8 +1574,15 @@
 }
 
 .ad-audit-row.ad-tilt {
-  --ad-tilt-lift: 1.6;
-  --ad-tilt-z: 14;
+  --ad-tilt-lift: 0;
+  --ad-tilt-z: 0;
+}
+
+.ad-flat,
+.ad-flat-list .ad-event,
+.ad-audit-list .ad-audit-row {
+  transform: none;
+  box-shadow: 0 1px 2px rgba(21, 32, 51, 0.05);
 }
 
 .ad-filter {

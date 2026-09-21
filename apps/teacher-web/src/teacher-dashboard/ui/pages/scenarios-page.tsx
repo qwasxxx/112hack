@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { InterventionType, ScenarioDifficulty } from '@sys112/shared-types';
 import type { Scenario, ScenarioDraft, TrainingMaterial } from '../../domain/entities';
 import { difficultyLabels, formatDateTime } from '../../domain/value-objects';
 import { StatusBadge } from '../components/common';
 import { readCoachNote, writeCoachNote } from '../../../../../student-web/src/progress/coach-notes';
 import { SERVICE_LABEL, type ServiceKind } from '../../../../../student-web/src/data/scenarios';
+import { generateTicket, inferServices, ticketTitle } from '../../../../../student-web/src/lib/generate-ticket';
 import { ticketFactsFrom, serviceLabels } from '../../../../../student-web/src/progress/ticket-facts';
 
 const SERVICE_OPTIONS: Array<{ id: ServiceKind; label: string }> = [
@@ -18,6 +19,7 @@ const interventionOptions: Array<{ value: InterventionType; label: string }> = [
   { value: 'set_emotional_state', label: 'Эмоции' },
   { value: 'add_circumstance', label: 'Обстоятельство' },
   { value: 'inject_event', label: 'Внезапное событие' },
+  { value: 'force_state', label: 'Смена фазы' },
   { value: 'reveal_fact', label: 'Открыть факт' },
   { value: 'conceal_fact', label: 'Скрыть факт' },
   { value: 'adjust_difficulty', label: 'Сложность' },
@@ -42,8 +44,8 @@ const emptyDraft = (): ScenarioDraft => ({
   allowedErrors: 1,
   passThreshold: 70,
   materials: ['Справочные материалы АРМ-112'],
-  allowedInterventions: ['set_emotional_state', 'add_circumstance', 'inject_event', 'end_call'],
-  services: ['police'],
+  allowedInterventions: ['set_emotional_state', 'add_circumstance', 'inject_event', 'force_state', 'end_call'],
+  services: [],
   callerOpening: '',
   classifierNumber: '',
 });
@@ -53,13 +55,47 @@ function asServices(values?: string[]): ServiceKind[] {
   return (values ?? []).filter((item): item is ServiceKind => allowed.includes(item as ServiceKind));
 }
 
+function keepOrFill(current: string, next: string): string {
+  const kept = current.trim();
+  return kept || next;
+}
+
+const GEN_STEPS = ['Читаю название', 'Собираю обстановку', 'Пишу адрес и заявителя', 'Сверяю эталон'];
+
+function TicketGenOverlay() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setStep((current) => (current + 1) % GEN_STEPS.length), 1400);
+    return () => window.clearInterval(timer);
+  }, []);
+  return (
+    <div className="td-ticket-gen" aria-live="polite" aria-busy="true">
+      <div className="td-ticket-gen-card">
+        <div className="td-ticket-gen-mark" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+          <span>112</span>
+        </div>
+        <strong>Пишу билет</strong>
+        <p>{GEN_STEPS[step]}</p>
+        <ul>
+          <li />
+          <li />
+          <li />
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function ScenarioForm({
   scenario,
   onSave,
   onCancel,
 }: {
   scenario?: Scenario;
-  onSave: (draft: ScenarioDraft) => Promise<void>;
+  onSave: (draft: ScenarioDraft) => Promise<{ id: string } | void>;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<ScenarioDraft>(() =>
@@ -76,6 +112,9 @@ function ScenarioForm({
   const [actions, setActions] = useState(scenario?.requiredActions.join('\n') ?? emptyDraft().requiredActions.join('\n'));
   const [coach, setCoach] = useState(() => (scenario ? readCoachNote(scenario.id) : { approved: false, note: '' }));
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState('');
+  const [genOk, setGenOk] = useState('');
   const field = <K extends keyof ScenarioDraft>(key: K, value: ScenarioDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
@@ -103,11 +142,48 @@ function ScenarioForm({
     field('services', next.length ? next : [id]);
   };
 
+  async function fillFromModel() {
+    setGenerating(true);
+    setGenError('');
+    setGenOk('');
+    const inferred = inferServices(draft.title, draft.description, draft.callerOpening, coach.note);
+    const result = await generateTicket({
+      services: inferred.length ? inferred : services.length ? services : ['fire'],
+      note: coach.note,
+      title: draft.title,
+      situation: draft.description,
+      address: draft.location,
+      opening: draft.callerOpening,
+      classifier: draft.classifierNumber,
+      difficulty: draft.difficulty,
+    });
+    setGenerating(false);
+    if (!result.ok) {
+      setGenError(result.message);
+      return;
+    }
+    const ticket = result.ticket;
+    setDraft((current) => ({
+      ...current,
+      title: ticketTitle(ticket, current.title),
+      description: keepOrFill(current.description, ticket.situation),
+      location: keepOrFill(current.location, ticket.address),
+      callerOpening: keepOrFill(current.callerOpening ?? '', ticket.opening),
+      services: ticket.services,
+      category: ticket.services.map((item) => SERVICE_LABEL[item]).join(', '),
+    }));
+    setGenOk(
+      draft.title.trim()
+        ? 'Дописала пустые поля по названию. Уже заполненное не трогала.'
+        : 'Черновик собран. Название можно поправить вручную.',
+    );
+  }
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
     try {
-      await onSave({
+      const saved = await onSave({
         ...draft,
         category: (services.length ? services : (['police'] as ServiceKind[])).map((item) => SERVICE_LABEL[item]).join(', '),
         requiredActions: actions
@@ -116,8 +192,9 @@ function ScenarioForm({
           .filter(Boolean),
         services: services.length ? services : ['police'],
       });
-      if (scenario?.id) {
-        writeCoachNote(scenario.id, coach);
+      const id = scenario?.id ?? saved?.id;
+      if (id) {
+        writeCoachNote(id, coach);
       }
       onCancel();
     } finally {
@@ -126,195 +203,221 @@ function ScenarioForm({
   };
 
   return (
-    <form className="td-panel td-form td-ticket-builder" onSubmit={(event) => void submit(event)}>
+    <form className={`td-panel td-form td-ticket-builder${generating ? ' is-generating' : ''}`} onSubmit={(event) => void submit(event)}>
+      {generating ? <TicketGenOverlay /> : null}
       <div className="td-section-title">
         <div>
-          <p className="td-kicker">Конструктор билета</p>
+          <p className="td-kicker">Билет для линии</p>
           <h3>{scenario ? 'Редактирование билета' : 'Новый билет'}</h3>
         </div>
         <button type="button" className="td-icon-btn" onClick={onCancel} aria-label="Закрыть форму">
           ×
         </button>
       </div>
-      <p className="td-ticket-help">
-        Сюда пишется то, что знает заявитель: суть, ФИО, телефон, детали. Оператор этого текста не видит —
-        он выясняет его на линии и заносит в карточку. Короткая строка «тренировка оператора 112…» — это
-        подпись каталога, не сам билет.
-      </p>
 
-      <h4 className="td-ticket-h">1. Обстановка из билета</h4>
-      <div className="td-form-grid">
-        <label>
-          Название
-          <input required value={draft.title} onChange={(e) => field('title', e.target.value)} />
-        </label>
-        <label>
-          Сложность
-          <select
-            value={draft.difficulty}
-            onChange={(e) => field('difficulty', e.target.value as ScenarioDifficulty)}
-          >
-            {Object.entries(difficultyLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="td-span-2">
-          Что случилось
-          <textarea
-            required
-            rows={5}
-            placeholder="Как в PDF: возгорание, кто звонит, телефон, пострадавшие…"
-            value={draft.description}
-            onChange={(e) => field('description', e.target.value)}
-          />
-        </label>
-        <label className="td-span-2">
-          Адрес
-          <textarea
-            required
-            rows={2}
-            placeholder="Город, улица, дом, корпус, подъезд, квартира"
-            value={draft.location}
-            onChange={(e) => field('location', e.target.value)}
-          />
-        </label>
-        <label>
-          Первая фраза заявителя
-          <input
-            value={draft.callerOpening ?? ''}
-            placeholder="Помогите, у нас дым в подъезде"
-            onChange={(e) => field('callerOpening', e.target.value)}
-          />
-        </label>
-        <label>
-          Классификатор
-          <input
-            value={draft.classifierNumber ?? ''}
-            placeholder="например 1050101"
-            onChange={(e) => field('classifierNumber', e.target.value)}
-          />
-        </label>
-      </div>
-
-      <h4 className="td-ticket-h">2. Службы — можно несколько</h4>
-      <div className="td-class-cats">
-        {SERVICE_OPTIONS.map((item) => (
-          <label key={item.id}>
-            <input type="checkbox" checked={services.includes(item.id)} onChange={() => toggleService(item.id)} />
-            {item.label}
-          </label>
-        ))}
-      </div>
-
-      <aside className="td-ticket-preview" aria-label="Эталон для сверки">
-        <p className="td-kicker">Эталон, с которым сверяется карточка</p>
-        <dl>
-          <div>
-            <dt>Суть</dt>
-            <dd>{preview.what || '—'}</dd>
+      <div className="td-ticket-shell">
+        <div className="td-ticket-main">
+          <div className="td-ticket-title-row">
+            <label>
+              Название
+              <input
+                required
+                autoFocus={!scenario}
+                value={draft.title}
+                placeholder="Например: ДТП на МКАД, звонит свидетель"
+                onChange={(e) => field('title', e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="td-btn td-btn--primary"
+              disabled={generating}
+              onClick={() => void fillFromModel()}
+            >
+              {generating ? 'Дописываю…' : 'Дописать билет'}
+            </button>
           </div>
-          <div>
-            <dt>Адрес</dt>
-            <dd>{preview.address || '—'}</dd>
-          </div>
-          <div>
-            <dt>Заявитель</dt>
-            <dd>{preview.callerFio || preview.callerRole || 'в билете нет ФИО'}</dd>
-          </div>
-          <div>
-            <dt>Телефон</dt>
-            <dd>{preview.phone || '—'}</dd>
-          </div>
-          <div>
-            <dt>Службы</dt>
-            <dd>{serviceLabels(preview.services) || '—'}</dd>
-          </div>
-        </dl>
-      </aside>
-
-      {scenario?.id ? (
-        <>
-          <h4 className="td-ticket-h">3. Проверка преподавателем</h4>
+          <p className="td-ticket-help">
+            Напишите название — или любое уже известное поле — и нажмите «Дописать билет». Модель заполнит
+            пустое: суть, адрес, первую фразу, службы. То, что вы уже ввели, она не затирает.
+          </p>
           <label>
+            Подсказка нейросети
+            <textarea
+              rows={2}
+              value={coach.note}
+              placeholder="Необязательно: без пострадавших, звонит сосед, ночь…"
+              onChange={(e) => setCoach((current) => ({ ...current, note: e.target.value }))}
+            />
+          </label>
+          {genError ? <p className="td-ticket-alert">{genError}</p> : null}
+          {genOk ? <p className="td-ticket-ok">{genOk}</p> : null}
+
+          <h4 className="td-ticket-h">Что знает заявитель</h4>
+          <div className="td-form-grid">
+            <label>
+              Сложность
+              <select
+                value={draft.difficulty}
+                onChange={(e) => field('difficulty', e.target.value as ScenarioDifficulty)}
+              >
+                {Object.entries(difficultyLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Классификатор
+              <input
+                value={draft.classifierNumber ?? ''}
+                placeholder="например 1050101"
+                onChange={(e) => field('classifierNumber', e.target.value)}
+              />
+            </label>
+            <label className="td-span-2">
+              Что случилось
+              <textarea
+                required
+                rows={5}
+                placeholder="Суть, кто звонит, телефон, пострадавшие. Оператор этого текста не видит."
+                value={draft.description}
+                onChange={(e) => field('description', e.target.value)}
+              />
+            </label>
+            <label className="td-span-2">
+              Адрес
+              <textarea
+                required
+                rows={2}
+                placeholder="Город, улица, дом, корпус, подъезд, квартира"
+                value={draft.location}
+                onChange={(e) => field('location', e.target.value)}
+              />
+            </label>
+            <label className="td-span-2">
+              Первая фраза заявителя
+              <input
+                value={draft.callerOpening ?? ''}
+                placeholder="Помогите, у нас дым в подъезде"
+                onChange={(e) => field('callerOpening', e.target.value)}
+              />
+            </label>
+          </div>
+
+          <h4 className="td-ticket-h">Службы</h4>
+          <div className="td-class-cats">
+            {SERVICE_OPTIONS.map((item) => (
+              <label key={item.id}>
+                <input type="checkbox" checked={services.includes(item.id)} onChange={() => toggleService(item.id)} />
+                {item.label}
+              </label>
+            ))}
+          </div>
+
+          <details className="td-ticket-more">
+            <summary>Нормативы и вмешательства</summary>
+            <div className="td-form-grid">
+              <label>
+                Лимит карточки, сек.
+                <input
+                  type="number"
+                  min="10"
+                  required
+                  value={draft.timeLimitSec}
+                  onChange={(e) => field('timeLimitSec', Number(e.target.value))}
+                />
+              </label>
+              <label>
+                Допустимо ошибок
+                <input
+                  type="number"
+                  min="0"
+                  value={draft.allowedErrors}
+                  onChange={(e) => field('allowedErrors', Number(e.target.value))}
+                />
+              </label>
+              <label>
+                Порог успешности, %
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={draft.passThreshold}
+                  onChange={(e) => field('passThreshold', Number(e.target.value))}
+                />
+              </label>
+              <label className="td-span-2">
+                Обязательные действия оператора
+                <textarea required rows={5} value={actions} onChange={(e) => setActions(e.target.value)} />
+              </label>
+            </div>
+            <fieldset>
+              <legend>Вмешательства преподавателя во время звонка</legend>
+              <div className="td-checkboxes">
+                {interventionOptions.map((option) => (
+                  <label key={option.value}>
+                    <input
+                      type="checkbox"
+                      checked={draft.allowedInterventions.includes(option.value)}
+                      onChange={(e) =>
+                        field(
+                          'allowedInterventions',
+                          e.target.checked
+                            ? [...draft.allowedInterventions, option.value]
+                            : draft.allowedInterventions.filter((item) => item !== option.value),
+                        )
+                      }
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          </details>
+        </div>
+
+        <aside className="td-ticket-preview" aria-label="Эталон для сверки">
+          <p className="td-kicker">Эталон карточки</p>
+          <h4>Собирается сама</h4>
+          <p className="td-ticket-help">
+            Это не отдельная форма. После «Дописать билет» сюда попадают суть, адрес, ФИО, телефон и
+            службы — то, с чем потом сверяется карточка ученика. Вам нужно только проверить и утвердить.
+          </p>
+          <dl>
+            <div>
+              <dt>Суть</dt>
+              <dd>{preview.what || 'Появится из текста билета'}</dd>
+            </div>
+            <div>
+              <dt>Адрес</dt>
+              <dd>{preview.address || 'Появится из адреса'}</dd>
+            </div>
+            <div>
+              <dt>Заявитель</dt>
+              <dd>{preview.callerFio || preview.callerRole || 'ФИО подставит модель'}</dd>
+            </div>
+            <div>
+              <dt>Телефон</dt>
+              <dd>{preview.phone || 'Телефон подставит модель'}</dd>
+            </div>
+            <div>
+              <dt>Службы</dt>
+              <dd>{serviceLabels(preview.services) || '—'}</dd>
+            </div>
+          </dl>
+          <label className="td-ticket-approve">
             <input
               type="checkbox"
               checked={coach.approved}
               onChange={(e) => setCoach((current) => ({ ...current, approved: e.target.checked }))}
-            />{' '}
-            Эталон утверждён
-          </label>
-          <label>
-            Указание заявителю на линии
-            <textarea
-              value={coach.note}
-              placeholder="Коротко: не путать адрес, говорить тише…"
-              onChange={(e) => setCoach((current) => ({ ...current, note: e.target.value }))}
             />
+            Эталон проверен, можно давать ученикам
           </label>
-        </>
-      ) : null}
-
-      <h4 className="td-ticket-h">4. Нормативы занятия</h4>
-      <div className="td-form-grid">
-        <label>
-          Лимит карточки, сек.
-          <input
-            type="number"
-            min="10"
-            required
-            value={draft.timeLimitSec}
-            onChange={(e) => field('timeLimitSec', Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Допустимо ошибок
-          <input
-            type="number"
-            min="0"
-            value={draft.allowedErrors}
-            onChange={(e) => field('allowedErrors', Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Порог успешности, %
-          <input
-            type="number"
-            min="0"
-            max="100"
-            value={draft.passThreshold}
-            onChange={(e) => field('passThreshold', Number(e.target.value))}
-          />
-        </label>
-        <label className="td-span-2">
-          Обязательные действия оператора
-          <textarea required rows={5} value={actions} onChange={(e) => setActions(e.target.value)} />
-        </label>
+        </aside>
       </div>
-      <fieldset>
-        <legend>Вмешательства преподавателя во время звонка</legend>
-        <div className="td-checkboxes">
-          {interventionOptions.map((option) => (
-            <label key={option.value}>
-              <input
-                type="checkbox"
-                checked={draft.allowedInterventions.includes(option.value)}
-                onChange={(e) =>
-                  field(
-                    'allowedInterventions',
-                    e.target.checked
-                      ? [...draft.allowedInterventions, option.value]
-                      : draft.allowedInterventions.filter((item) => item !== option.value),
-                  )
-                }
-              />
-              {option.label}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+
       <div className="td-form-actions">
         <button type="button" className="td-btn td-btn--ghost" onClick={onCancel}>
           Отмена
@@ -334,7 +437,7 @@ export function ScenariosPage({
 }: {
   scenarios: Scenario[];
   materials: TrainingMaterial[];
-  onSave: (draft: ScenarioDraft) => Promise<void>;
+  onSave: (draft: ScenarioDraft) => Promise<{ id: string } | void>;
 }) {
   const [editing, setEditing] = useState<Scenario | 'new' | null>(null);
   const [query, setQuery] = useState('');
@@ -355,7 +458,11 @@ export function ScenariosPage({
           <p className="td-kicker">Учебный контент</p>
           <h2>Билеты и сценарии</h2>
         </div>
-        <button className="td-btn td-btn--primary" onClick={() => setEditing('new')}>
+        <button
+          className="td-btn td-btn--primary"
+          type="button"
+          onClick={() => setEditing('new')}
+        >
           + Новый билет
         </button>
       </header>
@@ -369,87 +476,90 @@ export function ScenariosPage({
       <section className="td-panel">
         <div className="td-section-title">
           <h3>Билеты АГС</h3>
-          <span>{visible.length} из {scenarios.length}</span>
+          <span>
+            {visible.length} из {scenarios.length}
+          </span>
         </div>
         <label className="td-ticket-search">
           Поиск
-          <input
-            value={query}
-            placeholder="адрес, суть, служба…"
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <input value={query} placeholder="адрес, суть, служба…" onChange={(e) => setQuery(e.target.value)} />
         </label>
         <div className="td-card-list">
-          {visible.map((scenario) => (
-            <article className="td-scenario-card" key={scenario.id}>
-              <div>
-                <div className="td-inline">
-                  <StatusBadge
-                    tone={
-                      scenario.status === 'active' ? 'good' : scenario.status === 'archived' ? 'neutral' : 'warning'
-                    }
-                  >
-                    {scenario.status === 'active' ? 'Назначен' : scenario.status === 'archived' ? 'Снят' : 'Черновик'}
-                  </StatusBadge>
-                  <span>{scenario.category}</span>
-                </div>
-                <h4>{scenario.title}</h4>
-                <p>{scenario.location || 'Адрес не указан'}</p>
-                <p>{scenario.description}</p>
-                {readCoachNote(scenario.id).approved ? <p>Эталон утверждён</p> : null}
-              </div>
-              <dl>
+          {visible.map((scenario) => {
+            const note = readCoachNote(scenario.id);
+            return (
+              <article className="td-scenario-card" key={scenario.id}>
                 <div>
-                  <dt>Назначен</dt>
-                  <dd>{scenario.assignments ? 'да' : 'нет'}</dd>
+                  <div className="td-inline">
+                    <StatusBadge
+                      tone={
+                        scenario.status === 'active' ? 'good' : scenario.status === 'archived' ? 'neutral' : 'warning'
+                      }
+                    >
+                      {scenario.status === 'active' ? 'Назначен' : scenario.status === 'archived' ? 'Снят' : 'Черновик'}
+                    </StatusBadge>
+                    <span>{scenario.category}</span>
+                    {note.approved ? <span className="td-ticket-chip">Эталон ок</span> : null}
+                  </div>
+                  <h4>{scenario.title}</h4>
+                  <p>{scenario.location || 'Адрес не указан'}</p>
+                  <p>{scenario.description}</p>
                 </div>
-                <div>
-                  <dt>Лимит</dt>
-                  <dd>{scenario.timeLimitSec} сек.</dd>
+                <dl>
+                  <div>
+                    <dt>Назначен</dt>
+                    <dd>{scenario.assignments ? 'да' : 'нет'}</dd>
+                  </div>
+                  <div>
+                    <dt>Лимит</dt>
+                    <dd>{scenario.timeLimitSec} сек.</dd>
+                  </div>
+                  <div>
+                    <dt>Изменён</dt>
+                    <dd>{formatDateTime(scenario.updatedAt)}</dd>
+                  </div>
+                </dl>
+                <div className="td-card-actions">
+                  <button className="td-btn td-btn--secondary" onClick={() => setEditing(scenario)}>
+                    Открыть
+                  </button>
                 </div>
-                <div>
-                  <dt>Изменён</dt>
-                  <dd>{formatDateTime(scenario.updatedAt)}</dd>
-                </div>
-              </dl>
-              <div className="td-card-actions">
-                <button className="td-btn td-btn--secondary" onClick={() => setEditing(scenario)}>
-                  Открыть конструктор
-                </button>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       </section>
-      <section className="td-panel">
-        <div className="td-section-title">
-          <h3>Учебные материалы</h3>
-        </div>
-        <div className="td-table-wrap">
-          <table className="td-table">
-            <thead>
-              <tr>
-                <th>Материал</th>
-                <th>Тип</th>
-                <th>Версия</th>
-                <th>Сценарий</th>
-              </tr>
-            </thead>
-            <tbody>
-              {materials.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <strong>{item.title}</strong>
-                  </td>
-                  <td>{item.fileType}</td>
-                  <td>{item.version}</td>
-                  <td>{scenarios.find((scenario) => scenario.id === item.scenarioId)?.title ?? '—'}</td>
+      {materials.length ? (
+        <section className="td-panel">
+          <div className="td-section-title">
+            <h3>Учебные материалы</h3>
+          </div>
+          <div className="td-table-wrap">
+            <table className="td-table">
+              <thead>
+                <tr>
+                  <th>Материал</th>
+                  <th>Тип</th>
+                  <th>Версия</th>
+                  <th>Сценарий</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {materials.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <strong>{item.title}</strong>
+                    </td>
+                    <td>{item.fileType}</td>
+                    <td>{item.version}</td>
+                    <td>{scenarios.find((scenario) => scenario.id === item.scenarioId)?.title ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

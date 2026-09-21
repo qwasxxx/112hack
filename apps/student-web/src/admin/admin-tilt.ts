@@ -5,14 +5,12 @@ export type AdminTiltKind = 'strong' | 'medium' | 'light' | 'button';
 const CARD_SELECTOR = [
   '.ad-metric',
   '.ad-service',
-  '.ad-event',
   '.ad-account-row',
   '.ad-user-row',
   '.ad-env-item',
   '.ad-backup-stat',
   '.ad-action',
   '.ad-health-mod',
-  '.ad-audit-row',
   '.ad-train-card',
 ].join(', ');
 
@@ -154,7 +152,7 @@ export function bindAdminTilt(
 
 function rotationFor(node: HTMLElement, kind: 'card' | 'surface'): { x: number; y: number } {
   if (kind === 'card') {
-    if (node.matches('.ad-event, .ad-account-row, .ad-user-row, .ad-env-item, .ad-audit-row')) {
+    if (node.matches('.ad-account-row, .ad-user-row, .ad-env-item')) {
       return { x: 5.4, y: 6.6 };
     }
     if (node.matches('.ad-service, .ad-backup-stat, .ad-health-mod, .ad-train-card')) {
@@ -172,7 +170,7 @@ function kindFor(node: HTMLElement, role: 'card' | 'surface'): AdminTiltKind {
   if (role === 'surface') {
     return 'medium';
   }
-  if (node.matches('.ad-event, .ad-account-row, .ad-user-row, .ad-env-item, .ad-audit-row')) {
+  if (node.matches('.ad-account-row, .ad-user-row, .ad-env-item')) {
     return 'light';
   }
   return 'strong';
@@ -197,9 +195,14 @@ export function bindAdminDashboardTilt(root: HTMLElement | null) {
   function bind() {
     releases.forEach((release) => release());
     releases = [];
-    const cards = [...host.querySelectorAll<HTMLElement>(CARD_SELECTOR)];
+    const cards = [...host.querySelectorAll<HTMLElement>(CARD_SELECTOR)].filter(
+      (node) => !node.closest('.ad-audit-list, .ad-flat-list') && !node.matches('.ad-flat'),
+    ).slice(0, 16);
     const surfaces = [...host.querySelectorAll<HTMLElement>(SURFACE_SELECTOR)].filter(
-      (surface) => !hasInteractiveFields(surface) && !isReactTiltSurface(surface),
+      (surface) =>
+        !hasInteractiveFields(surface) &&
+        !isReactTiltSurface(surface) &&
+        !surface.querySelector('.ad-audit-list, .ad-flat-list'),
     );
     for (const node of cards) {
       releases.push(
