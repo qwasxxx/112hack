@@ -1,5 +1,6 @@
 import { AGS_SCENARIOS, classifierNumberFor, publicTheme, ticketToScenario } from './ags-tickets';
 import type { ServiceKind, TrainingScenario } from './scenarios';
+import { pushCatalog } from '../progress/remote';
 
 export type TicketPatch = {
   title?: string;
@@ -16,6 +17,11 @@ export type TicketPatch = {
 type CatalogStore = {
   overlays: Record<string, TicketPatch>;
   custom: TrainingScenario[];
+};
+
+export type CatalogImportResult = {
+  added: number;
+  updated: number;
 };
 
 const KEY = 'sys112.tickets.v1';
@@ -41,11 +47,25 @@ function readStore(): CatalogStore {
   }
 }
 
-function writeStore(store: CatalogStore): void {
+function writeStore(store: CatalogStore, sync = true): void {
   if (typeof localStorage === 'undefined') {
     return;
   }
   localStorage.setItem(KEY, JSON.stringify(store));
+  if (sync) {
+    pushCatalog(store);
+  }
+}
+
+export function replaceCatalogStore(store: { overlays?: unknown; custom?: unknown }): void {
+  writeStore(
+    {
+      overlays:
+        store.overlays && typeof store.overlays === 'object' ? (store.overlays as CatalogStore['overlays']) : {},
+      custom: Array.isArray(store.custom) ? (store.custom as TrainingScenario[]) : [],
+    },
+    false,
+  );
 }
 
 export function applyTicketPatch(base: TrainingScenario, patch: TicketPatch): TrainingScenario {
@@ -67,7 +87,7 @@ export function applyTicketPatch(base: TrainingScenario, patch: TicketPatch): Tr
     situation,
     address,
     callerOpening: patch.callerOpening?.trim() || rebuilt.callerOpening,
-    classifierNumber: patch.classifierNumber?.trim() || classifierNumberFor(services, `${situation} ${address}`),
+    classifierNumber: patch.classifierNumber?.trim() || classifierNumberFor(services, situation, address),
     checklist: patch.checklist?.length ? patch.checklist : rebuilt.checklist,
     difficulty: patch.difficulty || rebuilt.difficulty,
     ttsVoice: base.ttsVoice,
@@ -119,4 +139,112 @@ export function createCustomTicket(patch: TicketPatch): TrainingScenario {
   store.custom = [...store.custom, created];
   writeStore(store);
   return created;
+}
+
+const SERVICE_IDS: ServiceKind[] = ['fire', 'ambulance', 'police', 'gas'];
+
+function asServices(value: unknown): ServiceKind[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is ServiceKind => SERVICE_IDS.includes(item as ServiceKind));
+}
+
+function asPatch(item: Record<string, unknown>): TicketPatch | null {
+  const situation = String(item.situation ?? item.description ?? '').trim();
+  const address = String(item.address ?? item.location ?? '').trim();
+  if (!situation && !address) {
+    return null;
+  }
+  const difficulty = item.difficulty;
+  return {
+    title: String(item.title ?? '').trim() || undefined,
+    code: String(item.code ?? '').trim() || undefined,
+    situation,
+    address,
+    services: asServices(item.services),
+    callerOpening: String(item.callerOpening ?? item.opening ?? '').trim() || undefined,
+    classifierNumber: String(item.classifierNumber ?? item.classifier ?? '').trim() || undefined,
+    difficulty:
+      difficulty === 'базовый' || difficulty === 'стандарт' || difficulty === 'сложный' ? difficulty : undefined,
+    checklist: Array.isArray(item.checklist)
+      ? item.checklist.filter((row): row is string => typeof row === 'string')
+      : undefined,
+  };
+}
+
+export function parseCatalogImport(raw: string): { overlays: Record<string, TicketPatch>; tickets: Array<TicketPatch & { id?: string }> } {
+  const parsed: unknown = JSON.parse(raw);
+  const overlays: Record<string, TicketPatch> = {};
+  const tickets: Array<TicketPatch & { id?: string }> = [];
+  const bag = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  const overlaySrc =
+    bag && bag.overlays && typeof bag.overlays === 'object' ? (bag.overlays as Record<string, unknown>) : {};
+  for (const [id, value] of Object.entries(overlaySrc)) {
+    if (value && typeof value === 'object') {
+      const patch = asPatch(value as Record<string, unknown>);
+      if (patch) {
+        overlays[id] = patch;
+      }
+    }
+  }
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(bag?.custom)
+      ? bag.custom
+      : Array.isArray(bag?.tickets)
+        ? bag.tickets
+        : [];
+  for (const row of list) {
+    if (!row || typeof row !== 'object') {
+      continue;
+    }
+    const rec = row as Record<string, unknown>;
+    const patch = asPatch(rec);
+    if (!patch) {
+      continue;
+    }
+    tickets.push({ ...patch, id: typeof rec.id === 'string' ? rec.id : undefined });
+  }
+  return { overlays, tickets };
+}
+
+export function applyCatalogImport(raw: string): CatalogImportResult {
+  const parsed = parseCatalogImport(raw);
+  const store = readStore();
+  let updated = 0;
+  let added = 0;
+  for (const [id, patch] of Object.entries(parsed.overlays)) {
+    store.overlays[id] = patch;
+    updated += 1;
+  }
+  for (const ticket of parsed.tickets) {
+    if (ticket.id && (AGS_SCENARIOS.some((item) => item.id === ticket.id) || store.custom.some((item) => item.id === ticket.id))) {
+      if (store.custom.some((item) => item.id === ticket.id)) {
+        const base = store.custom.find((item) => item.id === ticket.id);
+        if (base) {
+          store.custom = store.custom.map((item) => (item.id === ticket.id ? applyTicketPatch(item, ticket) : item));
+          updated += 1;
+        }
+      } else {
+        store.overlays[ticket.id] = ticket;
+        updated += 1;
+      }
+      continue;
+    }
+    const n = store.custom.length + 1;
+    const created = applyTicketPatch(
+      ticketToScenario({ ticket: 90, n, situation: ticket.situation, address: ticket.address }),
+      { ...ticket, code: ticket.code?.trim() || `К.${n}` },
+    );
+    created.id = `custom-${crypto.randomUUID().slice(0, 8)}`;
+    store.custom = [...store.custom, created];
+    added += 1;
+  }
+  writeStore(store);
+  return { added, updated };
+}
+
+export function exportCatalogJson(): string {
+  return JSON.stringify(readStore(), null, 2);
 }

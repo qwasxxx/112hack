@@ -107,26 +107,9 @@ export function incomingFromFacts(
   difficulty: TrainingScenario['difficulty'],
   seed: number,
 ): { draft: DdsDraft; defects: DdsDefect[] } {
+  void seed;
   const defects: DdsDefect[] = [];
-  const extras = ALL_SERVICES.filter((item) => !facts.services.includes(item));
-  let services = [...facts.services];
-  if (extras.length) {
-    services.push(extras[seed % extras.length]);
-    defects.push('service');
-  }
-  if (difficulty === 'сложный' && facts.services.length > 1) {
-    const drop = facts.services[seed % facts.services.length];
-    services = services.filter((item) => item !== drop);
-  }
-  services = uniqueServices(services);
-  if (services.length === facts.services.length && services.every((item, index) => item === facts.services[index])) {
-    if (extras.length) {
-      services = uniqueServices([...services, extras[0]]);
-      if (!defects.includes('service')) {
-        defects.push('service');
-      }
-    }
-  }
+  const services = uniqueServices(facts.services);
 
   let injured = facts.injured;
   if (difficulty !== 'базовый' && facts.injured === 'Есть') {

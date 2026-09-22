@@ -380,10 +380,10 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
       const scored = scoreDds(item.draft, item.facts);
       const ownOk =
         item.decision === 'dispatch' &&
-        scored.servicesOk &&
         scored.injuredOk &&
         scored.phoneOk &&
-        item.workplaceStatus === 'Работы завершены';
+        item.workplaceStatus === 'Работы завершены' &&
+        Boolean(item.naryad.trim());
       const foreignOk = item.decision === 'transfer' || item.workplaceStatus === 'Не принято';
       const ok = item.role === 'foreign' ? foreignOk : ownOk;
       return {

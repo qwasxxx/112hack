@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type {
   AuditRecord,
   CompletedResult,
@@ -7,12 +7,34 @@ import type {
 } from '../../domain/entities';
 import { formatDateTime, formatDuration } from '../../domain/value-objects';
 import { StatusBadge } from '../components/common';
-import {
-  TeacherAnalyticsPanels,
-  TeacherSystemStatuses,
-} from '../components/teacher-analytics-panels';
 import { TeacherFilterBar, TeacherFilterMenu } from '../components/teacher-filter-menu';
 import { downloadResultsCsv, downloadResultsXlsx, printGroupReport, printResultCertificate } from '../teacher-export';
+import { loadLocalRecording } from '../../infrastructure/local-recording';
+
+function MarkRing({ value }: { value: number }) {
+  const radius = 46;
+  const length = 2 * Math.PI * radius;
+  const pct = Math.max(0, Math.min(1, value / 100));
+  return (
+    <div className="td-ring" aria-label={`${value} из 100`}>
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <circle className="td-ring-track" cx="60" cy="60" r={radius} />
+        <circle
+          className="td-ring-value"
+          cx="60"
+          cy="60"
+          r={radius}
+          strokeDasharray={length}
+          strokeDashoffset={length * (1 - pct)}
+        />
+      </svg>
+      <div>
+        <b>{value}</b>
+        <span>из 100</span>
+      </div>
+    </div>
+  );
+}
 
 function ResultDetail({
   result,
@@ -28,161 +50,277 @@ function ResultDetail({
   onAdjustScore: (score: number, reason: string) => Promise<void>;
 }) {
   const [comment, setComment] = useState(result.teacherComment);
-  const [score, setScore] = useState(result.expertScore);
+  const [ownScore, setOwnScore] = useState(false);
+  const [score, setScore] = useState(result.confirmed ? result.expertScore : result.automaticScore);
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
-  const adjust = async () => {
-    if (!reason.trim()) {
-      setError('Укажите причину корректировки — изменение без аудита запрещено.');
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [fileId, setFileId] = useState(result.recordingId ?? '');
+  const [localUrl, setLocalUrl] = useState('');
+  const fields = result.reviewFields ?? [];
+  const lines = result.transcript ?? [];
+  const history = audit.filter((item) => item.entityId === result.id);
+  const parts = result.parts?.length
+    ? result.parts
+    : result.criteria.map((item) => ({ label: item.label, score: item.score, max: item.maxScore }));
+  const mark = result.confirmed ? result.finalScore : result.automaticScore;
+  const recording = fileId ? `/api/v1/training/recordings/${fileId}` : '';
+  const playable = localUrl || recording;
+  useEffect(() => {
+    let url = '';
+    let stop = false;
+    void loadLocalRecording(result.id).then((blob) => {
+      if (stop || !blob?.size) {
+        return;
+      }
+      url = URL.createObjectURL(blob);
+      setLocalUrl(url);
+    });
+    return () => {
+      stop = true;
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+    };
+  }, [result.id]);
+  useEffect(() => {
+    if (fileId || result.recordingId) {
+      if (result.recordingId) {
+        setFileId(result.recordingId);
+      }
       return;
     }
+    let stop = false;
+    const pull = () => {
+      void fetch('/api/v1/training/recordings')
+        .then((response) => (response.ok ? response.json() : []))
+        .then((rows: unknown) => {
+          if (stop || !Array.isArray(rows)) {
+            return;
+          }
+          const hit = rows.find(
+            (row) =>
+              row &&
+              typeof row === 'object' &&
+              (row as { lessonId?: string }).lessonId === result.id,
+          ) as { id?: string } | undefined;
+          if (hit?.id) {
+            setFileId(hit.id);
+          }
+        })
+        .catch(() => undefined);
+    };
+    pull();
+    const timer = window.setInterval(pull, 2000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [fileId, result.id, result.recordingId]);
+  const saveScore = async (next: number, why: string) => {
+    setBusy(true);
     setError('');
-    await onAdjustScore(score, reason);
-    setReason('');
+    try {
+      await onAdjustScore(next, why);
+      setOwnScore(false);
+      setReason('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить оценку');
+    } finally {
+      setBusy(false);
+    }
   };
   return (
-    <section className="td-panel td-result-detail">
-      <div className="td-section-title">
+    <section className="td-review">
+      <div className="td-review-top">
         <div>
-          <p className="td-kicker">Подробный результат</p>
+          <button className="td-review-back" type="button" onClick={onClose}>
+            ← К списку
+          </button>
+          <h3>{result.student.name}</h3>
+          <p className="td-review-meta">
+            {result.scenarioTitle}
+            <br />
+            {formatDateTime(result.completedAt)} · {formatDuration(result.durationSec)} · {result.category}
+          </p>
+        </div>
+      </div>
+
+      <article className="td-hero">
+        <MarkRing value={mark} />
+        <div className="td-hero-copy">
+          <p className="td-hero-kicker">{result.confirmed ? (result.passed ? 'Зачёт' : 'Незачёт') : 'Черновик ИИ'}</p>
           <h3>
-            {result.student.name} · {result.scenarioTitle}
+            {result.student.name}
+            <span>{result.scenarioTitle}</span>
           </h3>
-        </div>
-        <button className="td-icon-btn" onClick={onClose} aria-label="Закрыть результат">
-          ×
-        </button>
-      </div>
-      <div className="td-score-hero">
-        <div>
-          <strong>{result.finalScore}%</strong>
-          <span>Итоговый балл</span>
-        </div>
-        <dl>
-          <div>
-            <dt>Автоматическая</dt>
-            <dd>{result.automaticScore}%</dd>
-          </div>
-          <div>
-            <dt>Экспертная</dt>
-            <dd>{result.expertScore}%</dd>
-          </div>
-          <div>
-            <dt>Результат</dt>
-            <dd>{result.passed ? 'Пройдено' : 'Не пройдено'}</dd>
-          </div>
-        </dl>
-      </div>
-      <div className="td-grid td-grid--two">
-        <div>
-          <h4>Баллы по критериям</h4>
-          <div className="td-criteria">
-            {result.criteria.map((criterion) => (
-              <div key={criterion.criterionId}>
-                <span>{criterion.label}</span>
-                <div>
-                  <i style={{ width: `${(criterion.score / criterion.maxScore) * 100}%` }} />
-                </div>
-                <strong>
-                  {criterion.score}/{criterion.maxScore}
-                </strong>
-              </div>
-            ))}
+          <p>
+            {formatDateTime(result.completedAt)} · {formatDuration(result.durationSec)} · {result.category}
+            {result.confirmed ? ` · подтверждено ${result.expertScore}` : ' · ученик увидит итог после подтверждения'}
+          </p>
+          <div className="td-hero-actions">
+            {!result.confirmed ? (
+              <button
+                className="td-confirm"
+                type="button"
+                disabled={busy}
+                onClick={() => void saveScore(result.automaticScore, 'Подтверждена автоматическая оценка ИИ')}
+              >
+                Подтвердить оценку
+              </button>
+            ) : null}
+            <button className="td-quiet-btn" type="button" onClick={() => setOwnScore((value) => !value)}>
+              {ownScore ? 'Отмена' : 'Другой балл'}
+            </button>
+            {result.confirmed && result.passed ? (
+              <button className="td-quiet-btn" type="button" onClick={() => printResultCertificate(result)}>
+                Справка
+              </button>
+            ) : null}
           </div>
         </div>
-        <div>
-          <h4>Ошибки и подтверждения</h4>
-          <div className="td-stack">
-            {result.mistakes.map((mistake) => (
-              <article className="td-error-card" key={mistake.code}>
-                <StatusBadge
-                  tone={
-                    mistake.severity === 'critical'
-                      ? 'danger'
-                      : mistake.severity === 'major'
-                        ? 'warning'
-                        : 'neutral'
-                  }
-                >
-                  {mistake.severity}
-                </StatusBadge>
-                <strong>{mistake.description}</strong>
-                {mistake.evidence.map((evidence) => (
-                  <blockquote key={evidence.ref}>
-                    «{evidence.quote}» <cite>{evidence.ref}</cite>
-                  </blockquote>
-                ))}
-              </article>
-            ))}
-          </div>
-        </div>
-      </div>
-      <h4>Рекомендации</h4>
-      <ul className="td-reasons">
-        {result.recommendations.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
-      <div className="td-grid td-grid--two">
-        <div>
-          <label className="td-field">
-            Комментарий преподавателя
-            <textarea value={comment} onChange={(e) => setComment(e.target.value)} />
-          </label>
-          <button className="td-btn td-btn--secondary" onClick={() => void onSaveComment(comment)}>
-            Сохранить комментарий
-          </button>
-          <button className="td-btn td-btn--ghost" type="button" onClick={() => printResultCertificate(result)}>
-            Печать справки
-          </button>
-        </div>
-        <div className="td-score-edit">
+      </article>
+
+      {ownScore ? (
+        <form
+          className="td-scoreform"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!reason.trim()) {
+              setError('Напишите, почему балл другой.');
+              return;
+            }
+            void saveScore(score, reason.trim());
+          }}
+        >
           <label>
-            Экспертная оценка
+            Балл
             <input
               type="number"
               min="0"
               max="100"
               value={score}
-              onChange={(e) => setScore(Number(e.target.value))}
+              onChange={(event) => setScore(Number(event.target.value))}
             />
           </label>
           <label>
-            Причина корректировки
-            <textarea
-              required
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="Обязательное поле"
-            />
+            Почему другой балл
+            <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Коротко, это сохранится" />
           </label>
-          {error && (
-            <p className="td-form-error" role="alert">
-              {error}
-            </p>
-          )}
-          <button className="td-btn td-btn--primary" onClick={() => void adjust()}>
-            Скорректировать с аудитом
+          <button className="td-confirm" type="submit" disabled={busy}>
+            Сохранить балл
           </button>
-        </div>
-      </div>
-      <h4>Аудит результата</h4>
-      <div className="td-stack">
-        {audit
-          .filter((item) => item.entityId === result.id)
-          .map((item) => (
-            <article className="td-audit" key={item.id}>
-              <time>{formatDateTime(item.at)}</time>
-              <div>
-                <strong>{item.action}</strong>
-                <p>
-                  {item.previousValue && `${item.previousValue} → ${item.newValue} · `}
-                  {item.reason}
-                </p>
+        </form>
+      ) : null}
+      {error ? (
+        <p className="td-form-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+
+      <section className="td-fold">
+        <button type="button" className="td-fold-toggle" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+          <span>
+            <b>Полный разбор</b>
+            <small>По каким критериям сняты баллы</small>
+          </span>
+          <em>{open ? 'Свернуть' : 'Развернуть'}</em>
+        </button>
+        {open ? (
+          <div className="td-fold-body">
+            <ul className="td-scorebars">
+              {parts.map((part) => (
+                <li key={part.label}>
+                  <span>{part.label}</span>
+                  <i>
+                    <b style={{ width: `${part.max ? Math.min(100, (part.score / part.max) * 100) : 0}%` }} />
+                  </i>
+                  <strong>
+                    {part.score}/{part.max}
+                  </strong>
+                </li>
+              ))}
+            </ul>
+            {fields.length ? (
+              <div className="td-deductions">
+                {fields.map((field) => (
+                  <article key={field.label} className={`is-${field.state}`}>
+                    <header>
+                      <b>{field.label}</b>
+                      {field.max > 0 ? (
+                        <span>
+                          {field.points}/{field.max}
+                        </span>
+                      ) : null}
+                    </header>
+                    <p>
+                      В карточке: {field.got.trim() || 'пусто'}
+                      {field.expected.trim() ? ` · По билету: ${field.expected.trim()}` : ''}
+                    </p>
+                  </article>
+                ))}
               </div>
-            </article>
-          ))}
-      </div>
+            ) : null}
+            {result.recommendations.length ? <p className="td-quiet">{result.recommendations.join(' ')}</p> : null}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="td-play">
+        <header>
+          <h4>Запись разговора</h4>
+          {playable ? (
+            <a href={localUrl || `${recording}?download=1`} download={localUrl ? 'zvonok.wav' : undefined}>
+              Скачать WAV
+            </a>
+          ) : null}
+        </header>
+        {playable ? (
+          <audio controls preload="auto" src={playable} />
+        ) : (
+          <p className="td-quiet">
+            Файла к этой попытке нет. Плеер появляется здесь после звонка: можно прослушать и скачать. У этой сессии осталась только стенограмма.
+          </p>
+        )}
+        {lines.length ? (
+          <ol className="td-talk">
+            {lines.map((line, index) => (
+              <li key={`${line.role}-${index}`} className={line.role === 'operator' ? 'is-operator' : 'is-caller'}>
+                <span>{line.role === 'operator' ? 'Оператор' : 'Заявитель'}</span>
+                {line.text}
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </section>
+
+      <form
+        className="td-note"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSaveComment(comment);
+        }}
+      >
+        <label>
+          Комментарий ученику
+          <textarea value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Необязательно" />
+        </label>
+        <button className="td-btn" type="submit">
+          Сохранить
+        </button>
+      </form>
+
+      {history.length ? (
+        <p className="td-quiet">
+          {history
+            .map(
+              (item) =>
+                `${formatDateTime(item.at)} · ${item.action}${item.previousValue ? ` · ${item.previousValue} → ${item.newValue}` : ''}${item.reason ? ` · ${item.reason}` : ''}`,
+            )
+            .join('  ')}
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -218,9 +356,14 @@ export function ResultsPage({
           (!group || item.student.groupId === group) &&
           (!student || item.student.id === student) &&
           (!scenario || item.scenarioId === scenario) &&
-          (!outcome || String(item.passed) === outcome) &&
+          (!outcome ||
+            (outcome === 'pending'
+              ? !item.confirmed
+              : item.confirmed && String(item.passed) === outcome)) &&
           (period === 'all' || Date.parse(item.completedAt) >= Date.now() - 7 * 24 * 60 * 60 * 1000),
-      ),
+      )
+        .slice()
+        .sort((a, b) => Number(a.confirmed) - Number(b.confirmed) || b.completedAt.localeCompare(a.completedAt)),
     [results, group, student, scenario, outcome, period],
   );
   const selected = results.find((item) => item.id === selectedId);
@@ -244,6 +387,17 @@ export function ResultsPage({
           </button>
         </div>
       </header>
+      {selected ? (
+        <ResultDetail
+          key={selected.id}
+          result={selected}
+          audit={audit}
+          onClose={() => setSelectedId(null)}
+          onSaveComment={(value) => onSaveComment(selected.id, value)}
+          onAdjustScore={(score, reason) => onAdjustScore(selected.id, score, reason)}
+        />
+      ) : (
+      <>
       <TeacherFilterBar label="Фильтры результатов">
         <TeacherFilterMenu
           label="Группа"
@@ -309,18 +463,10 @@ export function ResultsPage({
             { value: '', label: 'Все' },
             { value: 'true', label: 'Пройдено' },
             { value: 'false', label: 'Не пройдено' },
+            { value: 'pending', label: 'Ждёт подтверждения' },
           ]}
         />
       </TeacherFilterBar>
-      {selected && (
-        <ResultDetail
-          result={selected}
-          audit={audit}
-          onClose={() => setSelectedId(null)}
-          onSaveComment={(value) => onSaveComment(selected.id, value)}
-          onAdjustScore={(score, reason) => onAdjustScore(selected.id, score, reason)}
-        />
-      )}
       <section className="td-panel">
         <div className="td-table-wrap">
           <table className="td-table">
@@ -346,10 +492,10 @@ export function ResultsPage({
                   <td>{result.scenarioTitle}</td>
                   <td>{formatDateTime(result.completedAt)}</td>
                   <td>{result.automaticScore}%</td>
-                  <td>{result.expertScore}%</td>
+                  <td>{result.confirmed ? `${result.expertScore}%` : '—'}</td>
                   <td>
-                    <StatusBadge tone={result.passed ? 'good' : 'danger'}>
-                      {result.finalScore}%
+                    <StatusBadge tone={result.confirmed ? (result.passed ? 'good' : 'danger') : 'warning'}>
+                      {result.confirmed ? `${result.finalScore}%` : 'Ждёт'}
                     </StatusBadge>
                   </td>
                   <td>{result.mistakes.length}</td>
@@ -359,7 +505,7 @@ export function ResultsPage({
                       className="td-btn td-btn--secondary"
                       onClick={() => setSelectedId(result.id)}
                     >
-                      Подробнее
+                      {result.confirmed ? 'Подробнее' : 'Подтвердить'}
                     </button>
                   </td>
                 </tr>
@@ -368,8 +514,8 @@ export function ResultsPage({
           </table>
         </div>
       </section>
-      <TeacherAnalyticsPanels snapshot={snapshot} results={visible} />
-      <TeacherSystemStatuses>{systemStatus}</TeacherSystemStatuses>
+      </>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ export { clearDdsHint, liveCardSnapshot, writeDdsHint } from './card-progress';
 export type { LiveCardRow, LiveCardSnapshot } from './card-progress';
 export { readClassSession, replaceClassSession, startClass, stopClass, CLASS_CATEGORY_OPTIONS } from './class-session';
 export { hydrateFromApi } from './hydrate';
-export { activeCues, pushTeacherCue, takePendingLlmCues } from './teacher-cues';
+export { activeCues, pushTeacherCue, takePendingLlmCues, subscribeCues, refreshCuesFromApi } from './teacher-cues';
 export { scoreTrainingLesson } from './score-training';
 export { scoreCard50 } from './score-card';
 export type { FieldCheck } from './score-card';

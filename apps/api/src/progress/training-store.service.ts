@@ -194,11 +194,21 @@ export class TrainingStoreService {
 
   async listLive() {
     const sql = this.database.requireSql();
-    const rows = await sql<{ payload: unknown }[]>`
-      SELECT payload FROM live_presence
-      WHERE updated_at > now() - interval '45 seconds'
+    const rows = await sql<{ payload: unknown; updated_at: Date | string }[]>`
+      SELECT payload, updated_at FROM live_presence
+      WHERE updated_at > now() - interval '3 minutes'
     `;
-    return rows.map((row) => row.payload);
+    return rows.map((row) => {
+      const payload =
+        row.payload && typeof row.payload === 'object' ? (row.payload as Record<string, unknown>) : {};
+      return {
+        ...payload,
+        updatedAt:
+          typeof payload.updatedAt === 'string' && payload.updatedAt
+            ? payload.updatedAt
+            : toIso(row.updated_at),
+      };
+    });
   }
 
   async upsertLive(login: string, payload: unknown) {
@@ -215,5 +225,140 @@ export class TrainingStoreService {
     const sql = this.database.requireSql();
     await sql`DELETE FROM live_presence WHERE login = ${login}`;
     return { ok: true, login };
+  }
+
+  async getCatalog() {
+    const sql = this.database.requireSql();
+    const [row] = await sql<{ payload: unknown; updated_at: Date | string }[]>`
+      SELECT payload, updated_at FROM ticket_catalog WHERE id = 'default'
+    `;
+    const payload =
+      row?.payload && typeof row.payload === 'object'
+        ? (row.payload as { overlays?: unknown; custom?: unknown })
+        : { overlays: {}, custom: [] };
+    return {
+      overlays: payload.overlays && typeof payload.overlays === 'object' ? payload.overlays : {},
+      custom: Array.isArray(payload.custom) ? payload.custom : [],
+      updatedAt: toIso(row?.updated_at) || null,
+    };
+  }
+
+  async putCatalog(payload: { overlays?: unknown; custom?: unknown }) {
+    const sql = this.database.requireSql();
+    const next = {
+      overlays: payload.overlays && typeof payload.overlays === 'object' ? payload.overlays : {},
+      custom: Array.isArray(payload.custom) ? payload.custom : [],
+    };
+    await sql`
+      INSERT INTO ticket_catalog (id, payload, updated_at)
+      VALUES ('default', ${asJson(next)}::jsonb, now())
+      ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = now()
+    `;
+    return { ok: true, ...next };
+  }
+
+  async saveRecording(input: {
+    id?: string;
+    lessonId?: string;
+    login: string;
+    scenarioId?: string;
+    mime?: string;
+    durationSec?: number;
+    bytes: Buffer;
+  }) {
+    const sql = this.database.requireSql();
+    const id = input.id || crypto.randomUUID();
+    const mime = input.mime || 'audio/wav';
+    await sql`
+      INSERT INTO call_recordings (id, lesson_id, operator_login, scenario_id, mime, duration_sec, bytes)
+      VALUES (
+        ${id},
+        ${input.lessonId || null},
+        ${input.login},
+        ${input.scenarioId || ''},
+        ${mime},
+        ${input.durationSec ?? 0},
+        ${input.bytes}
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        lesson_id = COALESCE(EXCLUDED.lesson_id, call_recordings.lesson_id),
+        bytes = EXCLUDED.bytes,
+        mime = EXCLUDED.mime,
+        duration_sec = EXCLUDED.duration_sec
+    `;
+    return { ok: true, id, mime, size: input.bytes.length };
+  }
+
+  async listRecordings(login?: string) {
+    const sql = this.database.requireSql();
+    const rows = login
+      ? await sql<{ id: string; lesson_id: string | null; operator_login: string; scenario_id: string; mime: string; duration_sec: number; created_at: Date }[]>`
+          SELECT id, lesson_id, operator_login, scenario_id, mime, duration_sec, created_at
+          FROM call_recordings
+          WHERE operator_login = ${login}
+          ORDER BY created_at DESC
+          LIMIT 100
+        `
+      : await sql<{ id: string; lesson_id: string | null; operator_login: string; scenario_id: string; mime: string; duration_sec: number; created_at: Date }[]>`
+          SELECT id, lesson_id, operator_login, scenario_id, mime, duration_sec, created_at
+          FROM call_recordings
+          ORDER BY created_at DESC
+          LIMIT 200
+        `;
+    return rows.map((row) => ({
+      id: row.id,
+      lessonId: row.lesson_id,
+      login: row.operator_login,
+      scenarioId: row.scenario_id,
+      mime: row.mime,
+      durationSec: row.duration_sec,
+      createdAt: toIso(row.created_at),
+    }));
+  }
+
+  async getRecording(id: string) {
+    const sql = this.database.requireSql();
+    const [row] = await sql<{ mime: string; bytes: Buffer }[]>`
+      SELECT mime, bytes FROM call_recordings WHERE id = ${id}
+    `;
+    return row ?? null;
+  }
+
+  async listCues(login?: string) {
+    try {
+      const sql = this.database.requireSql();
+      const rows = login
+        ? await sql<{ payload: unknown }[]>`
+            SELECT payload FROM teacher_cues
+            WHERE operator_login = ${login} AND created_at > now() - interval '3 minutes'
+            ORDER BY created_at DESC
+            LIMIT 80
+          `
+        : await sql<{ payload: unknown }[]>`
+            SELECT payload FROM teacher_cues
+            WHERE created_at > now() - interval '3 minutes'
+            ORDER BY created_at DESC
+            LIMIT 80
+          `;
+      return rows.map((row) => row.payload);
+    } catch {
+      return [];
+    }
+  }
+
+  async putCue(id: string, payload: unknown) {
+    try {
+      const sql = this.database.requireSql();
+      const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+      const login = String(record.login || '');
+      await sql`
+        INSERT INTO teacher_cues (id, operator_login, payload, created_at)
+        VALUES (${id}, ${login}, ${asJson(record)}::jsonb, now())
+        ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload
+      `;
+      return { ok: true, id };
+    } catch {
+      return { ok: false, id };
+    }
   }
 }

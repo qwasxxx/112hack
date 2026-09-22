@@ -157,7 +157,8 @@ export function ContourPage(props: Props) {
           {props.services.map((service) => {
             const view = resolveServiceView(service, live);
             const tone = serviceTone(view);
-            const disabled = serviceActionDisabled(view) || service.id === 'sip';
+            const locked = service.id === 'sip' || ((service.id === 'api' || service.id === 'realtime' || service.id === 'postgres') && service.running);
+            const disabled = serviceActionDisabled(view) || locked;
             return (
               <article key={service.id} className={`ad-service ad-ops-card is-${tone}`}>
                 <span className="ad-service-rail" aria-hidden="true" />

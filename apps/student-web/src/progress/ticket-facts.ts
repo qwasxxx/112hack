@@ -136,6 +136,9 @@ export function smsFromTicket(scenario: TrainingScenario): string {
 }
 
 function situationCore(situation: string, fio: string, phone: string): string {
+  if (/уличн[а-яё]*\s+освещен|горит\s+уличн/i.test(situation)) {
+    return 'Горит уличное освещение на МКАД — фонари светят. Это не пожар и не квартира.';
+  }
   let text = situation;
   if (fio) {
     text = text.replace(fio, ' ');

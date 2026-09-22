@@ -2,7 +2,16 @@ import { SCENARIOS } from '../data/scenarios';
 import { pushAssignments } from './remote';
 
 const KEY = 'sys112.assignments.v1';
-const DEMO_COUNT = 8;
+const LEGACY_DEMO = new Set([
+  'ags-01-1',
+  'ags-01-2',
+  'ags-01-3',
+  'ags-02-1',
+  'ags-02-2',
+  'ags-02-3',
+  'ags-03-1',
+  'ags-03-2',
+]);
 
 export type AssignmentStore = {
   scenarioIds: string[];
@@ -12,6 +21,14 @@ export type AssignmentStore = {
 
 function canUseStorage(): boolean {
   return typeof localStorage !== 'undefined';
+}
+
+function allCatalogIds(): string[] {
+  return SCENARIOS.map((item) => item.id);
+}
+
+function isLegacyDemo(ids: string[]): boolean {
+  return ids.length > 0 && ids.length <= 8 && ids.every((id) => LEGACY_DEMO.has(id));
 }
 
 function writeStore(store: AssignmentStore, sync = true): void {
@@ -24,33 +41,43 @@ function writeStore(store: AssignmentStore, sync = true): void {
   }
 }
 
-export function readAssignments(): AssignmentStore {
-  const fallback: AssignmentStore = {
-    scenarioIds: SCENARIOS.slice(0, DEMO_COUNT).map((item) => item.id),
+function defaultStore(teacherLogin = 'petrov'): AssignmentStore {
+  return {
+    scenarioIds: allCatalogIds(),
     updatedAt: new Date(0).toISOString(),
-    teacherLogin: 'petrov',
+    teacherLogin,
   };
+}
+
+export function readAssignments(): AssignmentStore {
+  const fallback = defaultStore();
   if (!canUseStorage()) {
     return fallback;
   }
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) {
-      writeStore(fallback, false);
+      writeStore(fallback, true);
       return fallback;
     }
     const parsed = JSON.parse(raw) as Partial<AssignmentStore>;
     const ids = Array.isArray(parsed.scenarioIds)
       ? parsed.scenarioIds.filter((id) => typeof id === 'string')
       : [];
-    if (ids.length === 0 && !raw.includes('"scenarioIds"')) {
-      writeStore(fallback, false);
-      return fallback;
+    const teacherLogin = typeof parsed.teacherLogin === 'string' ? parsed.teacherLogin : fallback.teacherLogin;
+    if (ids.length === 0 || isLegacyDemo(ids)) {
+      const migrated = {
+        scenarioIds: allCatalogIds(),
+        updatedAt: new Date().toISOString(),
+        teacherLogin,
+      };
+      writeStore(migrated, true);
+      return migrated;
     }
     return {
       scenarioIds: ids,
       updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : fallback.updatedAt,
-      teacherLogin: typeof parsed.teacherLogin === 'string' ? parsed.teacherLogin : fallback.teacherLogin,
+      teacherLogin,
     };
   } catch {
     return fallback;
@@ -93,5 +120,9 @@ export function isScenarioAssigned(id: string): boolean {
 }
 
 export function replaceAssignments(store: AssignmentStore): void {
+  if (isLegacyDemo(store.scenarioIds) || store.scenarioIds.length === 0) {
+    writeStore(defaultStore(store.teacherLogin || 'petrov'), true);
+    return;
+  }
   writeStore(store, false);
 }

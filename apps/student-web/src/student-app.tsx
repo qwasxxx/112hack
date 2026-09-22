@@ -38,6 +38,7 @@ export function StudentApp(props: Props) {
   const [screen, setScreen] = useState<Screen>({ name: 'catalog' });
   const [track, setTrack] = useState<LearnerTrack>(() => readLearnerTrack());
   const liveStarted = useRef<string | null>(null);
+  const liveKey = useRef('');
   const bar = <AccountBar user={props.operator} onLogout={props.onLogout} />;
 
   useEffect(() => {
@@ -58,15 +59,18 @@ export function StudentApp(props: Props) {
         : null;
     if (!live) {
       liveStarted.current = null;
+      liveKey.current = '';
       clearLive(props.operator.login);
       clearDdsHint(props.operator.login);
       return;
     }
-    if (!liveStarted.current) {
+    const scenario = 'scenario' in live ? live.scenario : undefined;
+    const key = `${live.name}:${scenario?.id ?? ''}`;
+    if (liveKey.current !== key) {
+      liveKey.current = key;
       liveStarted.current = new Date().toISOString();
     }
-    const startedAt = liveStarted.current;
-    const scenario = 'scenario' in live ? live.scenario : undefined;
+    const startedAt = liveStarted.current ?? new Date().toISOString();
     const mode = live.name === 'exam' ? 'exam' : live.name === 'dds' ? 'dds' : 'training';
     const phaseLabel = live.name === 'briefing' ? 'Брифинг' : live.name === 'theory' ? 'Теория' : undefined;
     function beat() {
@@ -90,7 +94,16 @@ export function StudentApp(props: Props) {
     }
     beat();
     const timer = window.setInterval(beat, 1500);
-    return () => window.clearInterval(timer);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        beat();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [props.operator.login, props.operator.name, screen]);
 
   function changeTrack(next: LearnerTrack) {

@@ -78,6 +78,43 @@ export class MockTeacherDashboardRepository implements TeacherDashboardRepositor
     return clone(saved);
   }
 
+  async importCatalog(raw: string) {
+    await this.ready();
+    const parsed: unknown = JSON.parse(raw);
+    const list = Array.isArray(parsed)
+      ? parsed
+      : parsed && typeof parsed === 'object' && Array.isArray((parsed as { tickets?: unknown }).tickets)
+        ? (parsed as { tickets: unknown[] }).tickets
+        : [];
+    let added = 0;
+    for (const row of list) {
+      if (!row || typeof row !== 'object') {
+        continue;
+      }
+      const rec = row as { title?: string; description?: string; location?: string };
+      this.scenarios.push({
+        id: `sc-imp-${this.scenarios.length + 1}`,
+        title: rec.title || `Импорт ${this.scenarios.length + 1}`,
+        category: 'Импорт',
+        location: rec.location || '',
+        difficulty: 'standard',
+        description: rec.description || '',
+        timeLimitSec: 30,
+        requiredActions: [],
+        allowedErrors: 1,
+        passThreshold: 70,
+        materials: [],
+        allowedInterventions: [],
+        version: 1,
+        status: 'active',
+        assignments: 1,
+        updatedAt: new Date().toISOString(),
+      });
+      added += 1;
+    }
+    return { added, updated: 0 };
+  }
+
   async setScenarioArchived(id: string, archived: boolean) {
     await this.ready();
     const current = this.scenarios.find((item) => item.id === id);
@@ -104,7 +141,9 @@ export class MockTeacherDashboardRepository implements TeacherDashboardRepositor
     const updated = this.updateResult(resultId, (result) => ({
       ...result,
       expertScore: score,
-      finalScore: Math.round((result.automaticScore + score) / 2),
+      finalScore: score,
+      confirmed: true,
+      passed: score >= 70,
     }));
     this.audit = [
       {

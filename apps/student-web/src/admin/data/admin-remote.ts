@@ -84,3 +84,10 @@ export function pullBackupStatus() {
 export function createRemoteBackup() {
   return request<Record<string, unknown>>('/api/v1/admin/backup', { method: 'POST' });
 }
+
+export function toggleRemoteService(id: string, action: 'start' | 'stop') {
+  return request<{ ok: boolean; message?: string }>(`/api/v1/admin/services/${id}/${action}`, {
+    method: 'POST',
+    body: '{}',
+  });
+}

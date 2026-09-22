@@ -11,6 +11,7 @@ import { listRemoteUsers, loginRemote, registerRemote, createRemoteUser } from '
 
 const LEGACY_ACCOUNTS_KEY = 'sys112.accounts';
 const SESSION_KEY = 'sys112.session';
+const SESSION_TAB_KEY = 'sys112.session.tab';
 const FALLBACK_ACCOUNTS_KEY = 'sys112.accounts.v2';
 
 export const DEMO_PASSWORD = '112';
@@ -194,6 +195,10 @@ function specToAccount(spec: SeedSpec, passwordHash?: string): Account {
 
 function canUseStorage(): boolean {
   return typeof localStorage !== 'undefined';
+}
+
+function canUseTabStorage(): boolean {
+  return typeof sessionStorage !== 'undefined';
 }
 
 function canUseIndexedDb(): boolean {
@@ -399,15 +404,11 @@ export function toSession(account: Account): Session {
   };
 }
 
-export function readSession(): Session | null {
-  if (!canUseStorage()) {
+function parseSession(raw: string | null): Session | null {
+  if (!raw) {
     return null;
   }
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) {
-      return null;
-    }
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') {
       return null;
@@ -422,23 +423,35 @@ export function readSession(): Session | null {
   }
 }
 
+export function readSession(): Session | null {
+  if (canUseTabStorage()) {
+    const tab = parseSession(sessionStorage.getItem(SESSION_TAB_KEY));
+    if (tab) {
+      return tab;
+    }
+  }
+  return null;
+}
+
 export function writeSession(session: Session | null): void {
-  if (!canUseStorage()) {
-    return;
+  const payload = session
+    ? JSON.stringify({
+        id: session.id,
+        name: session.name,
+        login: session.login,
+        role: session.role,
+      })
+    : null;
+  if (canUseTabStorage()) {
+    if (!payload) {
+      sessionStorage.removeItem(SESSION_TAB_KEY);
+    } else {
+      sessionStorage.setItem(SESSION_TAB_KEY, payload);
+    }
   }
-  if (!session) {
-    localStorage.removeItem(SESSION_KEY);
-    return;
+  if (canUseStorage() && payload) {
+    localStorage.setItem(SESSION_KEY, payload);
   }
-  localStorage.setItem(
-    SESSION_KEY,
-    JSON.stringify({
-      id: session.id,
-      name: session.name,
-      login: session.login,
-      role: session.role,
-    }),
-  );
 }
 
 export async function loadAccounts(): Promise<Account[]> {

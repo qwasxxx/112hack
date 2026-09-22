@@ -3,6 +3,7 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { DatabaseService } from '../infrastructure/database/database.service';
 import { loadEnv } from '../infrastructure/config/env';
+import { controlService, type ControllableService } from './docker-control';
 
 const env = loadEnv();
 
@@ -53,10 +54,22 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
         { id: 'realtime', running: true, title: 'Realtime' },
         { id: 'stt', running: stt, title: 'STT' },
         { id: 'llm', running: llm, title: 'LLM' },
+        { id: 'tts', running: tts, title: 'TTS' },
         { id: 'postgres', running: postgres, title: 'PostgreSQL' },
         { id: 'sip', running: false, title: 'SIP / VoIP' },
       ],
     };
+  }
+
+  async control(id: string, action: string) {
+    if (id === 'sip') {
+      return { ok: false, id, action, message: 'SIP не входит в учебный контур' };
+    }
+    if (action !== 'start' && action !== 'stop') {
+      return { ok: false, id, action, message: 'Нужен start или stop' };
+    }
+    const result = await controlService(id as ControllableService, action);
+    return { id, action, ...result };
   }
 
   async backup(kind: 'manual' | 'scheduled' = 'manual') {

@@ -1,8 +1,6 @@
 import { Fragment, useEffect, useState } from 'react';
 import { JOURNAL_COLUMNS, JOURNAL_NAV } from '../data/ui-catalog';
-import { useArmRegionProps } from '../guided/arm-region';
 import type { TelephonyStatus } from '../model/arm112-models';
-import { IncomingCallOverlay } from './incoming-call-overlay';
 
 const SAMPLE_ROWS = [
   {
@@ -42,12 +40,6 @@ const SAMPLE_ROWS = [
 
 type Props = {
   telephonyStatus: TelephonyStatus;
-  incoming: boolean;
-  incomingKind?: 'call' | 'sms';
-  incomingPreview?: string;
-  incomingNumber: string;
-  onAcceptCall: () => void;
-  onDismissIncoming: () => void;
   onCreateCard: () => void;
   onToggleTelephony: () => void;
 };
@@ -57,7 +49,6 @@ export function JournalScreen(props: Props) {
   const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const weekday = now.toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const [advanced, setAdvanced] = useState(false);
-  const incomingRegion = useArmRegionProps('incoming');
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -205,21 +196,6 @@ export function JournalScreen(props: Props) {
         <span>Записей на странице: 10</span>
         <span>1-3 из 3</span>
       </div>
-      {props.incoming ? (
-        <div
-          className={incomingRegion.className}
-          data-arm-region={incomingRegion['data-arm-region']}
-          onClick={incomingRegion.onClick}
-        >
-          <IncomingCallOverlay
-            number={props.incomingNumber}
-            kind={props.incomingKind}
-            preview={props.incomingPreview}
-            onAccept={props.onAcceptCall}
-            onDismiss={props.onDismissIncoming}
-          />
-        </div>
-      ) : null}
     </div>
   );
 }

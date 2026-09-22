@@ -20,8 +20,8 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api/v1/tts': { target: 'http://127.0.0.1:8092', timeout: 180000 },
-      '/api/llm': 'http://127.0.0.1:8091',
-      '/api': 'http://127.0.0.1:3000',
+      '/api/llm': { target: 'http://127.0.0.1:8091', timeout: 180000 },
+      '/api': { target: 'http://127.0.0.1:3000', timeout: 180000 },
       '/socket.io': { target: 'http://127.0.0.1:3000', ws: true },
       '/ws/stt': { target: 'http://127.0.0.1:8090', ws: true },
       '/stt-health': { target: 'http://127.0.0.1:8090', rewrite: (path) => path.replace('/stt-health', '/health') },

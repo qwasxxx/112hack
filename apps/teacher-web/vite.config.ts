@@ -20,6 +20,7 @@ export default defineConfig({
     port: 5174,
     strictPort: true,
     proxy: {
+      '/api/llm': { target: 'http://127.0.0.1:8091', timeout: 180000 },
       '/api': 'http://127.0.0.1:3000',
       '/socket.io': { target: 'http://127.0.0.1:3000', ws: true },
     },

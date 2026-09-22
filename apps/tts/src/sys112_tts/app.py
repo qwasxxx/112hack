@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import struct
 import time
 from contextlib import asynccontextmanager
@@ -57,6 +58,12 @@ class SynthesizeRequest(BaseModel):
 @app.get("/health")
 def health() -> dict[str, Any]:
     return engine.health()
+
+
+@app.post("/control/stop")
+async def control_stop() -> dict[str, bool]:
+    asyncio.get_event_loop().call_later(0.2, lambda: os._exit(0))
+    return {"ok": True}
 
 
 def _frame(chunk: bytes) -> bytes:

@@ -1,14 +1,14 @@
 import { useState, type ReactNode } from 'react';
 import type { DdsShiftRole } from '../../dds-lanes';
-import type { ServiceKind } from '../../data/scenarios';
-import { serviceChipLabel, splitDdsAddress } from './display';
+import { EVIDENCED_SERVICE_LINES, parseServiceLine } from '../arm112-simulator/data/gsi-services';
+import { ownChipLabel, splitDdsAddress } from './display';
 import type { DdsDraft } from './incoming-card';
-import type { DdsIncidentCardViewModel, DdsServiceStatus, DdsStatusEvent } from './types';
+import type { DdsIncidentCardViewModel, DdsServiceChip, DdsServiceStatus, DdsStatusEvent } from './types';
 import type { DdsStatusForm } from './use-dds-session';
 
-const KINDS: ServiceKind[] = ['fire', 'ambulance', 'police', 'gas'];
+type Modal = 'map' | 'recordings' | 'sms' | 'injured' | 'services' | null;
 
-type Modal = 'map' | 'recordings' | 'sms' | 'injured' | null;
+const CATALOG = EVIDENCED_SERVICE_LINES.map(parseServiceLine);
 
 type Props = {
   card: DdsIncidentCardViewModel;
@@ -24,19 +24,50 @@ type Props = {
   canEditStatus: boolean;
   callbackDone: boolean;
   onPatch: (next: Partial<DdsDraft>) => void;
-  onToggleService: (kind: ServiceKind) => void;
   onStartStatus: () => void;
   onCancelStatus: () => void;
   onPatchStatus: (next: Partial<DdsStatusForm>) => void;
   onApplyStatus: () => void;
   onCallback: () => void;
+  onContactService: (label: string, phone: string) => void;
   onClose: () => void;
 };
 
 export function DdsCard(props: Props) {
   const [modal, setModal] = useState<Modal>(null);
+  const [historyOf, setHistoryOf] = useState<'own' | string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [overflow, setOverflow] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState('');
   const address = splitDdsAddress(props.draft.address);
   const injuredYes = props.draft.injured === 'Есть';
+  const ownLabel = ownChipLabel(props.workplace, props.draft.address);
+  const others = props.card.services.filter(
+    (item) => item.status !== 'Не принято' && item.shortLabel !== ownLabel,
+  );
+  const main = others.slice(0, 8);
+  const rest = others.slice(8);
+  const historyChip =
+    historyOf && historyOf !== 'own' ? others.find((item) => item.id === historyOf) ?? null : null;
+  const showOwnHistory = historyOf === 'own' || props.editingStatus;
+  const q = catalogQuery.trim().toLowerCase();
+  const catalog = CATALOG.filter(
+    (item) => !q || item.full.toLowerCase().includes(q) || item.short.toLowerCase().includes(q),
+  );
+  const onCard = new Set(others.map((item) => item.shortLabel));
+  onCard.add(ownLabel);
+
+  function flash(text: string) {
+    setNotice(text);
+    window.setTimeout(() => setNotice(null), 3200);
+  }
+
+  function openOwn() {
+    setHistoryOf('own');
+    if (props.canEditStatus) {
+      props.onStartStatus();
+    }
+  }
 
   return (
     <div className="dds-card">
@@ -123,7 +154,10 @@ export function DdsCard(props: Props) {
           <button
             type="button"
             className="dds-pencil"
-            onClick={props.onStartStatus}
+            onClick={() => {
+              setHistoryOf('own');
+              props.onStartStatus();
+            }}
             disabled={!props.canEditStatus}
             aria-label="Изменить статус службы"
           >
@@ -157,115 +191,154 @@ export function DdsCard(props: Props) {
         </section>
       </div>
 
-      {props.editingStatus ? (
-        <>
-          {props.history.length ? (
-            <div className="dds-hist">
-              <header>
-                <span>{props.workplace}</span>
-                <button type="button" onClick={props.onCancelStatus} aria-label="Закрыть историю">
-                  ×
-                </button>
-              </header>
-              <ul>
-                {props.history.map((event, index) => (
-                  <li key={`${event.at}-${event.status}-${index}`}>
-                    <span>оп. 0</span>
-                    <div>
-                      <b>
-                        {event.at} {event.status}
-                      </b>
-                      {event.comment ? <p>{event.comment}</p> : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          <form
-            className="dds-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              props.onApplyStatus();
-            }}
-          >
-            <label>
-              Статус
-              <select
-                value={props.statusForm.status}
-                onChange={(event) =>
-                  props.onPatchStatus({ status: event.target.value as DdsServiceStatus })
-                }
-              >
-                {props.statusOptions.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Наряд
-              <input
-                value={props.statusForm.naryad}
-                onChange={(event) => props.onPatchStatus({ naryad: event.target.value })}
-                aria-label="Номер наряда"
-              />
-            </label>
-            <label>
-              Комментарий
-              <input
-                value={props.statusForm.comment}
-                onChange={(event) => props.onPatchStatus({ comment: event.target.value })}
-                aria-label="Комментарий"
-              />
-            </label>
-            <button type="submit" className="dds-ok" aria-label="Подтвердить статус">
-              ✓
-            </button>
-            <button type="button" onClick={props.onCancelStatus} aria-label="Отмена">
+      {showOwnHistory && props.history.length ? (
+        <div className="dds-hist" role="dialog" aria-label={`История ${ownLabel}`}>
+          <header>
+            <span>{ownLabel}</span>
+            <button type="button" onClick={() => setHistoryOf(null)} aria-label="Закрыть историю">
               ×
             </button>
-          </form>
-        </>
+          </header>
+          <ul>
+            {props.history.map((event, index) => (
+              <li key={`${event.at}-${event.status}-${index}`}>
+                <span>оп. 0</span>
+                <div>
+                  <b>
+                    {event.at} {event.status}
+                  </b>
+                  {event.comment ? <p>{event.comment}</p> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {historyChip ? (
+        <div className="dds-hist" role="dialog" aria-label={`История ${historyChip.shortLabel}`}>
+          <header>
+            <span>{historyChip.shortLabel}</span>
+            <button type="button" onClick={() => setHistoryOf(null)} aria-label="Закрыть историю">
+              ×
+            </button>
+          </header>
+          <ul>
+            {historyChip.history.map((event, index) => (
+              <li key={`${event.at}-${event.status}-${index}`}>
+                <span>оп. 0</span>
+                <div>
+                  <b>
+                    {event.at} {event.status}
+                  </b>
+                  {event.comment ? <p>{event.comment}</p> : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {historyChip.phone ? (
+            <button
+              type="button"
+              className="dds-hist-call"
+              onClick={() => {
+                setHistoryOf(null);
+                props.onContactService(historyChip.shortLabel, historyChip.phone ?? '');
+              }}
+            >
+              Связаться {historyChip.phone}
+            </button>
+          ) : (
+            <p className="dds-hist-none">Номера нет — службу видно, связаться нельзя.</p>
+          )}
+        </div>
+      ) : null}
+
+      {props.editingStatus ? (
+        <form
+          className="dds-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            props.onApplyStatus();
+          }}
+        >
+          <label>
+            Статус
+            <select
+              value={props.statusForm.status}
+              onChange={(event) =>
+                props.onPatchStatus({ status: event.target.value as DdsServiceStatus })
+              }
+            >
+              {props.statusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Номер наряда
+            <input
+              value={props.statusForm.naryad}
+              onChange={(event) => props.onPatchStatus({ naryad: event.target.value })}
+              aria-label="Номер наряда"
+            />
+          </label>
+          <label>
+            Комментарий
+            <input
+              value={props.statusForm.comment}
+              onChange={(event) => props.onPatchStatus({ comment: event.target.value })}
+              aria-label="Комментарий"
+            />
+          </label>
+          <button type="submit" className="dds-ok" aria-label="Подтвердить статус">
+            ✓
+          </button>
+          <button type="button" onClick={props.onCancelStatus} aria-label="Отмена">
+            ×
+          </button>
+        </form>
+      ) : null}
+
+      {overflow ? (
+        <div className="dds-overflow">
+          {rest.map((chip) => (
+            <ChipButton key={chip.id} chip={chip} onClick={() => setHistoryOf(chip.id)} />
+          ))}
+          <button
+            type="button"
+            className={`dds-chip is-work${props.editingStatus ? ' is-edit' : ''}${props.workplaceStatus === 'Работы завершены' ? ' is-done' : ''}`}
+            onClick={openOwn}
+          >
+            <span>
+              {ownLabel}
+              {props.canEditStatus ? ' ✎' : ''}
+            </span>
+            <small>
+              {clockOf(props.history)} {props.workplaceStatus}
+            </small>
+          </button>
+        </div>
       ) : null}
 
       <footer className="dds-footer">
-        {KINDS.map((kind) => {
-          const on = props.draft.services.includes(kind);
-          return (
-            <button
-              key={kind}
-              type="button"
-              className={`dds-chip${on ? ' is-on' : ''}`}
-              aria-pressed={on}
-              title={
-                on
-                  ? `${serviceChipLabel(kind)} привлечена — клик снимет`
-                  : `${serviceChipLabel(kind)} не привлечена — клик добавит. 101 пожар, 102 полиция, 103 скорая, 104 газ`
-              }
-              onClick={() => props.onToggleService(kind)}
-            >
-              <span>{serviceChipLabel(kind)}</span>
-              <small>{on ? `${clockOf(props.history) || '—'} Добавлена` : ''}</small>
-            </button>
-          );
-        })}
+        <button type="button" className="dds-services-fab" onClick={() => setModal('services')}>
+          <span>СлужБис</span>
+          <b>+</b>
+        </button>
+        {main.map((chip) => (
+          <ChipButton key={chip.id} chip={chip} onClick={() => setHistoryOf(chip.id)} />
+        ))}
         <button
           type="button"
-          className={`dds-chip is-work${props.editingStatus ? ' is-edit' : ''}${props.workplaceStatus === 'Работы завершены' ? ' is-done' : ''}`}
-          onClick={props.onStartStatus}
+          className="dds-footer-more"
+          onClick={() => setOverflow((value) => !value)}
+          aria-label="Ещё службы"
         >
-          <span>{shortWorkplace(props.workplace)}</span>
-          <small>
-            {clockOf(props.history)} {props.workplaceStatus}
-            {props.naryad ? ` · ${props.naryad}` : ''}
-          </small>
-        </button>
-        <span className="dds-footer-more" aria-hidden="true">
           <b>⌃</b>
           <b>⌄</b>
-        </span>
+        </button>
         <span className="dds-footer-spacer" />
         <button type="button" className="dds-doc" onClick={props.onClose} aria-label="Закрыть карточку">
           ▣
@@ -274,7 +347,46 @@ export function DdsCard(props: Props) {
           ×
         </button>
       </footer>
+      {notice ? <p className="dds-notice">{notice}</p> : null}
 
+      {modal === 'services' ? (
+        <div className="dds-modal-backdrop">
+          <div className="dds-modal dds-services-modal" role="dialog" aria-label="Добавьте службы">
+            <button type="button" className="dds-modal-x" onClick={() => setModal(null)} aria-label="Закрыть">
+              ×
+            </button>
+            <h2>Добавьте службы</h2>
+            <input
+              className="dds-catalog-search"
+              placeholder="Поиск ..."
+              value={catalogQuery}
+              onChange={(event) => setCatalogQuery(event.target.value)}
+              aria-label="Поиск службы"
+            />
+            <div className="dds-catalog-list">
+              {catalog.map((service) => (
+                <button
+                  key={service.short}
+                  type="button"
+                  className={onCard.has(service.short) ? 'is-on' : undefined}
+                  onClick={() =>
+                    flash(
+                      onCard.has(service.short)
+                        ? `«${service.short}» уже получила эту карточку.`
+                        : 'В карточке ДДС службы не добавляются. Видно, кому она уже ушла.',
+                    )
+                  }
+                >
+                  {service.full}
+                </button>
+              ))}
+            </div>
+            <button type="button" className="dds-catalog-save" onClick={() => setModal(null)}>
+              Сохранить и закрыть
+            </button>
+          </div>
+        </div>
+      ) : null}
       {modal === 'map' ? (
         <div className="dds-map" role="dialog" aria-label="С112 - карта">
           <div className="dds-map-title">
@@ -292,8 +404,8 @@ export function DdsCard(props: Props) {
       {modal === 'recordings' ? (
         <DdsDialog title="Записи звонков" onClose={() => setModal(null)}>
           {props.callbackDone
-            ? 'Есть обратный звонок заявителю в этой карточке.'
-            : 'Записей нет. Чтобы уточнить данные, нажмите трубку у номера АОН или предоставленного.'}
+            ? 'Есть звонок по этой карточке.'
+            : 'Записей нет. Трубка у АОН — звонок заявителю. Чип службы — история, связь если есть номер.'}
         </DdsDialog>
       ) : null}
       {modal === 'sms' ? (
@@ -345,6 +457,17 @@ function DdsDialog(props: { title: string; onClose: () => void; children: ReactN
   );
 }
 
+function ChipButton(props: { chip: DdsServiceChip; onClick: () => void }) {
+  return (
+    <button type="button" className="dds-chip is-on" onClick={props.onClick}>
+      <span>{props.chip.shortLabel}</span>
+      <small>
+        {props.chip.statusTime} {props.chip.status}
+      </small>
+    </button>
+  );
+}
+
 function clockOf(history: DdsStatusEvent[]): string {
   const last = history.at(-1);
   if (!last) {
@@ -352,8 +475,4 @@ function clockOf(history: DdsStatusEvent[]): string {
   }
   const time = last.at.split(' ')[1] ?? last.at;
   return time.slice(0, 5);
-}
-
-function shortWorkplace(name: string): string {
-  return name.replace(/^ДДС\s+/u, '');
 }

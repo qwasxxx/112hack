@@ -144,6 +144,10 @@
   color: #1f4e79;
 }
 
+.debrief-verdict.is-wait {
+  color: #8a5a12;
+}
+
 .debrief-hero-lead {
   max-width: 38rem;
   margin: 8px 0 0;

@@ -11,7 +11,7 @@ export type AdminUser = {
   createdAt: string;
 };
 
-export type ServiceId = 'api' | 'realtime' | 'stt' | 'llm' | 'postgres' | 'sip';
+export type ServiceId = 'api' | 'realtime' | 'stt' | 'llm' | 'tts' | 'postgres' | 'sip';
 
 export type ServiceRecord = {
   id: ServiceId;
@@ -199,6 +199,14 @@ export const INITIAL_SERVICES: ServiceRecord[] = [
     id: 'llm',
     title: 'LLM',
     detail: 'Диалоговый модуль, локально',
+    running: true,
+    startedAt: SEED_CHANGE,
+    lastChangeAt: SEED_CHANGE,
+  },
+  {
+    id: 'tts',
+    title: 'TTS',
+    detail: 'Синтез речи заявителя, локально',
     running: true,
     startedAt: SEED_CHANGE,
     lastChangeAt: SEED_CHANGE,

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { TrainingScenario } from '../../../data/scenarios';
-import { JournalScreen } from '../components/journal-screen';
+import { IncomingCallOverlay } from '../components/incoming-call-overlay';
 import { useArm112Workspace } from '../hooks/use-arm112-workspace';
 import { CallPage } from '../../../pages/call-page';
 import { unlockTtsAudio } from '../../../lib/tts-player';
@@ -47,7 +47,7 @@ export function Arm112TrainingPage(props: Props) {
   const showCard = workspace.phase === 'заполнение карточки' || showConversation;
   const smsText = sms ? smsFromTicket(props.scenario) : '';
 
-  function finish(transcript: TranscriptTurn[], durationSec: number) {
+  function finish(transcript: TranscriptTurn[], durationSec: number, audio?: Promise<Blob | null>) {
     const result = workspace.snapshotPractical();
     props.onCompleted?.(result);
     props.onFinished({
@@ -57,6 +57,7 @@ export function Arm112TrainingPage(props: Props) {
       durationSec,
       kind,
       channel,
+      audio,
     });
   }
 
@@ -86,13 +87,11 @@ export function Arm112TrainingPage(props: Props) {
       </div>
       <div className="arm112-workspace">
         {workspace.phase === 'ожидание' || workspace.phase === 'входящий звонок' ? (
-          <JournalScreen
-            telephonyStatus={workspace.telephonyStatus}
-            incoming={workspace.phase === 'входящий звонок'}
-            incomingKind={sms ? 'sms' : 'call'}
-            incomingPreview={sms ? smsText : undefined}
-            incomingNumber={binding.incomingNumber}
-            onAcceptCall={() => {
+          <IncomingCallOverlay
+            number={binding.incomingNumber}
+            kind={sms ? 'sms' : 'call'}
+            preview={sms ? smsText : undefined}
+            onAccept={() => {
               if (sms) {
                 workspace.acceptSms();
                 return;
@@ -100,11 +99,6 @@ export function Arm112TrainingPage(props: Props) {
               unlockTtsAudio();
               workspace.acceptCall();
             }}
-            onDismissIncoming={() => workspace.setPhase('ожидание')}
-            onCreateCard={workspace.openManualCard}
-            onToggleTelephony={() =>
-              workspace.setTelephonyStatus(workspace.telephonyStatus === 'доступен' ? 'недоступен' : 'доступен')
-            }
           />
         ) : null}
         {showCard ? (
@@ -136,7 +130,7 @@ export function Arm112TrainingPage(props: Props) {
                 autoStart
                 operatorLogin={props.operatorLogin}
                 onLeave={() => undefined}
-                onCallEnded={(payload) => finish(payload.lines, payload.seconds)}
+                onCallEnded={(payload) => finish(payload.lines, payload.seconds, payload.audio)}
               />
             ) : null}
           </div>

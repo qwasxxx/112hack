@@ -15,28 +15,54 @@ function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
 }
 
+export function isStreetLighting(text: string): boolean {
+  const t = text.toLowerCase();
+  return /уличн[а-яё]*\s+освещен|горит\s+уличн/.test(t);
+}
+
+function isActualFire(text: string): boolean {
+  const t = text.toLowerCase();
+  if (isStreetLighting(t)) {
+    return false;
+  }
+  return /пожар|задымл|возгоран|открыт\w*\s+плам|столб черного|что горит не знает|мусоропровод|сигнализац/.test(t) || /горит/.test(t);
+}
+
 export function inferServices(text: string): ServiceKind[] {
   const t = text.toLowerCase();
-  const out: ServiceKind[] = [];
-  if (/пожар|горит|задымл|плам|дым|мусоропровод|сигнализац|возгоран/.test(t)) {
-    out.push('fire');
+  if (isStreetLighting(t)) {
+    return [];
   }
-  if (/газ[^а-я]|запах газа|газовой трубы|газовой тру/.test(t) || /\bгаз\b/.test(t)) {
+  const out: ServiceKind[] = [];
+  if (/запах газа|газовой труб|свист от газов|газ магистральн|на вводе в дом/.test(t) || /(?:^|[^а-яё])газ(?:[^а-яё]|$)/.test(t)) {
     out.push('gas');
   }
+  if (isActualFire(t)) {
+    out.push('fire');
+  }
+  const noInjured = /пострадавших нет|пострадавших не вид|пострадавших людей нет|о пострадавших.{0,24}нет|б\/п/.test(t);
   if (
-    /пострадал|сознан|кров|упал|ожог|астма|судорог|тонет|утоп|нож|травм|головн|отёк|отек|рожает|инсульт|задыха|дтп|наезд/.test(
+    !noInjured &&
+    (/пострадал|сознан|кров|упал|ожог|астма|судорог|тонет|утоп|нож|травм|головн|отёк|отек|рожает|беремен|отошли воды|задыха|нырнул|хрип|снотворн|пена изо рта|перекошен|рвота|топор|сердц|плохо|кричат о помощи/.test(
       t,
-    )
+    ) ||
+      (/дтп/.test(t) && /пострадав/.test(t)) ||
+      /\d+\s*пострадав/.test(t))
   ) {
     out.push('ambulance');
   }
   if (
-    /дерут|оруж|полиц|угрож|изнасило|угн|завладен|подозрительн|драк|скандал|ссоря|ссора|избит|затащил|повесит|взрыв|тикает|коробка|нетрезв|попрошайн|потерял.*ребен|ребенок 4 года один/.test(
+    /дерут|оруж|полиц|угрож|изнасило|угн|завладен|подозрительн|драк|скандал|ссоря|ссора|избит|затащил|повесит|взрыв|тикает|коробка|нетрезв|попрошайн|потерял.*ребен|ребенок 4 года один|угон|похищ|труп|хулиган|мегафон|музык/.test(
       t,
-    )
+    ) ||
+    /дтп/.test(t) ||
+    /наезд/.test(t) ||
+    /заблокирован|упало бревно/.test(t)
   ) {
     out.push('police');
+  }
+  if (/течет бензин/.test(t) && !out.includes('fire')) {
+    out.push('fire');
   }
   if (!out.length) {
     out.push('police');
@@ -44,28 +70,182 @@ export function inferServices(text: string): ServiceKind[] {
   return unique(out);
 }
 
-export function classifierNumberFor(services: ServiceKind[], text: string): string {
+export function classifierNumberFor(services: ServiceKind[], text: string, address = ''): string {
   const t = text.toLowerCase();
-  if (services.includes('fire') && /пожар|горит|задымл|плам|возгоран|мусоропровод/.test(t)) {
-    return '1050101';
+  const loc = `${text} ${address}`.toLowerCase();
+  if (isStreetLighting(t)) {
+    return '14030203';
   }
-  if (/дерут|драк/.test(t)) {
-    return /10-15|масс|палкам|прут/.test(t) ? '15060202' : '15060201';
+  if (/дтп/.test(t) && /драк/.test(t)) {
+    return /пострадав|кров/.test(t) && !/б\/п|без пострадав/.test(t) ? '2020800' : '2010600';
   }
-  if ((/дтп|наезд/.test(t) || /сбил|столкнов/.test(t)) && !/упал сам|упал с велосипеда/.test(t)) {
+  if (/дтп/.test(t) && /течет бензин|разлив/.test(t)) {
+    return '2020900';
+  }
+  if (/дтп/.test(t) && /троллейбус|автобус/.test(t) && /пострадав/.test(t)) {
+    return '2020500';
+  }
+  if (/наезд на пешехода/.test(t) && /скрыл/.test(t)) {
+    return '2020200';
+  }
+  if (/наезд на пешехода/.test(t)) {
+    return '2020100';
+  }
+  if (/дтп/.test(t) && (/б\/п/.test(t) || /без пострадав/.test(t))) {
+    return '2010000';
+  }
+  if (/дтп/.test(t) && /пострадав/.test(t)) {
     return '2020000';
   }
-  if (/потерял.*ребен/.test(t) && services.includes('police')) {
+  if (/упало бревно|заблокирован/.test(t)) {
+    return '2021700';
+  }
+  if (/падение автомашины в воду/.test(t)) {
+    return '17070700';
+  }
+  if (/контейнер|мусорного контейнера/.test(t) && isActualFire(t)) {
+    return '1010101';
+  }
+  if (/мусоропровод/.test(t)) {
+    return /задымл/.test(t) ? '1050602' : '1050601';
+  }
+  if (/крыш.*частн|частного дома/.test(t) && isActualFire(t)) {
+    return '1050901';
+  }
+  if (/балкон/.test(t) && isActualFire(t)) {
+    return '1050201';
+  }
+  if (/сигнализац/.test(t) && /дыма и возгорания нет|возгорания нет/.test(t)) {
+    return '1051600';
+  }
+  if (/поле/.test(t) && isActualFire(t)) {
+    return '1010201';
+  }
+  if (/а\/м|автомашин|фольксваген|тойота/.test(t) && isActualFire(t) && !/дтп/.test(t)) {
+    return '1020201';
+  }
+  if (/автобус|кабина автобуса/.test(t) && isActualFire(t)) {
+    return '1020101';
+  }
+  if (/столб черного|жилых домов/.test(t) && isActualFire(t)) {
+    return '1050001';
+  }
+  if (/(касс|вокзал|ж\/д станц)/.test(t) && isActualFire(t) && !/метро/.test(t)) {
+    return '1020801';
+  }
+  if (/метро/.test(loc) && /задымл|пожар|горит|платформ/.test(t) && !/торгов|тц\b|ресторан/.test(t)) {
+    return '1030002';
+  }
+  if (/(ресторан|торгов|тц\b|магазин)/.test(t) && /задымл|пожар/.test(t)) {
+    return '1060402';
+  }
+  if (/азс/.test(t) && isActualFire(t)) {
+    return '1010201';
+  }
+  if (/дерев|парк/.test(t) && isActualFire(t)) {
+    return /лес/.test(t) ? '1010501' : '1011201';
+  }
+  if (/лес/.test(t) && isActualFire(t)) {
+    return '1010501';
+  }
+  if (/трав|поле/.test(t) && isActualFire(t)) {
+    return '1010201';
+  }
+  if (/жилых домов|жилом доме/.test(t) && isActualFire(t) && !/квартир|балкон|мусоропровод/.test(t)) {
+    return '1050001';
+  }
+  if (/окно/.test(t) && /этаж/.test(t) && isActualFire(t)) {
+    return '1050101';
+  }
+  if (isActualFire(t) && /квартир/.test(t)) {
+    return '1050101';
+  }
+  if (isActualFire(t) && !/что горит не знает/.test(t)) {
+    return '1061601';
+  }
+  if (isActualFire(t)) {
+    return '1010101';
+  }
+  if (/дерут/.test(t)) {
+    if (/10-15|палками|прутами/.test(t)) {
+      return '15060202';
+    }
+    return /квартир/.test(t) ? '15060100' : '15060201';
+  }
+  if (/тонет человек|тонет человек в настоящее/.test(t)) {
+    return '17070200';
+  }
+  if (/льдин/.test(t)) {
+    return '17070100';
+  }
+  if (/упал с моста в воду|прыгн.*мост/.test(t)) {
+    return '17070400';
+  }
+  if (/заблудил/.test(t) && /лес|деревн|гриб/.test(loc)) {
+    return '17020103';
+  }
+  if (/потерял.*ребен|потерялся ребенок/.test(t)) {
     return '18070000';
   }
-  if (/без сознания|потеря сознания|теряет сознание/.test(t)) {
+  if (/ребенок 4 года один в а\/м|двери заблокировались/.test(t)) {
+    return '18080000';
+  }
+  if (/угон|завладен/.test(t)) {
+    return '15210101';
+  }
+  if (/затащили жену|похищ/.test(t)) {
+    return '17030100';
+  }
+  if (/повесит|суицид/.test(t)) {
+    return '17100900';
+  }
+  if (/взорвать квартир/.test(t)) {
+    return '4150000';
+  }
+  if (/тикает|коробка с проводами|подозрительн.*предмет/.test(t)) {
+    return '15130600';
+  }
+  if (/подозрительн.*автомобил|ваз2110 черная/.test(t)) {
+    return '15130700';
+  }
+  if (/открыть дверь в квартиру/.test(t)) {
+    return '20010200';
+  }
+  if (/громко играет музыка|мегафон/.test(t)) {
+    return '15100100';
+  }
+  if (/ссора во дворе|скандал/.test(t)) {
+    return '15190000';
+  }
+  if (/нетрезв/.test(t)) {
+    return '15220000';
+  }
+  if (/электричк|поездная/.test(t)) {
+    return '17050100';
+  }
+  if (/запах газа|свист от газов/.test(t) && /квартир|кухн/.test(t)) {
+    return '13020201';
+  }
+  if (/запах газа|газ магистральн/.test(t)) {
+    return '13010400';
+  }
+  if (/трещин|отлетела плитк/.test(t)) {
+    return '6060100';
+  }
+  if (/крепления на табло|угроза падения/.test(t)) {
+    return '14090504';
+  }
+  if (/без сознания|потеря сознания|теряет сознание|не может разбудить/.test(t)) {
     return '22020000';
   }
   if (/рожает|отошли воды|беремен/.test(t)) {
     return '22030000';
   }
+  if (/избит|в крови|нож|изнасило|окровавлен/.test(t)) {
+    return '17010300';
+  }
   if (
-    /упал|травм|отек|отёк|велосипед|перелом|ушибли|головн|астма|судорог|кровоточ/.test(t) ||
+    /упал|травм|отек|отёк|велосипед|перелом|ушибли|головн|астма|судорог|кровоточ|укусила/.test(t) ||
     services.includes('ambulance')
   ) {
     return '22530000';
@@ -163,6 +343,9 @@ export function assessDifficulty(situation: string, address = ''): TrainingScena
 
 export function publicTheme(situation: string, services: ServiceKind[]): string {
   const t = situation.toLowerCase();
+  if (isStreetLighting(t)) {
+    return 'Уличное освещение';
+  }
   if (/тонет|льдин|в воду|пруд|озер/.test(t)) {
     return 'Происшествие на воде';
   }
@@ -172,10 +355,28 @@ export function publicTheme(situation: string, services: ServiceKind[]): string 
   if (services.includes('gas') || /запах газа|газовой труб|свист от газов/.test(t)) {
     return 'Газ';
   }
-  if (/пожар|горит|задымл|дым|возгоран|сигнализац|столб черного/.test(t)) {
+  if (isActualFire(t)) {
+    if (/мусоропровод/.test(t)) {
+      return 'Задымление мусоропровода';
+    }
+    if (/контейнер|мусор/.test(t)) {
+      return 'Возгорание мусора';
+    }
+    if (/а\/м|автомашин|автобус/.test(t)) {
+      return 'Горит транспорт';
+    }
+    if (/лес|трав|поле|дерев/.test(t)) {
+      return 'Природный пожар';
+    }
+    if (/задымл/.test(t)) {
+      return 'Задымление';
+    }
+    if (/сигнализац/.test(t) && /нет/.test(t)) {
+      return 'Пожарная сигнализация';
+    }
     return 'Пожар / задымление';
   }
-  if (/потерял|заблудил|не вернул|потер.*памят/.test(t)) {
+  if (/потерял.*ребен|заблудил|не вернул|потер.*памят/.test(t)) {
     return 'Поиск человека';
   }
   if (/угон|завладен/.test(t)) {
@@ -242,7 +443,49 @@ function extractCallerHint(situation: string): string | undefined {
   if (/, дочь|дочь,/i.test(situation)) {
     return 'дочь';
   }
-  return undefined;
+  const names = situation.match(/[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}/g);
+  const fio = names?.filter((item) => !/^Москва$|^Россия$/.test(item)).at(-1)?.trim();
+  return fio || undefined;
+}
+
+export function situationWhat(situation: string): string {
+  if (isStreetLighting(situation)) {
+    return 'Горит уличное освещение на МКАД — фонари светят. Это не пожар и не квартира.';
+  }
+  let text = situation.replace(/\u00a0/g, ' ');
+  text = text.replace(/(?:тел\.?\s*)?(?:\+?7|8)?[\s\-()]*9\d{2}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}/gi, ' ');
+  text = text.replace(/\b\d{10,11}\b/g, ' ');
+  text = text.replace(/\([^)]*\)/g, ' ');
+  text = text.replace(/(?<!^)(?<![.!?]\s)[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}/g, ' ');
+  text = text
+    .replace(/\s+/g, ' ')
+    .replace(/^[,.\s]+|[,.\s]+$/g, '')
+    .trim();
+  const first = text.split(/[.!]/)[0]?.trim() || text;
+  return first.slice(0, 180);
+}
+
+function promptForbidden(situation: string, address: string, services: ServiceKind[]): string {
+  const blob = `${situation} ${address}`.toLowerCase();
+  const bans: string[] = [];
+  if (isStreetLighting(blob)) {
+    bans.push(
+      'Это НЕ пожар и НЕ квартира. Горят фонари (свет включён). Не говори «пожар», «пламя», «дым», «этаж», «подъезд», «в квартире».',
+    );
+  }
+  if (!/кв\.|квартир/.test(blob)) {
+    bans.push('Квартиры в билете нет — не называй квартиру, если её нет в адресе.');
+  }
+  if (!isActualFire(blob) && !services.includes('fire')) {
+    bans.push('Пожара нет.');
+  }
+  if (/пострадавших нет|б\/п|без пострадавших/.test(blob)) {
+    bans.push('Пострадавших нет — не выдумывай раненых.');
+  }
+  if (!/\d+\s*этаж|эт\./.test(blob)) {
+    bans.push('Этажа в билете нет — не выдумывай этаж.');
+  }
+  return bans.filter(Boolean).join(' ');
 }
 
 function extractInjuredName(situation: string): string | undefined {
@@ -362,7 +605,7 @@ function algorithmFor(services: ServiceKind[], text: string): string[] {
     'Записать ФИО и телефон заявителя.',
     'Направить нужные службы, держать заявителя на линии до сбора обязательных данных.',
   ];
-  if (services.includes('fire')) {
+  if (services.includes('fire') && !/уличн[а-яё]*\s+освещен/.test(t)) {
     steps.splice(3, 0, 'Уточнить, что горит, этаж, открытое пламя/дым, люди внутри, газификация, подъезд для служб.');
   }
   if (services.includes('ambulance') || /сознан|кров|упал|дтп/.test(t)) {
@@ -411,11 +654,11 @@ function durationFor(difficulty: TrainingScenario['difficulty']): number {
 }
 
 export function ticketToScenario(ticket: AgsTicket): TrainingScenario {
-  const blob = `${ticket.situation} ${ticket.address}`;
-  const services = inferServices(blob);
+  const services = inferServices(ticket.situation);
   const difficulty = assessDifficulty(ticket.situation, ticket.address);
   const theme = publicTheme(ticket.situation, services);
   const id = `ags-${String(ticket.ticket).padStart(2, '0')}-${ticket.n}`;
+  const blob = `${ticket.situation} ${ticket.address}`;
   return {
     id,
     code: `Б${ticket.ticket}.${ticket.n}`,
@@ -433,7 +676,7 @@ export function ticketToScenario(ticket: AgsTicket): TrainingScenario {
     situationNo: ticket.n,
     address: ticket.address,
     situation: ticket.situation,
-    classifierNumber: classifierNumberFor(services, blob),
+    classifierNumber: classifierNumberFor(services, ticket.situation, ticket.address),
   };
 }
 
@@ -475,16 +718,24 @@ export function buildLessonSystemPrompt(scenario: TrainingScenario, section: Les
   const phone = extractPhone(`${situation} ${address}`);
   const caller = extractCallerHint(situation);
   const injured = extractInjuredName(situation);
+  const what = situationWhat(situation);
+  const forbidden = promptForbidden(situation, address, scenario.services);
+  const serviceLine = scenario.services.length
+    ? `СЛУЖБЫ ПО БИЛЕТУ: ${scenario.services.map((item) => ({ fire: 'пожарные', ambulance: 'скорая', police: 'полиция', gas: 'газ' })[item]).join(', ')}`
+    : 'СЛУЖБЫ ПО БИЛЕТУ: не пожарные. Это не вызов МЧС по пожару.';
   const facts = [
     ticketLabel,
-    `ЧТО СЛУЧИЛОСЬ: ${situation}`,
+    `ЧТО СЛУЧИЛОСЬ: ${what}`,
+    `ФАКТЫ БИЛЕТА ЦЕЛИКОМ: ${situation}`,
     address ? `АДРЕС (назови, только если спросили): ${address}` : '',
     caller ? `КТО ЗВОНИТ: ${caller}` : '',
     injured
       ? `ПОСТРАДАВШИЙ (это не ты; назови только если спросили кто упал / как зовут ребёнка): ${injured}`
       : '',
     phone ? `ТЕЛЕФОН (назови, только если спросили): ${phone}` : '',
-    'Чего нет в этих строках — не существует. Не додумывай улицы, этажи, имена, телефоны, службы и цифры.',
+    serviceLine,
+    forbidden ? `ЗАПРЕЩЕНО: ${forbidden}` : '',
+    'Чего нет в этих строках — не существует. Не додумывай улицы, этажи, квартиры, пожары, имена, телефоны, службы и цифры.',
     coachPromptLine(scenario.id),
   ]
     .filter(Boolean)

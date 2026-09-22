@@ -110,8 +110,24 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository, poll
               : [...current.scenarios, saved],
           }));
           setNotice('Билет сохранён и доступен ученикам');
+          return saved;
         } catch (error) {
           setNotice(error instanceof Error ? error.message : 'Не удалось назначить билет');
+        }
+      },
+      importCatalog: async (raw: string) => {
+        if (!repository.importCatalog) {
+          setNotice('Импорт недоступен в этом режиме');
+          return;
+        }
+        try {
+          const result = await repository.importCatalog(raw);
+          const scenarios = await repository.getScenarios();
+          setState((current) => ({ ...current, scenarios }));
+          setNotice(`Импорт: +${result.added}, обновлено ${result.updated}`);
+          return result;
+        } catch (error) {
+          setNotice(error instanceof Error ? error.message : 'Не удалось импортировать файл');
         }
       },
       toggleArchive: async (id: string, archived: boolean) => {

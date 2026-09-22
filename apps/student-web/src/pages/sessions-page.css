@@ -145,6 +145,14 @@
   border-color: rgba(177, 28, 28, 0.22);
 }
 
+.sessions-list li.is-wait {
+  border-color: rgba(168, 112, 28, 0.45);
+}
+
+.sessions-list li.is-wait .sessions-row-top b {
+  color: #8a5a12;
+}
+
 .sessions-row-top {
   display: flex;
   flex-wrap: wrap;

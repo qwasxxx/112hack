@@ -37,7 +37,29 @@ export function PhoneHeader(props: Props) {
         </div>
       </div>
       <div className="arm112-phone-cell">
-        <div className="arm112-phone-top">☎ АОН</div>
+        <div className="arm112-phone-top">
+          <span>☎ АОН</span>
+          <span className="arm112-phone-flags">
+            <button
+              type="button"
+              className={card.caller.foreignNumber ? 'is-on' : undefined}
+              title="зарубежный номер"
+              aria-pressed={card.caller.foreignNumber}
+              onClick={() => props.onForeignNumber(!card.caller.foreignNumber)}
+            >
+              🌐
+            </button>
+            <button
+              type="button"
+              className={card.caller.noSimCard ? 'is-on' : undefined}
+              title="без SIM-карты"
+              aria-pressed={card.caller.noSimCard}
+              onClick={() => props.onNoSim(!card.caller.noSimCard)}
+            >
+              ▢
+            </button>
+          </span>
+        </div>
         <div className="arm112-aon-row">
           <input
             className="arm112-underline"

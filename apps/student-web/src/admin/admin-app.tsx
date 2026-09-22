@@ -27,7 +27,7 @@ import {
   persistSettings,
   persistTraining,
 } from './data/system-persistence';
-import { createRemoteBackup, pullBackupStatus, pullContourStatus } from './data/admin-remote';
+import { createRemoteBackup, pullBackupStatus, pullContourStatus, toggleRemoteService } from './data/admin-remote';
 import { bindAdminDashboardTilt, playAdminPress, useAdminTilt } from './admin-tilt';
 import { ContourPage } from './pages/contour-page';
 import { JournalPage } from './pages/journal-page';
@@ -133,20 +133,21 @@ export function AdminApp(props: Props) {
           return;
         }
         const at = status.at;
-        setServices((current) =>
-          current.map((service) => {
-            const hit = status.services.find((item) => item.id === service.id);
-            if (!hit) {
-              return service;
-            }
+        setServices((current) => {
+          const byId = new Map(current.map((item) => [item.id, item]));
+          return status.services.map((hit) => {
+            const prev = byId.get(hit.id as ServiceRecord['id']);
+            const running = hit.id === 'sip' ? false : hit.running;
             return {
-              ...service,
-              running: service.id === 'sip' ? false : hit.running,
+              id: hit.id as ServiceRecord['id'],
+              title: hit.title || prev?.title || hit.id,
+              detail: prev?.detail || '',
+              running,
               lastChangeAt: at,
-              startedAt: hit.running && service.id !== 'sip' ? service.startedAt || at : undefined,
+              startedAt: running ? prev?.startedAt || at : undefined,
             };
-          }),
-        );
+          });
+        });
       });
       void pullBackupStatus().then((status) => {
         if (cancelled || !status?.lastAt) {
@@ -319,7 +320,7 @@ export function AdminApp(props: Props) {
     return true;
   }
 
-  function toggleService(id: ServiceRecord['id']) {
+  async function toggleService(id: ServiceRecord['id']) {
     if (id === 'sip') {
       log(
         'Сервис остановлен',
@@ -334,31 +335,55 @@ export function AdminApp(props: Props) {
     if (!service || busyRef.current.has(id)) {
       return;
     }
+    const locked = id === 'api' || id === 'realtime' || id === 'postgres';
+    if (locked && service.running) {
+      log(
+        'Сервис не остановлен',
+        service.title,
+        'service_error',
+        'API, realtime и Postgres нельзя гасить из админки — контур перестанет отвечать',
+        'warn',
+      );
+      return;
+    }
     busyRef.current.add(id);
     setBusyIds(new Set(busyRef.current));
-    window.setTimeout(() => {
-      const at = new Date().toISOString();
-      const running = !service.running;
-      const nextService: ServiceRecord = {
-        ...service,
-        running,
-        lastChangeAt: at,
-        startedAt: running ? at : undefined,
-      };
-      setServices((current) => current.map((item) => (item.id === id ? nextService : item)));
-      void persistService(nextService);
-      log(
-        running ? 'Сервис запущен' : 'Сервис остановлен',
-        service.title,
-        running ? 'service_started' : 'service_stopped',
-        running
-          ? 'Локальный учебный контур: компонент включён'
-          : 'Локальный учебный контур: компонент выключен',
-        running ? 'ok' : 'warn',
+    const action = service.running ? 'stop' : 'start';
+    const result = await toggleRemoteService(id, action);
+    const at = new Date().toISOString();
+    const ok = Boolean(result?.ok);
+    const running = ok ? action === 'start' : service.running;
+    const nextService: ServiceRecord = {
+      ...service,
+      running,
+      lastChangeAt: at,
+      startedAt: running ? at : undefined,
+    };
+    setServices((current) => current.map((item) => (item.id === id ? nextService : item)));
+    void persistService(nextService);
+    log(
+      ok ? (running ? 'Сервис запущен' : 'Сервис остановлен') : 'Ошибка сервиса',
+      service.title,
+      ok ? (running ? 'service_started' : 'service_stopped') : 'service_error',
+      result?.message || (ok ? 'Команда выполнена' : 'Не удалось выполнить команду'),
+      ok ? (running ? 'ok' : 'warn') : 'error',
+    );
+    busyRef.current.delete(id);
+    setBusyIds(new Set(busyRef.current));
+    void pullContourStatus().then((status) => {
+      if (!status) {
+        return;
+      }
+      setServices((current) =>
+        current.map((item) => {
+          const hit = status.services.find((row) => row.id === item.id);
+          if (!hit || item.id === 'sip') {
+            return item;
+          }
+          return { ...item, running: hit.running, lastChangeAt: status.at };
+        }),
       );
-      busyRef.current.delete(id);
-      setBusyIds(new Set(busyRef.current));
-    }, 280);
+    });
   }
 
   function saveSettings(next: ContourSettings) {

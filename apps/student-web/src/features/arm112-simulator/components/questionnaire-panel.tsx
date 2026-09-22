@@ -71,7 +71,7 @@ export function QuestionnairePanel(props: Props) {
   return (
     <section
       aria-label="ДОБАВИТЬ ТИП ПРОИСШЕСТВИЯ"
-      className={mergeClassName('arm112-what', region.className)}
+      className={mergeClassName('arm112-q-panel', region.className)}
       data-arm-region={region['data-arm-region']}
       onClick={region.onClick}
     >
@@ -85,7 +85,7 @@ export function QuestionnairePanel(props: Props) {
           ))}
         </div>
       </div>
-      <label className="arm112-field" style={{ background: '#fff', padding: '6px 8px', marginBottom: 8 }}>
+      <label className="arm112-field">
         <input
           className="arm112-underline"
           placeholder="добавить тип происшествия"

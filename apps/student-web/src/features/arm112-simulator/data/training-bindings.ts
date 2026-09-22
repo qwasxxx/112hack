@@ -1,4 +1,5 @@
 import type { TrainingScenario } from '../../../data/scenarios';
+import { classifierNumberFor } from '../../../data/ags-tickets';
 import { incomingNumberFor } from '../../../progress/ticket-facts';
 import { classifierRuntime, matchRecords, type ClassifierFilter } from './classifier-runtime';
 
@@ -38,15 +39,12 @@ function rowByNumber(number: string) {
 export function trainingBindingFor(scenario: TrainingScenario): TrainingBinding {
   const classifierId =
     scenario.classifierNumber ||
+    classifierNumberFor(scenario.services, scenario.situation ?? '', scenario.address ?? '') ||
     (scenario.id === 'apartment-fire' || scenario.code === '112-01'
       ? '1050101'
       : scenario.id === 'road-accident' || scenario.code === '112-02'
         ? '2020000'
-        : scenario.services[0] === 'fire'
-          ? '1050101'
-          : scenario.services[0] === 'ambulance' || scenario.services.includes('ambulance')
-            ? '22530000'
-            : '18070000');
+        : '18070000');
   const record = rowByNumber(classifierId);
   return {
     scenarioId: scenario.id,

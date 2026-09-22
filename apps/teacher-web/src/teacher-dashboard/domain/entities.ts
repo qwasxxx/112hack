@@ -152,6 +152,18 @@ export interface CompletedResult {
   cardTimerSeconds?: number | null;
   cardTimerLimitSec?: number;
   cardTimerExceeded?: boolean;
+  recordingId?: string;
+  confirmed: boolean;
+  parts?: Array<{ label: string; score: number; max: number }>;
+  reviewFields?: Array<{
+    label: string;
+    expected: string;
+    got: string;
+    state: 'match' | 'partial' | 'miss' | 'empty';
+    points: number;
+    max: number;
+  }>;
+  transcript?: Array<{ role: 'operator' | 'caller'; text: string }>;
 }
 
 export interface AuditRecord {

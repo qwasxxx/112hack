@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { SERVICE_LABEL, type TrainingScenario } from '../data/scenarios';
+import { type TrainingScenario } from '../data/scenarios';
 import type { Arm112PracticalResult } from '../features/arm112-simulator/model/training-result';
 import type { DdsDefect, DdsDraft, TicketFacts as DdsTicketFacts } from '../features/dds-training/incoming-card';
 import {
@@ -12,11 +12,16 @@ import {
   scoreDdsLesson,
   scoreTrainingLesson,
   PASS_SCORE,
+  PASS_SCORE_EXAM,
   type FieldCheck,
   type LessonRecord,
   type TranscriptTurn,
 } from '../progress';
 import { cardView, ticketFactsFrom } from '../progress/ticket-facts';
+import { uploadRecording } from '../progress/remote';
+import { saveLocalRecording } from '../../../teacher-web/src/teacher-dashboard/infrastructure/local-recording';
+import { useTeacherReviews } from '../progress/use-teacher-review';
+import { blobToBase64, blobToWav } from '../lib/capture-audio';
 import { StudentShell } from '../student-shell/student-shell';
 import './sessions-page.css';
 import './debrief-page.css';
@@ -41,6 +46,8 @@ export type DdsFinish = {
   workplace: string;
   startedAt: string;
   cards: DdsFinishCard[];
+  audio?: Promise<Blob | null>;
+  callSeconds?: number;
 };
 
 export type TrainingFinish = {
@@ -50,6 +57,7 @@ export type TrainingFinish = {
   durationSec: number;
   kind?: 'training' | 'exam';
   channel?: 'call' | 'sms';
+  audio?: Promise<Blob | null>;
 };
 
 type Props = {
@@ -71,6 +79,33 @@ const JUDGE_STEPS = [
   'Разбираю стенограмму',
   'Оцениваю тон и темп вопросов',
 ];
+
+function ReviewHero(props: {
+  draft: number;
+  official?: number;
+  threshold: number;
+  play: boolean;
+  confirmedLead: string;
+}) {
+  const waiting = props.official == null;
+  const score = props.official ?? props.draft;
+  const passed = props.official != null && props.official >= props.threshold;
+  return (
+    <div className="debrief-hero">
+      <ScoreRing value={score} max={100} passed={passed} play={props.play} />
+      <div>
+        <p className={`debrief-verdict${waiting ? ' is-wait' : passed ? ' is-pass' : ''}`}>
+          {waiting ? 'Ждёт преподавателя' : passed ? 'Зачёт' : 'Незачёт'}
+        </p>
+        <p className="debrief-hero-lead">
+          {waiting
+            ? `Черновик ИИ — ${props.draft} из 100. Итог появится, когда преподаватель подтвердит разбор. Занятие остаётся у него в мониторинге.`
+            : props.confirmedLead}
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function DebriefPage(props: Props) {
   const finish = props.finish;
@@ -99,7 +134,31 @@ export function DebriefPage(props: Props) {
     savedId.current = saved.id;
     setRecord(saved);
     clearArmDraft(props.operatorLogin, finish.scenario.id);
-  }, [base, finish.scenario.id, props.operatorLogin]);
+    const audio = finish.audio;
+    if (!audio) {
+      return;
+    }
+    void audio.then(async (blob) => {
+      if (!blob?.size) {
+        return;
+      }
+      const wav = blob.type.includes('wav') ? blob : await blobToWav(blob);
+      await saveLocalRecording(saved.id, wav).catch(() => undefined);
+      const data = await blobToBase64(wav);
+      const uploaded = await uploadRecording({
+        lessonId: saved.id,
+        login: props.operatorLogin,
+        scenarioId: finish.scenario.id,
+        mime: 'audio/wav',
+        durationSec: finish.durationSec,
+        data,
+      });
+      if (uploaded?.id) {
+        patchLesson(props.operatorLogin, saved.id, { recordingId: uploaded.id });
+        setRecord((current) => ({ ...current, recordingId: uploaded.id }));
+      }
+    }).catch(() => undefined);
+  }, [base, finish.audio, finish.durationSec, finish.scenario.id, props.operatorLogin]);
 
   useEffect(() => {
     if (reduced) {
@@ -253,6 +312,9 @@ function ResultScreen(props: {
   onCatalog: () => void;
 }) {
   const record = props.record;
+  const reviews = useTeacherReviews();
+  const official = record.id === 'pending' ? undefined : reviews[record.id];
+  const threshold = props.kind === 'exam' ? PASS_SCORE_EXAM : PASS_SCORE;
   const sms = props.channel === 'sms';
   const rows = sms
     ? [
@@ -277,17 +339,13 @@ function ResultScreen(props: {
         </p>
       </header>
 
-      <div className="debrief-hero">
-        <ScoreRing value={record.score} max={100} passed={record.passed} play={!props.reduced} />
-        <div>
-          <p className={`debrief-verdict${record.passed ? ' is-pass' : ''}`}>{record.passed ? 'Зачёт' : 'Незачёт'}</p>
-          <p className="debrief-hero-lead">
-            {props.kind === 'exam' ? 'Экзамен, зачёт от 80. ' : ''}
-            Результат уже в «Мои сессии». Карточка сверена с фактами билета
-            {sms ? ', канал SMS.' : ', разговор — отдельно.'}
-          </p>
-        </div>
-      </div>
+      <ReviewHero
+        draft={record.score}
+        official={official}
+        threshold={threshold}
+        play={!props.reduced}
+        confirmedLead={`${props.kind === 'exam' ? 'Экзамен, зачёт от 80. ' : ''}Преподаватель подтвердил ${official} из 100. Карточка сверена с фактами билета${sms ? ', канал SMS.' : '.'}`}
+      />
 
       <ul className="debrief-bars">
         {rows.map((row, index) => (
@@ -355,10 +413,18 @@ function ResultScreen(props: {
         <button type="button" className="debrief-primary" onClick={props.onSessions}>
           Мои сессии
         </button>
-        {record.passed ? (
-          <button type="button" onClick={() => printLessonCertificate(record, props.operatorName)}>
+        {official != null && official >= threshold ? (
+          <button
+            type="button"
+            onClick={() => printLessonCertificate({ ...record, score: official, passed: true }, props.operatorName)}
+          >
             Справка о зачёте
           </button>
+        ) : null}
+        {record.recordingId ? (
+          <a className="debrief-primary" href={`/api/v1/training/recordings/${record.recordingId}`} download>
+            Скачать WAV
+          </a>
         ) : null}
         <button type="button" onClick={props.onBriefing}>
           К уроку
@@ -458,7 +524,7 @@ function useReducedMotion() {
 const DDS_JUDGE_STEPS = [
   'Читаю карточки от оператора 112',
   'Проверяю подтверждение приёма',
-  'Сверяю службы с происшествием',
+  'Сверяю пострадавших и телефон',
   'Смотрю наряд и статусы реагирования',
   'Проверяю закрытие карточки в 112',
   'Считаю норматив обработки',
@@ -516,6 +582,8 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
     });
   }, [finish, props.operatorLogin]);
   const [record, setRecord] = useState<LessonRecord>(() => ({ ...base, id: 'pending' }));
+  const reviews = useTeacherReviews();
+  const official = record.id === 'pending' ? undefined : reviews[record.id];
   const [revealed, setRevealed] = useState(false);
   const [step, setStep] = useState(0);
   const savedId = useRef<string | null>(null);
@@ -527,7 +595,31 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
     const saved = appendLesson(props.operatorLogin, base);
     savedId.current = saved.id;
     setRecord(saved);
-  }, [base, props.operatorLogin]);
+    const audio = finish.audio;
+    if (!audio) {
+      return;
+    }
+    void audio.then(async (blob) => {
+      if (!blob?.size) {
+        return;
+      }
+      const wav = blob.type.includes('wav') ? blob : await blobToWav(blob);
+      await saveLocalRecording(saved.id, wav).catch(() => undefined);
+      const data = await blobToBase64(wav);
+      const uploaded = await uploadRecording({
+        lessonId: saved.id,
+        login: props.operatorLogin,
+        scenarioId: finish.scenario.id,
+        mime: 'audio/wav',
+        durationSec: finish.callSeconds ?? 1,
+        data,
+      });
+      if (uploaded?.id) {
+        patchLesson(props.operatorLogin, saved.id, { recordingId: uploaded.id });
+        setRecord((current) => ({ ...current, recordingId: uploaded.id }));
+      }
+    }).catch(() => undefined);
+  }, [base, finish.audio, finish.scenario.id, props.operatorLogin]);
 
   useEffect(() => {
     if (reduced) {
@@ -560,7 +652,7 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
             reduced={reduced}
             mark="ДДС"
             title="Проверяю обработку смены"
-            lead="Карточки сверяются с эталоном: службы, пострадавшие, телефон, приём, наряд и закрытие в 112."
+            lead="Карточки сверяются с эталоном: приём, наряд, статусы, пострадавшие, телефон и закрытие в 112."
             steps={DDS_JUDGE_STEPS}
           />
         ) : (
@@ -571,13 +663,13 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
                 {finish.workplace} · {finish.scenario.code} · {finish.cards.length} карточек
               </p>
             </header>
-            <div className="debrief-hero">
-              <ScoreRing value={record.score} max={100} passed={record.passed} play={!reduced} />
-              <div>
-                <p className={`debrief-verdict${record.passed ? ' is-pass' : ''}`}>{record.passed ? 'Зачёт' : 'Незачёт'}</p>
-                <p className="debrief-hero-lead">{ddsVerdictLead(record)}</p>
-              </div>
-            </div>
+            <ReviewHero
+              draft={record.score}
+              official={official}
+              threshold={PASS_SCORE}
+              play={!reduced}
+              confirmedLead={`Преподаватель подтвердил ${official} из 100. ${ddsVerdictLead(record)}`}
+            />
             <ul className="debrief-bars">
               {rows.map((row, index) => (
                 <ScoreRow key={row.label} {...row} delay={index * 280} play={!reduced} />
@@ -639,10 +731,18 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
               <button type="button" className="debrief-primary" onClick={props.onSessions}>
                 Мои сессии
               </button>
-              {record.passed ? (
-                <button type="button" onClick={() => printLessonCertificate(record, props.operatorName)}>
+              {official != null && official >= PASS_SCORE ? (
+                <button
+                  type="button"
+                  onClick={() => printLessonCertificate({ ...record, score: official, passed: true }, props.operatorName)}
+                >
                   Справка о зачёте
                 </button>
+              ) : null}
+              {record.recordingId ? (
+                <a className="debrief-primary" href={`/api/v1/training/recordings/${record.recordingId}`} download>
+                  Скачать WAV
+                </a>
               ) : null}
               <button type="button" onClick={props.onBriefing}>
                 К уроку
@@ -659,14 +759,10 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
 }
 
 function ddsVerdictLead(record: LessonRecord): string {
-  const miss = record.findings.find((item) => item.code === 'dds-services-missing');
-  const extra = record.findings.find((item) => item.code === 'dds-services-extra');
   const transfer = record.findings.find((item) => item.code === 'dds-transfer');
   const accept = record.findings.find((item) => item.code === 'dds-accept');
   const close = record.findings.find((item) => item.code === 'dds-close');
-  if (miss) {
-    return `${miss.message} Пропуск эталонной службы — незачёт, даже если остальные баллы набраны.`;
-  }
+  const naryad = record.findings.find((item) => item.code === 'dds-naryad');
   if (record.passed) {
     return `Зачёт от ${PASS_SCORE}. Результат уже в «Мои сессии».`;
   }
@@ -676,11 +772,11 @@ function ddsVerdictLead(record: LessonRecord): string {
   if (accept) {
     return `${accept.message} Порог ${PASS_SCORE}.`;
   }
+  if (naryad) {
+    return `${naryad.message} Порог ${PASS_SCORE}.`;
+  }
   if (close) {
     return `${close.message} Порог ${PASS_SCORE}.`;
-  }
-  if (extra) {
-    return `${extra.message} Порог ${PASS_SCORE}.`;
   }
   return `Нужно ${PASS_SCORE} баллов. Сейчас ${record.score}.`;
 }
@@ -689,35 +785,28 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
   const own = cards.filter((item) => item.role === 'own');
   const foreign = cards.filter((item) => item.role === 'foreign');
   const avg = (values: number[]) => (values.length ? Math.round(values.reduce((sum, item) => sum + item, 0) / values.length) : 0);
-  const services = avg(
+  const process = avg(
     own.map((item) => {
-      const extra = item.draft.services.filter((kind) => !item.facts.services.includes(kind)).length;
-      const missing = item.facts.services.filter((kind) => !item.draft.services.includes(kind)).length;
-      return extra === 0 && missing === 0 ? 40 : Math.max(0, 40 - (extra + missing) * 12);
+      const status = item.workplaceStatus ?? '';
+      let value = 70;
+      if (!['Принята', 'Начало реагирования', 'Прибытие', 'Проведение работ', 'Работы завершены'].includes(status)) {
+        value -= 30;
+      }
+      if (!(item.naryad ?? '').trim()) {
+        value -= 15;
+      }
+      if (status !== 'Работы завершены') {
+        value -= 25;
+      }
+      return Math.max(0, value);
     }),
   );
-  const injured = avg(own.map((item) => (item.draft.injured === item.facts.injured ? 25 : 0)));
+  const injured = avg(own.map((item) => (item.draft.injured === item.facts.injured ? 10 : 0)));
   const phone = avg(
     own.map((item) => {
       const need = item.facts.callerPhone.replace(/\D/g, '');
       const got = item.draft.callerPhone.replace(/\D/g, '');
-      return !need || need === got ? 15 : 0;
-    }),
-  );
-  const process = avg(
-    own.map((item) => {
-      const status = item.workplaceStatus ?? '';
-      let value = 10;
-      if (!['Принята', 'Начало реагирования', 'Прибытие', 'Проведение работ', 'Работы завершены'].includes(status)) {
-        value -= 4;
-      }
-      if (!(item.naryad ?? '').trim()) {
-        value -= 3;
-      }
-      if (status !== 'Работы завершены') {
-        value -= 3;
-      }
-      return Math.max(0, value);
+      return !need || need === got ? 10 : 0;
     }),
   );
   const timer = avg(own.map((item) => (item.elapsedMs / 1000 > 30 ? (item.elapsedMs / 1000 > 60 ? 0 : 4) : 10)));
@@ -725,21 +814,17 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
     ? Math.round((foreign.filter((item) => item.decision === 'transfer').length / foreign.length) * 10)
     : 10;
   return [
-    { label: 'Службы', value: services, max: 40, hint: 'Пропуск эталонной службы — незачёт' },
-    { label: 'Пострадавшие', value: injured, max: 25, hint: 'По тексту карточки, не по отметке 112' },
-    { label: 'Телефон', value: phone, max: 15, hint: 'Номер для связи, при необходимости обратный звонок' },
-    { label: 'Реагирование', value: process, max: 10, hint: 'Принята → наряд → работы завершены' },
+    { label: 'Реагирование', value: process, max: 70, hint: 'Принята → наряд → работы завершены' },
+    { label: 'Пострадавшие', value: injured, max: 10, hint: 'По тексту карточки, не по отметке 112' },
+    { label: 'Телефон', value: phone, max: 10, hint: 'Номер для связи, при необходимости обратный звонок' },
     { label: 'Норматив', value: timer, max: 10, hint: '30 секунд на карточку' },
-    { label: 'Профиль ленты', value: transfer, max: 10, hint: 'Свои направить, чужие передать' },
+    { label: 'Профиль ленты', value: transfer, max: 10, hint: 'Свои принять, чужие — «Не принято»' },
   ];
 }
 
 function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
   return cards.flatMap((card) => {
     const own = card.role === 'own';
-    const extra = card.draft.services.filter((kind) => !card.facts.services.includes(kind));
-    const missing = card.facts.services.filter((kind) => !card.draft.services.includes(kind));
-    const servicesOk = extra.length === 0 && missing.length === 0;
     const injuredOk = card.draft.injured === card.facts.injured;
     const need = card.facts.callerPhone.replace(/\D/g, '');
     const got = card.draft.callerPhone.replace(/\D/g, '');
@@ -757,15 +842,6 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
       },
       ...(own
         ? [
-            {
-              id: `${card.id}-svc`,
-              label: `${card.scenario.code} · службы`,
-              expected: card.facts.services.map((kind) => SERVICE_LABEL[kind]).join(', ') || '—',
-              got: card.draft.services.map((kind) => SERVICE_LABEL[kind]).join(', ') || '—',
-              state: servicesOk ? 'match' : 'miss',
-              points: servicesOk ? 1 : 0,
-              max: 1,
-            } satisfies FieldCheck,
             {
               id: `${card.id}-inj`,
               label: `${card.scenario.code} · пострадавшие`,

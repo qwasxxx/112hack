@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { InterventionType } from '@sys112/shared-types';
 import type { ActiveSession } from '../../domain/entities';
 import { difficultyLabels, formatDuration } from '../../domain/value-objects';
@@ -9,6 +9,26 @@ interface Action {
   label: string;
   hint: string;
 }
+
+const PRESETS: Partial<Record<InterventionType, string[]>> = {
+  set_emotional_state: [
+    'Паника: кричит, путает слова, «скорее приезжайте»',
+    'Злость: орёт на оператора, требует выслать службу',
+    'Растерянность: плачет, не может назвать этаж',
+  ],
+  add_circumstance: [
+    'Появился пострадавший, лежит без сознания',
+    'Дым пошёл в соседнюю квартиру',
+    'Слышны дети за закрытой дверью',
+  ],
+  inject_event: [
+    'Слышен удар, связь прерывается, крик «алло»',
+    'Лопнуло стекло, заявитель задыхается',
+    'На фоне крик «там человек!»',
+  ],
+  force_state: ['Обстановка резко ухудшилась, нужна эвакуация'],
+  adjust_difficulty: ['Путает корпус и подъезд, потом поправляется'],
+};
 
 function formatLineTime(value: string): string {
   const stamp = Date.parse(value);
@@ -32,21 +52,27 @@ export function ObservationPage({
   onIntervene: (type: InterventionType, note: string) => Promise<void>;
 }) {
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<InterventionType | null>(null);
+  const [sent, setSent] = useState<string | null>(null);
   const filled = session.requiredActions.filter((item) => item.completed).length;
   const total = session.requiredActions.length;
   const fields = Object.entries(session.incidentCard);
   const live = session.status === 'live';
-  const act = async (action: Action) => {
-    if (!window.confirm(`Отправить ученику «${action.label}»?`)) {
-      return;
-    }
-    setBusy(true);
+  const chips = useMemo(
+    () => examActions.flatMap((action) => (PRESETS[action.type] ?? []).map((text) => ({ type: action.type, text }))),
+    [examActions],
+  );
+  const act = async (action: Action, override?: string) => {
+    const payload = (override ?? note).trim();
+    setBusy(action.type);
     try {
-      await onIntervene(action.type, note || action.hint);
-      setNote('');
+      await onIntervene(action.type, payload);
+      setSent(`${action.label}: ${payload || action.hint}`);
+      if (!override) {
+        setNote('');
+      }
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -96,7 +122,11 @@ export function ObservationPage({
               <article className={`td-message td-message--${line.role}`} key={line.id}>
                 <div>
                   <strong>
-                    {line.role === 'student' ? 'Оператор' : line.role === 'caller' ? 'Заявитель' : 'Система'}
+                    {line.role === 'student'
+                      ? 'Оператор'
+                      : line.role === 'caller'
+                        ? 'Заявитель'
+                        : 'Система'}
                   </strong>
                   <time>{formatLineTime(line.at)}</time>
                 </div>
@@ -148,28 +178,47 @@ export function ObservationPage({
         <section className="td-panel td-observe-intervene">
           <div className="td-section-title">
             <div>
-              <h3>Вмешательство</h3>
-              <span className="td-help">Указание сразу появится у ученика на АРМ</span>
+              <h3>Вмешательство преподавателя</h3>
+              <span className="td-help">
+                Указание сразу уходит ученику на АРМ и меняет реплику заявителя в живом звонке
+              </span>
             </div>
           </div>
+          {sent && (
+            <p className="td-observe-sent" role="status">
+              Отправлено: {sent}
+            </p>
+          )}
           <label className="td-field">
-            Комментарий
+            Свой текст ситуации
             <textarea
               value={note}
               onChange={(event) => setNote(event.target.value)}
-              placeholder="Например: уточните этаж и есть ли там люди"
+              placeholder="Если пусто — система подставит случайную ситуацию из списка ниже"
             />
           </label>
+          <div className="td-observe-chips" aria-label="Готовые ситуации">
+            {chips.map((chip) => (
+              <button
+                key={`${chip.type}-${chip.text}`}
+                type="button"
+                className="td-chip"
+                onClick={() => setNote(chip.text)}
+              >
+                {chip.text}
+              </button>
+            ))}
+          </div>
           <div className="td-action-grid">
             {examActions.map((action) => (
               <button
-                disabled={busy}
+                disabled={busy !== null}
                 key={action.type}
-                className="td-action-btn"
+                className={`td-action-btn td-action-btn--${action.type}`}
                 onClick={() => void act(action)}
               >
-                <strong>{action.label}</strong>
-                <span>{action.hint}</span>
+                <strong>{busy === action.type ? 'Отправка…' : action.label}</strong>
+                <span>{note.trim() ? 'отправить с текстом выше' : action.hint}</span>
               </button>
             ))}
           </div>

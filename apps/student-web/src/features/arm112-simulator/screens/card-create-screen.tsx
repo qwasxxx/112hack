@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Arm112Workspace } from '../hooks/use-arm112-workspace';
 import type { CallerStatus } from '../model/arm112-models';
 import { AddressPanel } from '../components/address-panel';
@@ -12,6 +12,7 @@ import { PhoneHeader } from '../components/phone-header';
 import { QuestionnairePanel } from '../components/questionnaire-panel';
 import { ServicesFooter } from '../components/services-footer';
 import { ServicesModal } from '../components/services-modal';
+import { pullRecordings, recordingUrl, type RecordingMeta } from '../../../progress/remote';
 
 type Props = {
   workspace: Arm112Workspace;
@@ -157,13 +158,9 @@ export function CardCreateScreen(props: Props) {
       ) : null}
       {w.modal === 'reminder' ? <ReminderDialog onClose={() => w.setModal('none')} /> : null}
       {w.modal === 'recordings' ? (
-        <SimpleDialog
-          title="записи звонков"
-          body={
-            w.phase === 'активный вызов'
-              ? 'Идёт запись текущего вызова. Файл появится после завершения.'
-              : 'Записей сохранённых вызовов нет.'
-          }
+        <RecordingsDialog
+          login={w.operatorLogin}
+          live={w.phase === 'активный вызов'}
           onClose={() => w.setModal('none')}
         />
       ) : null}
@@ -177,6 +174,50 @@ export function CardCreateScreen(props: Props) {
       {w.modal === 'save' ? (
         <SaveConfirmDialog onBack={() => w.setModal('none')} onConfirm={w.saveCard} />
       ) : null}
+    </div>
+  );
+}
+
+function RecordingsDialog(props: { login?: string; live: boolean; onClose: () => void }) {
+  const [rows, setRows] = useState<RecordingMeta[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void pullRecordings(props.login).then((list) => {
+      if (!cancelled) {
+        setRows(Array.isArray(list) ? list : []);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.login]);
+  return (
+    <div className="arm112-modal-backdrop">
+      <div className="arm112-modal" role="dialog" aria-label="записи звонков">
+        <h2>записи звонков</h2>
+        {props.live ? <p className="arm112-label">Идёт запись текущего вызова. Файл появится после завершения.</p> : null}
+        {!rows ? (
+          <p className="arm112-label">Загрузка…</p>
+        ) : rows.length === 0 ? (
+          <p className="arm112-label">Сохранённых WAV пока нет.</p>
+        ) : (
+          <ul className="arm112-label" style={{ display: 'grid', gap: 12, padding: 0, listStyle: 'none' }}>
+            {rows.slice(0, 8).map((row) => (
+              <li key={row.id}>
+                <audio controls src={recordingUrl(row.id)} />
+                <div>
+                  {row.durationSec} с · {row.createdAt.slice(0, 19).replace('T', ' ')}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="arm112-modal-actions" style={{ marginTop: 16 }}>
+          <button type="button" className="arm112-ghost" onClick={props.onClose}>
+            Закрыть
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

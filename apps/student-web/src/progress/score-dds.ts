@@ -1,4 +1,4 @@
-import { SERVICE_LABEL, type TrainingScenario } from '../data/scenarios';
+import { type TrainingScenario } from '../data/scenarios';
 import { scoreDds, type DdsDraft, type TicketFacts } from '../features/dds-training/incoming-card';
 import type { DdsCardDecision, DdsServiceStatus } from '../features/dds-training/types';
 import { inspectOperatorText } from './text-quality';
@@ -75,33 +75,44 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
     findings.push({
       code: 'dds-own-transfer',
       field: 'Профиль ДДС',
-      message: `Карточка «${input.scenario.code}» вашего профиля: бригаду надо направить, а не передавать дальше`,
+      message: `Карточка «${input.scenario.code}» вашего профиля: её надо принять, а не передавать дальше`,
       severity: 'error',
     });
   }
 
-  let servicePoints = 40;
-  if (!check.servicesOk) {
-    servicePoints = Math.max(0, 40 - (check.missing.length + check.extra.length) * 12);
-    if (check.missing.length) {
-      findings.push({
-        code: 'dds-services-missing',
-        field: 'Службы',
-        message: `Не направлены: ${check.missing.map((item) => SERVICE_LABEL[item]).join(', ')}`,
-        severity: 'error',
-      });
-    }
-    if (check.extra.length) {
-      findings.push({
-        code: 'dds-services-extra',
-        field: 'Службы',
-        message: `Лишние: ${check.extra.map((item) => SERVICE_LABEL[item]).join(', ')}`,
-        severity: 'error',
-      });
-    }
+  let processPoints = 70;
+  if (!acceptedStatus(status)) {
+    processPoints -= 30;
+    findings.push({
+      code: 'dds-accept',
+      field: 'Приём карточки',
+      message: 'Нет статуса «Принята»: карточка не подтверждена как зона ответственности',
+      severity: 'error',
+    });
   }
+  if (!(input.naryad ?? '').trim()) {
+    processPoints -= 15;
+    findings.push({
+      code: 'dds-naryad',
+      field: 'Наряд',
+      message: 'Не указан номер наряда / распоряжение на выезд',
+      severity: 'error',
+    });
+  }
+  if (status !== 'Работы завершены') {
+    processPoints -= 25;
+    findings.push({
+      code: 'dds-close',
+      field: 'Закрытие',
+      message: status === 'Отказ от выполнения работ'
+        ? 'Отказ от работ по своей карточке'
+        : 'Нет отметки «Работы завершены» и возврата карточки в 112',
+      severity: 'error',
+    });
+  }
+  processPoints = Math.max(0, processPoints);
 
-  let injuredPoints = 25;
+  let injuredPoints = 10;
   if (!check.injuredOk) {
     injuredPoints = 0;
     findings.push({
@@ -112,7 +123,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
     });
   }
 
-  let phonePoints = 15;
+  let phonePoints = 10;
   if (!check.phoneOk) {
     phonePoints = 0;
     findings.push({
@@ -131,38 +142,6 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
     }
   }
 
-  let processPoints = 10;
-  if (!acceptedStatus(status)) {
-    processPoints -= 4;
-    findings.push({
-      code: 'dds-accept',
-      field: 'Приём карточки',
-      message: 'Нет статуса «Принята»: карточка не подтверждена как зона ответственности',
-      severity: 'error',
-    });
-  }
-  if (!(input.naryad ?? '').trim()) {
-    processPoints -= 3;
-    findings.push({
-      code: 'dds-naryad',
-      field: 'Наряд',
-      message: 'Не указан номер наряда / распоряжение на выезд',
-      severity: 'error',
-    });
-  }
-  if (status !== 'Работы завершены') {
-    processPoints -= 3;
-    findings.push({
-      code: 'dds-close',
-      field: 'Закрытие',
-      message: status === 'Отказ от выполнения работ'
-        ? 'Отказ от работ по своей карточке'
-        : 'Нет отметки «Работы завершены» и возврата карточки в 112',
-      severity: 'error',
-    });
-  }
-  processPoints = Math.max(0, processPoints);
-
   let timerPoints = 10;
   if (elapsedSeconds > CARD_TIMER_LIMIT_SEC) {
     timerPoints = elapsedSeconds > 60 ? 0 : 4;
@@ -177,14 +156,14 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
   findings.push(...inspectOperatorText('Описание', input.draft.description, { minChars: 8 }));
   const decisionOk = input.decision === 'dispatch';
   const points = decisionOk
-    ? Math.max(0, Math.min(100, Math.round(servicePoints + injuredPoints + phonePoints + processPoints + timerPoints)))
-    : Math.min(40, Math.round(servicePoints + injuredPoints + phonePoints + processPoints + timerPoints) / 2);
+    ? Math.max(0, Math.min(100, Math.round(processPoints + injuredPoints + phonePoints + timerPoints)))
+    : Math.min(40, Math.round(processPoints + injuredPoints + phonePoints + timerPoints) / 2);
   const ok =
     decisionOk &&
-    check.servicesOk &&
     check.injuredOk &&
     check.phoneOk &&
     acceptedStatus(status) &&
+    Boolean((input.naryad ?? '').trim()) &&
     status === 'Работы завершены';
 
   return {
@@ -233,9 +212,6 @@ export function scoreDdsLesson(input: {
   if (scored.some((item) => item.role === 'own' && item.decision !== 'dispatch')) {
     recs.push('Карточку своего профиля нужно принять и направить, а не отдавать соседям.');
   }
-  if (scored.some((item) => item.role === 'own' && !item.servicesOk)) {
-    recs.push('Сверяйте службы с текстом карточки, а не с тем, что проставил оператор 112.');
-  }
   if (scored.some((item) => item.role === 'own' && !item.injuredOk)) {
     recs.push('Если в описании есть пострадавший, признак «пострадавшие» не может быть «нет».');
   }
@@ -249,7 +225,7 @@ export function scoreDdsLesson(input: {
     recs.push('Обработка карточки ДДС тоже в нормативе 30 секунд на карточку.');
   }
 
-  const serviceVeto = scored.some((item) => item.role === 'own' && item.missing.length > 0);
+  const serviceVeto = false;
   const foreignVeto = scored.some((item) => item.role === 'foreign' && !item.ok);
 
   return {
@@ -270,5 +246,53 @@ export function scoreDdsLesson(input: {
     findings,
     recommendations: recs.slice(0, 4),
     summary: `${score} · ${scored.filter((item) => item.ok).length}/${scored.length} карточек · ${elapsedSeconds} с`,
+    reviewFields: cards.flatMap((item, index) => {
+      const who = item.role === 'foreign' ? 'Чужая' : 'Своя';
+      const prefix = `${index + 1}. ${who}`;
+      const statusExpected = item.role === 'foreign' ? 'Не принято' : 'Работы завершены';
+      const statusGot = item.workplaceStatus ?? '';
+      return [
+        {
+          label: `${prefix} · адрес`,
+          expected: item.facts.address,
+          got: item.draft.address,
+          state: item.draft.address.trim() ? 'partial' : 'empty',
+          points: 0,
+          max: 0,
+        },
+        {
+          label: `${prefix} · телефон`,
+          expected: item.facts.callerPhone,
+          got: item.draft.callerPhone,
+          state: item.draft.callerPhone.trim() ? 'partial' : 'empty',
+          points: 0,
+          max: 0,
+        },
+        {
+          label: `${prefix} · пострадавшие`,
+          expected: item.facts.injured,
+          got: item.draft.injured,
+          state: item.draft.injured.trim() === item.facts.injured.trim() ? 'match' : 'miss',
+          points: 0,
+          max: 0,
+        },
+        {
+          label: `${prefix} · статус`,
+          expected: statusExpected,
+          got: statusGot,
+          state: statusGot === statusExpected ? 'match' : 'miss',
+          points: 0,
+          max: 0,
+        },
+        {
+          label: `${prefix} · наряд`,
+          expected: item.role === 'foreign' ? 'не нужен' : 'номер бригады',
+          got: item.naryad ?? '',
+          state: item.role === 'foreign' || Boolean(item.naryad?.trim()) ? 'match' : 'empty',
+          points: 0,
+          max: 0,
+        },
+      ] ;
+    }),
   };
 }

@@ -8,6 +8,7 @@ export type SttStream = {
   start(): Promise<void>;
   stop(): Promise<string>;
   setCaptureEnabled(enabled: boolean): void;
+  mediaStream(): MediaStream | undefined;
 };
 
 export function createSttStream(handlers: {
@@ -231,13 +232,10 @@ export function createSttStream(handlers: {
 
   function setCaptureEnabled(enabled: boolean) {
     captureEnabled = enabled;
-    media?.getAudioTracks().forEach((track) => {
-      track.enabled = enabled;
-    });
     if (!enabled) {
       pending = new Int16Array(0);
     }
   }
 
-  return { start, stop, setCaptureEnabled };
+  return { start, stop, setCaptureEnabled, mediaStream: () => media };
 }

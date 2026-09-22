@@ -82,6 +82,7 @@ export type DdsServiceChip = {
   status: DdsServiceStatus;
   statusTime: string;
   editable: boolean;
+  phone?: string;
   history: DdsStatusEvent[];
 };
 

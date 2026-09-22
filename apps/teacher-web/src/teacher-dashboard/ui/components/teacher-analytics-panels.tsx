@@ -61,8 +61,8 @@ export function TeacherAnalyticsPanels({
                   <strong>{result.student.name}</strong>
                   <span>{result.scenarioTitle}</span>
                 </div>
-                <StatusBadge tone={result.passed ? 'good' : 'danger'}>
-                  {result.finalScore}%
+                <StatusBadge tone={result.confirmed ? (result.passed ? 'good' : 'danger') : 'warning'}>
+                  {result.confirmed ? `${result.finalScore}%` : 'Ждёт'}
                 </StatusBadge>
               </article>
             ))}

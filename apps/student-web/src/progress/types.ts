@@ -28,6 +28,7 @@ export type LessonRecord = {
   findings: LessonFinding[];
   recommendations: string[];
   summary: string;
+  recordingId?: string;
   cardScore?: number;
   callScore?: number;
   speedScore?: number;
@@ -35,7 +36,23 @@ export type LessonRecord = {
   interviewScore?: number;
   comment?: string;
   judgeSource?: string;
+  reviewFields?: LessonReviewField[];
+  transcript?: LessonReviewLine[];
+}
+
+export type LessonReviewField = {
+  label: string;
+  expected: string;
+  got: string;
+  state: 'match' | 'partial' | 'miss' | 'empty';
+  points: number;
+  max: number;
 };
+
+export type LessonReviewLine = {
+  role: 'operator' | 'caller';
+  text: string;
+}
 
 export const PASS_SCORE = 70;
 export const PASS_SCORE_EXAM = 80;

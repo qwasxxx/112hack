@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -128,6 +129,19 @@ def health_payload() -> dict[str, Any]:
 @app.get("/api/llm/health")
 def health() -> dict[str, Any]:
     return health_payload()
+
+
+@app.post("/control/stop")
+@app.post("/api/llm/control/stop")
+async def control_stop() -> dict[str, bool]:
+    proc = llama_process
+    if proc is not None:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+    asyncio.get_event_loop().call_later(0.2, lambda: os._exit(0))
+    return {"ok": True}
 
 
 @app.post("/warmup")
@@ -357,7 +371,8 @@ async def llm_socket(ws: WebSocket) -> None:
                 text = str(payload.get("text") or "")
                 if current.busy:
                     current.pending = [(message_id, text)]
-                    current.cancel.set()
+                    if not current.emitted:
+                        current.cancel.set()
                     continue
                 session = manager.accept_user(call_id, text, message_id)
                 if session is None:
@@ -407,6 +422,7 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
             return
         session.busy = True
         session.cancel.clear()
+        session.emitted = False
         session.generation += 1
         gen_id = session.generation
         logger.info("[LLM] User transcript received")
@@ -431,7 +447,8 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
             if manager.accept_user(call_id, text, message_id) is None:
                 return
             continue
-        if session.cancel.is_set() or full is None:
+        aborted = full is None or (session.cancel.is_set() and not session.emitted)
+        if aborted:
             manager.drop_unanswered_user(call_id)
             session.busy = False
             logger.info("[LLM] Generation cancelled")
@@ -491,6 +508,8 @@ async def _generate(
             if partial_type == "analysis_partial"
             else "Назовите адрес, где это происходит."
         )
+        if live is not None and partial_type == "assistant_partial":
+            live.emitted = True
         await ws.send_json({"type": partial_type, "text": text, "gen": gen_id})
         return text
     filter_ = ThinkFilter()
@@ -498,7 +517,7 @@ async def _generate(
     last_sent = ""
     async for piece in client.stream_chat(messages, max_tokens=max_tokens, should_stop=stopped):
         if stopped():
-            return None
+            break
         chunk = filter_.feed(piece)
         if not chunk:
             continue
@@ -506,9 +525,11 @@ async def _generate(
         spoken = sanitize_speech(visible)
         if not spoken or spoken == last_sent:
             continue
+        if live is not None and partial_type == "assistant_partial":
+            live.emitted = True
         await ws.send_json({"type": partial_type, "text": spoken, "gen": gen_id})
         last_sent = spoken
-    if stopped():
+    if stopped() and not last_sent:
         return None
     leftover = filter_.feed("")
     if leftover:

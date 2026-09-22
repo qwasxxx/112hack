@@ -95,8 +95,8 @@ export function ActivePage({
       </TeacherFilterBar>
       {sessions.length === 0 ? (
         <EmptyState>
-          Нет активных занятий. Откройте билет во второй вкладке под учётом ученика — запись появится
-          здесь сразу.
+          Нет активных занятий. Войдите учеником в другой вкладке и откройте билет — запись появится
+          здесь сразу. Вход в каждой вкладке свой: преподаватель и ученик больше не вытесняют друг друга.
         </EmptyState>
       ) : visible.length === 0 ? (
         <EmptyState>По выбранным фильтрам сессий нет.</EmptyState>
@@ -133,14 +133,18 @@ export function ActivePage({
                     <td>
                       <StatusBadge
                         tone={
-                          item.category === 'Брифинг' || item.category === 'Теория'
+                          item.status === 'finishing'
+                            ? 'warning'
+                            : item.category === 'Брифинг' || item.category === 'Теория'
                             ? 'neutral'
                             : item.mode === 'exam'
                               ? 'warning'
                               : 'neutral'
                         }
                       >
-                        {item.category === 'Брифинг' || item.category === 'Теория'
+                        {item.status === 'finishing'
+                          ? 'Ждёт оценки'
+                          : item.category === 'Брифинг' || item.category === 'Теория'
                           ? item.category
                           : item.mode === 'exam'
                             ? 'Экзамен'

@@ -7,6 +7,7 @@ import { readCoachNote, writeCoachNote } from '../../../../../student-web/src/pr
 import { SERVICE_LABEL, type ServiceKind } from '../../../../../student-web/src/data/scenarios';
 import { generateTicket, inferServices, ticketTitle } from '../../../../../student-web/src/lib/generate-ticket';
 import { ticketFactsFrom, serviceLabels } from '../../../../../student-web/src/progress/ticket-facts';
+import { exportCatalogJson } from '../../../../../student-web/src/data/ticket-catalog';
 
 const SERVICE_OPTIONS: Array<{ id: ServiceKind; label: string }> = [
   { id: 'fire', label: SERVICE_LABEL.fire },
@@ -434,13 +435,16 @@ export function ScenariosPage({
   scenarios,
   materials,
   onSave,
+  onImport,
 }: {
   scenarios: Scenario[];
   materials: TrainingMaterial[];
   onSave: (draft: ScenarioDraft) => Promise<{ id: string } | void>;
+  onImport?: (raw: string) => Promise<{ added: number; updated: number } | void>;
 }) {
   const [editing, setEditing] = useState<Scenario | 'new' | null>(null);
   const [query, setQuery] = useState('');
+  const [importing, setImporting] = useState(false);
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) {
@@ -458,13 +462,51 @@ export function ScenariosPage({
           <p className="td-kicker">Учебный контент</p>
           <h2>Билеты и сценарии</h2>
         </div>
-        <button
-          className="td-btn td-btn--primary"
-          type="button"
-          onClick={() => setEditing('new')}
-        >
-          + Новый билет
-        </button>
+        <div className="td-inline">
+          <button
+            className="td-btn td-btn--ghost"
+            type="button"
+            onClick={() => {
+              const blob = new Blob([exportCatalogJson()], { type: 'application/json' });
+              const href = URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = href;
+              link.download = 'sys112-tickets.json';
+              link.click();
+              URL.revokeObjectURL(href);
+            }}
+          >
+            Экспорт JSON
+          </button>
+          <label className="td-btn td-btn--secondary">
+            {importing ? 'Импорт…' : 'Импорт JSON'}
+            <input
+              type="file"
+              accept="application/json,.json"
+              hidden
+              disabled={importing || !onImport}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = '';
+                if (!file || !onImport) {
+                  return;
+                }
+                setImporting(true);
+                void file
+                  .text()
+                  .then((raw) => onImport(raw))
+                  .finally(() => setImporting(false));
+              }}
+            />
+          </label>
+          <button
+            className="td-btn td-btn--primary"
+            type="button"
+            onClick={() => setEditing('new')}
+          >
+            + Новый билет
+          </button>
+        </div>
       </header>
       {editing && (
         <ScenarioForm

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -87,6 +88,7 @@ def sanitize_speech(text: str) -> str:
 class LlamaClient:
     def __init__(self, base_url: str = LLM_BASE_URL) -> None:
         self.base_url = base_url.rstrip("/")
+        self._lock = asyncio.Semaphore(1)
         self._http = httpx.AsyncClient(
             timeout=httpx.Timeout(LLM_TIMEOUT_SEC, connect=5.0),
             trust_env=False,
@@ -127,6 +129,10 @@ class LlamaClient:
             return False
 
     async def prefetch_chat(self, messages: list[dict[str, str]]) -> None:
+        async with self._lock:
+            await self._prefetch_unlocked(messages)
+
+    async def _prefetch_unlocked(self, messages: list[dict[str, str]]) -> None:
         response = None
         for tokens in (0, 1):
             payload = self._chat_payload(messages, stream=False, max_tokens=tokens)
@@ -150,6 +156,16 @@ class LlamaClient:
             )
 
     async def stream_chat(
+        self,
+        messages: list[dict[str, str]],
+        max_tokens: int | None = None,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> AsyncIterator[str]:
+        async with self._lock:
+            async for piece in self._stream_unlocked(messages, max_tokens, should_stop):
+                yield piece
+
+    async def _stream_unlocked(
         self,
         messages: list[dict[str, str]],
         max_tokens: int | None = None,
@@ -197,6 +213,24 @@ class LlamaClient:
                     yield piece
 
     async def complete_chat(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int,
+        temperature: float = 0.3,
+        think: bool = False,
+        timeout_sec: float | None = None,
+    ) -> str:
+        async with self._lock:
+            return await self._complete_unlocked(
+                messages,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                think=think,
+                timeout_sec=timeout_sec,
+            )
+
+    async def _complete_unlocked(
         self,
         messages: list[dict[str, str]],
         *,

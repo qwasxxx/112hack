@@ -139,15 +139,21 @@ export function useArm112Workspace(input: {
   const [incomingAcceptedAt, setIncomingAcceptedAt] = useState<string | null>(draft?.incomingAcceptedAt ?? null);
   const [actions, setActions] = useState<TrainingAction[]>([]);
   const [result, setResult] = useState<Arm112PracticalResult | null>(null);
-  const [card, setCard] = useState<IncidentCard>(() =>
-    draft?.card ??
-    createEmptyIncidentCard({
-      number: String(36800000 + Math.floor(Math.random() * 90000)),
-      createdAt: nowStamp(),
-      operatorLabel: input.operatorName,
-      armNumber: '4',
-    }),
-  );
+  const [card, setCard] = useState<IncidentCard>(() => {
+    if (!draft?.card) {
+      return createEmptyIncidentCard({
+        number: String(36800000 + Math.floor(Math.random() * 90000)),
+        createdAt: nowStamp(),
+        operatorLabel: input.operatorName,
+        armNumber: '4',
+      });
+    }
+    const livePhase = draft.phase === 'заполнение карточки' || draft.phase === 'активный вызов';
+    return {
+      ...draft.card,
+      timer: { elapsedSeconds: 0, running: livePhase && mode !== 'guided', exceeded: false },
+    };
+  });
 
   useEffect(() => {
     if (mode === 'guided' || !input.operatorLogin || result) {
@@ -158,7 +164,7 @@ export function useArm112Workspace(input: {
         scenarioId: input.scenario.id,
         savedAt: isoNow(),
         phase,
-        card,
+        card: { ...card, timer: { elapsedSeconds: 0, running: false, exceeded: false } },
         incomingAcceptedAt,
         telephonyStatus,
       });
@@ -214,9 +220,9 @@ export function useArm112Workspace(input: {
         mode === 'guided'
           ? { ...current.timer, running: false }
           : {
-              elapsedSeconds: current.timer.elapsedSeconds,
+              elapsedSeconds: 0,
               running: true,
-              exceeded: current.timer.elapsedSeconds >= binding.cardTimerLimitSec,
+              exceeded: false,
             },
     }));
   }
@@ -448,7 +454,7 @@ export function useArm112Workspace(input: {
     const path = next.classification.classifier;
     const matched = path.groupCode || path.priznak1 ? matchRecords(filterFromPath(path)) : [];
     const nextActions = [...actions, { at: completedAt, type: 'otrabotana', detail: 'Отработана' }];
-    setCard(next);
+    setCard({ ...next, timer: { elapsedSeconds: 0, running: false, exceeded: false } });
     setActions(nextActions);
     setResult(
       buildPracticalResult({
@@ -544,6 +550,7 @@ export function useArm112Workspace(input: {
     result,
     actions,
     mode,
+    operatorLogin: input.operatorLogin,
     incomingAcceptedAt,
     smsInbox:
       incomingChannelFor(input.scenario) === 'sms' ? smsFromTicket(input.scenario) : '',

@@ -17,7 +17,7 @@ export function DescriptionPanel(props: Props) {
     >
       <span className="arm112-label">Описание со слов заявителя</span>
       <textarea
-        placeholder="Введите"
+        placeholder="введите"
         maxLength={props.limit}
         value={props.value}
         onChange={(event) => props.onChange(event.target.value)}

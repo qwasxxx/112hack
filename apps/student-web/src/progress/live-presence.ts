@@ -25,7 +25,7 @@ export type LivePresence = {
 
 const KEY = 'sys112.live.v1';
 const CHANNEL = 'sys112.live.v1';
-const STALE_MS = 45_000;
+const STALE_MS = 180_000;
 
 function notifyLive(): void {
   try {
@@ -35,6 +35,11 @@ function notifyLive(): void {
   } catch {
     /* BroadcastChannel may be unavailable */
   }
+}
+
+function stampOf(value?: string): number {
+  const stamp = Date.parse(value ?? '');
+  return Number.isFinite(stamp) ? stamp : 0;
 }
 
 function readMap(): Record<string, LivePresence> {
@@ -68,6 +73,7 @@ export function upsertLive(entry: LivePresence): void {
     ...previous,
     ...entry,
     transcript: entry.transcript ?? previous?.transcript,
+    updatedAt: entry.updatedAt || new Date().toISOString(),
   };
   writeMap(map);
   pushLive(map[entry.login]);
@@ -96,20 +102,42 @@ export function mergeRemoteLive(entries: LivePresence[]): void {
     return;
   }
   const map = readMap();
+  let changed = false;
   for (const entry of entries) {
     if (!entry?.login) {
       continue;
     }
-    map[entry.login] = entry;
+    const remote: LivePresence = {
+      ...entry,
+      updatedAt: entry.updatedAt || new Date().toISOString(),
+    };
+    const local = map[entry.login];
+    if (!local) {
+      map[entry.login] = remote;
+      changed = true;
+      continue;
+    }
+    if (stampOf(local.updatedAt) >= stampOf(remote.updatedAt)) {
+      continue;
+    }
+    map[entry.login] = {
+      ...local,
+      ...remote,
+      transcript: remote.transcript?.length ? remote.transcript : local.transcript,
+      cardRows: remote.cardRows?.length ? remote.cardRows : local.cardRows,
+    };
+    changed = true;
   }
-  writeMap(map);
+  if (changed) {
+    writeMap(map);
+  }
 }
 
 export function readLiveSessions(): LivePresence[] {
   const now = Date.now();
   return Object.values(readMap()).filter((item) => {
-    const stamp = Date.parse(item.updatedAt);
-    return Number.isFinite(stamp) && now - stamp < STALE_MS;
+    const stamp = stampOf(item.updatedAt);
+    return stamp > 0 && now - stamp < STALE_MS;
   });
 }
 

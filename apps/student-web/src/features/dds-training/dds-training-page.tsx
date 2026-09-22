@@ -40,8 +40,11 @@ export function DdsTrainingPage(props: Props) {
   const session = useDdsSession(props.scenario, lane);
   const [query, setQuery] = useState('');
   const [now, setNow] = useState(() => new Date());
-  const [callbackOn, setCallbackOn] = useState(false);
+  const [callTarget, setCallTarget] = useState<{ title: string; prompt?: string; opening?: string } | null>(
+    null,
+  );
   const closing = useRef(false);
+  const callAudio = useRef<{ audio: Promise<Blob | null>; seconds: number } | undefined>(undefined);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -49,7 +52,7 @@ export function DdsTrainingPage(props: Props) {
   }, []);
 
   useEffect(() => {
-    setCallbackOn(false);
+    setCallTarget(null);
   }, [session.activeId]);
 
   useEffect(() => {
@@ -87,14 +90,12 @@ export function DdsTrainingPage(props: Props) {
         workplaceStatus: item.workplaceStatus,
         callback: item.callbackDone,
       })),
+      audio: callAudio.current?.audio,
+      callSeconds: callAudio.current?.seconds,
     };
     const own = finish.cards.filter((item) => item.role === 'own');
     const check: DdsCheckResult = {
-      servicesOk: own.every((item) => {
-        const extra = item.draft.services.filter((kind) => !item.facts.services.includes(kind));
-        const missing = item.facts.services.filter((kind) => !item.draft.services.includes(kind));
-        return extra.length === 0 && missing.length === 0;
-      }),
+      servicesOk: true,
       injuredOk: own.every((item) => item.draft.injured === item.facts.injured),
       phoneOk: own.every((item) => {
         const need = item.facts.callerPhone.replace(/\D/g, '');
@@ -124,15 +125,14 @@ export function DdsTrainingPage(props: Props) {
         <header className="dds-bar">
           <span>ДДС · {ddsWorkplaceName(lane)}</span>
           <span className="dds-bar-hint">
-            Службы внизу: тёмный чип = привлечена, серый = нет. 101 пожар, 102 полиция, 103 скорая, 104 газ. Лишние
-            снимите, нужные добавьте. Карандаш — статус своей ДДС. Трубка — перезвон. × закрывает карточку в 112.
+            СлужБис — кому ушла карточка. Стрелки — своя ДДС. Карандаш — статус и наряд.
           </span>
           <button type="button" onClick={props.onLeave}>
             К уроку
           </button>
         </header>
       )}
-      <div className={`dds-shell${callbackOn ? ' is-call' : ''}`}>
+      <div className={`dds-shell${callTarget ? ' is-call' : ''}`}>
         {session.view === 'journal' ? (
           <DdsJournal
             query={query}
@@ -161,37 +161,58 @@ export function DdsTrainingPage(props: Props) {
             canEditStatus={session.canEditStatus}
             callbackDone={session.callbackDone}
             onPatch={session.patch}
-            onToggleService={session.toggleService}
             onStartStatus={session.startStatusEdit}
             onCancelStatus={session.cancelStatusEdit}
             onPatchStatus={session.patchStatusForm}
             onApplyStatus={session.applyStatus}
             onCallback={() => {
+              if (!active) {
+                return;
+              }
               unlockTtsAudio();
-              setCallbackOn(true);
+              setCallTarget({
+                title: 'Звонок заявителю',
+                prompt: buildDdsCallbackPrompt(active.scenario, active.facts),
+                opening: ddsCallbackOpening(),
+              });
+            }}
+            onContactService={(label, phone) => {
+              unlockTtsAudio();
+              setCallTarget({
+                title: `Связь · ${label}`,
+                prompt: `Вы диспетчер ДДС. Связываетесь со службой ${label} (${phone}) по карточке ${session.card.number}. Коротко передайте адрес, суть, пострадавших. Если это не ваша зона — согласуйте взаимодействие.`,
+                opening: `${label}, диспетчер на линии.`,
+              });
             }}
             onClose={session.closeCard}
           />
         )}
-        {callbackOn && active ? (
-          <aside className="dds-call" aria-label="Обратный звонок заявителю">
+        {callTarget && active ? (
+          <aside className="dds-call" aria-label={callTarget.title}>
             <CallPage
               scenario={active.scenario}
               section="training"
               variant="panel"
               autoStart
               operatorLogin={props.operatorLogin}
-              systemPrompt={buildDdsCallbackPrompt(active.scenario, active.facts)}
-              opening={ddsCallbackOpening()}
-              hint="Вы — диспетчер ДДС. Уточните адрес, пострадавших и телефон для связи."
-              panelTitle="Обратный звонок"
+              systemPrompt={callTarget.prompt ?? buildDdsCallbackPrompt(active.scenario, active.facts)}
+              opening={callTarget.opening ?? ddsCallbackOpening()}
+              hint="IP-телефон. Говорите как диспетчер ДДС."
+              panelTitle={callTarget.title}
               onLeave={() => {
-                session.markCallback();
-                setCallbackOn(false);
+                if (callTarget.title === 'Звонок заявителю') {
+                  session.markCallback();
+                }
+                setCallTarget(null);
               }}
-              onCallEnded={() => {
-                session.markCallback();
-                setCallbackOn(false);
+              onCallEnded={(payload) => {
+                if (payload.audio) {
+                  callAudio.current = { audio: payload.audio, seconds: payload.seconds };
+                }
+                if (callTarget.title === 'Звонок заявителю') {
+                  session.markCallback();
+                }
+                setCallTarget(null);
               }}
             />
           </aside>

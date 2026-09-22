@@ -45,9 +45,11 @@ export function AddressPanel(props: Props) {
       onClick={region.onClick}
     >
       <div className="arm112-address-head">
-        <label className="arm112-label">
-          <input type="checkbox" defaultChecked /> Адрес:
+        <label className="arm112-address-pin">
+          <input type="checkbox" defaultChecked />
+          <span aria-hidden="true">📍</span>
         </label>
+        <span className="arm112-label">Адрес:</span>
         <input
           className="arm112-underline"
           aria-label="Адрес"
@@ -55,8 +57,8 @@ export function AddressPanel(props: Props) {
           value={a.searchLine}
           onChange={(event) => set('searchLine', event.target.value)}
         />
-        <button type="button" className="arm112-icon-btn arm112-map-btn" onClick={props.onOpenMap} aria-label="Карта">
-          ⌖
+        <button type="button" className="arm112-icon-btn arm112-map-btn" onClick={props.onOpenMap} aria-label="Добавить адрес на карте">
+          +
         </button>
         <button type="button" className="arm112-icon-btn" onClick={clear} aria-label="Закрыть адрес">
           ×

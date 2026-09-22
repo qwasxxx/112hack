@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -46,6 +48,12 @@ def health() -> dict[str, Any]:
         "mode": STT_MODE,
         "model_present": model_files_present(STT_MODEL_DIR),
     }
+
+
+@app.post("/control/stop")
+async def control_stop() -> dict[str, bool]:
+    asyncio.get_event_loop().call_later(0.2, lambda: os._exit(0))
+    return {"ok": True}
 
 
 @app.websocket("/ws/stt")

@@ -1,4 +1,5 @@
-import { historyRecommendations, lessonsNewestFirst, printLessonCertificate, progressStats, readLessons, type LessonRecord } from '../progress';
+import { historyRecommendations, lessonsNewestFirst, printLessonCertificate, readLessons, PASS_SCORE, PASS_SCORE_EXAM, type LessonRecord } from '../progress';
+import { useTeacherReviews } from '../progress/use-teacher-review';
 import './sessions-page.css';
 
 const MODE_LABEL: Record<LessonRecord['mode'], string> = {
@@ -48,9 +49,18 @@ function formatWhen(iso: string): string {
   }).format(date);
 }
 
+function officialPass(item: LessonRecord, score: number | undefined): boolean {
+  return score != null && score >= (item.mode === 'exam' ? PASS_SCORE_EXAM : PASS_SCORE);
+}
+
 export function SessionsBoard(props: { login: string; name: string }) {
   const records = lessonsNewestFirst(props.login);
-  const stats = progressStats(records);
+  const reviews = useTeacherReviews();
+  const confirmed = records.filter((item) => reviews[item.id] != null);
+  const passedCount = records.filter((item) => officialPass(item, reviews[item.id])).length;
+  const avg = confirmed.length
+    ? Math.round(confirmed.reduce((sum, item) => sum + (reviews[item.id] ?? 0), 0) / confirmed.length)
+    : 0;
   const recs = historyRecommendations(records);
 
   return (
@@ -60,25 +70,25 @@ export function SessionsBoard(props: { login: string; name: string }) {
           <p className="sessions-kicker">Профиль · {props.name}</p>
           <h2 id="sessions-title">Мои сессии</h2>
           <p className="sessions-lead">
-            Результаты пишутся автоматически после тренировки, экзамена и карточки ДДС. Удалить записи нельзя.
+            Разбор ИИ сохраняется сразу. Зачёт появляется после подтверждения преподавателя.
           </p>
         </div>
         <div className="sessions-head-tools">
           <dl className="sessions-stats">
             <div>
               <dt>Занятий</dt>
-              <dd>{stats.total}</dd>
+              <dd>{records.length}</dd>
             </div>
             <div>
               <dt>Зачёт</dt>
               <dd>
-                {stats.passed}
-                {stats.total ? <span> / {stats.total}</span> : null}
+                {passedCount}
+                {records.length ? <span> / {records.length}</span> : null}
               </dd>
             </div>
             <div>
               <dt>Средний балл</dt>
-              <dd>{stats.total ? stats.avg : '—'}</dd>
+              <dd>{confirmed.length ? avg : '—'}</dd>
             </div>
           </dl>
           {records.length > 0 ? (
@@ -104,10 +114,15 @@ export function SessionsBoard(props: { login: string; name: string }) {
         </p>
       ) : (
         <ul className="sessions-list">
-          {records.map((item) => (
-            <li key={item.id} className={item.passed ? 'is-pass' : 'is-fail'}>
+          {records.map((item) => {
+            const official = reviews[item.id];
+            const waiting = official == null;
+            const passed = officialPass(item, official);
+            return (
+            <li key={item.id} className={waiting ? 'is-wait' : passed ? 'is-pass' : 'is-fail'}>
               <div className="sessions-row-top">
-                <b>{item.score}</b>
+                <b>{waiting ? item.score : official}</b>
+                {waiting ? <span className="sessions-mode">Ждёт преподавателя</span> : null}
                 <span className="sessions-mode">{MODE_LABEL[item.mode]}</span>
                 <span className="sessions-code">{item.scenarioCode}</span>
                 <strong>{item.scenarioTitle}</strong>
@@ -139,17 +154,18 @@ export function SessionsBoard(props: { login: string; name: string }) {
               {item.reactionSeconds != null ? (
                 <p className="sessions-summary">Реакция на входящий: {item.reactionSeconds} с</p>
               ) : null}
-              {item.passed ? (
+              {passed ? (
                 <button
                   type="button"
                   className="sessions-export"
-                  onClick={() => printLessonCertificate(item, props.name)}
+                  onClick={() => printLessonCertificate({ ...item, score: official ?? item.score, passed: true }, props.name)}
                 >
                   Справка
                 </button>
               ) : null}
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </section>

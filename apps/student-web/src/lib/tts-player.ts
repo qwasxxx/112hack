@@ -9,6 +9,12 @@ let playbackDone: (() => void) | undefined;
 let playChain: Promise<void> = Promise.resolve();
 let audioCtx: AudioContext | undefined;
 let nextStart = 0;
+let recordMix: GainNode | undefined;
+let recordTap: ScriptProcessorNode | undefined;
+let recordSink: GainNode | undefined;
+let micTap: MediaStreamAudioSourceNode | undefined;
+let recordChunks: Float32Array[] = [];
+let recordCarry = 0;
 
 function ttsUrl(): string {
   const { protocol, hostname } = window.location;
@@ -28,6 +34,103 @@ export function unlockTtsAudio(): void {
   if (ctx.state === 'suspended') {
     void ctx.resume();
   }
+}
+
+function releaseRecordingGraph() {
+  micTap?.disconnect();
+  micTap = undefined;
+  recordTap?.disconnect();
+  recordTap = undefined;
+  recordSink?.disconnect();
+  recordSink = undefined;
+  recordMix?.disconnect();
+  recordMix = undefined;
+}
+
+function wavFromPcm(samples: Float32Array, sampleRate: number): Blob {
+  const bytes = samples.length * 2;
+  const out = new ArrayBuffer(44 + bytes);
+  const view = new DataView(out);
+  const write = (offset: number, value: string) => {
+    for (let i = 0; i < value.length; i += 1) {
+      view.setUint8(offset + i, value.charCodeAt(i));
+    }
+  };
+  write(0, 'RIFF');
+  view.setUint32(4, 36 + bytes, true);
+  write(8, 'WAVE');
+  write(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  write(36, 'data');
+  view.setUint32(40, bytes, true);
+  let offset = 44;
+  for (let i = 0; i < samples.length; i += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[i] ?? 0));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+  return new Blob([out], { type: 'audio/wav' });
+}
+
+function takeRecording(): Blob | null {
+  const chunks = recordChunks;
+  recordChunks = [];
+  recordCarry = 0;
+  releaseRecordingGraph();
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  if (!total) {
+    return null;
+  }
+  const merged = new Float32Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return wavFromPcm(merged, 16000);
+}
+
+export function beginCallRecording(mic: MediaStream): { stop: () => Promise<Blob | null> } {
+  const ctx = getAudioContext();
+  void ctx.resume();
+  releaseRecordingGraph();
+  recordChunks = [];
+  recordCarry = 0;
+  recordMix = ctx.createGain();
+  micTap = ctx.createMediaStreamSource(mic);
+  micTap.connect(recordMix);
+  recordTap = ctx.createScriptProcessor(4096, 1, 1);
+  const step = ctx.sampleRate / 16000;
+  recordTap.onaudioprocess = (event) => {
+    if (!recordMix) {
+      return;
+    }
+    const input = event.inputBuffer.getChannelData(0);
+    const out: number[] = [];
+    let pos = recordCarry;
+    while (pos < input.length) {
+      out.push(input[Math.floor(pos)] ?? 0);
+      pos += step;
+    }
+    recordCarry = pos - input.length;
+    if (out.length) {
+      recordChunks.push(Float32Array.from(out));
+    }
+  };
+  recordMix.connect(recordTap);
+  recordSink = ctx.createGain();
+  recordSink.gain.value = 0;
+  recordTap.connect(recordSink);
+  recordSink.connect(ctx.destination);
+  return {
+    stop: () => Promise.resolve(takeRecording()),
+  };
 }
 
 export type TtsVoiceHint = {
@@ -118,9 +221,15 @@ export function stopTtsAudio(): void {
 }
 
 export function takeSpeechChunks(full: string, already: string): { chunks: string[]; spoken: string } {
+  const same = normalizeSpeech(full) === normalizeSpeech(already);
+  const alreadyCovers =
+    Boolean(normalizeSpeech(already)) && normalizeSpeech(already).startsWith(normalizeSpeech(full));
+  if (same || alreadyCovers) {
+    return { chunks: [], spoken: full };
+  }
   let prefix = already;
   if (prefix && !full.startsWith(prefix)) {
-    prefix = '';
+    prefix = speechCut(full, already);
   }
   let rest = full.slice(prefix.length);
   const chunks: string[] = [];
@@ -137,6 +246,26 @@ export function takeSpeechChunks(full: string, already: string): { chunks: strin
     rest = full.slice(prefix.length);
   }
   return { chunks, spoken: prefix };
+}
+
+function normalizeSpeech(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function speechCut(full: string, already: string): string {
+  const spoken = normalizeSpeech(already);
+  const next = normalizeSpeech(full);
+  if (!spoken || !next.startsWith(spoken)) {
+    return '';
+  }
+  let left = spoken.length;
+  let index = 0;
+  for (; index < full.length && left > 0; index += 1) {
+    if (/[\p{L}\p{N}]/u.test(full[index])) {
+      left -= 1;
+    }
+  }
+  return full.slice(0, index);
 }
 
 async function fetchTtsResponse(
@@ -271,6 +400,9 @@ async function playBuffer(buffer: AudioBuffer, token: number, gap = 0): Promise<
     };
     source.buffer = buffer;
     source.connect(ctx.destination);
+    if (recordMix) {
+      source.connect(recordMix);
+    }
     currentSource = source;
     playbackDone = finish;
     const when = Math.max(ctx.currentTime, nextStart);

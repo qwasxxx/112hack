@@ -2,6 +2,7 @@ import type { LessonRecord } from './types';
 import type { AssignmentStore } from './assignments';
 import type { ClassSession } from './class-session';
 import type { LivePresence } from './live-presence';
+import type { InterventionType } from '@sys112/shared-types';
 
 type OverlayMap = Record<string, { expertScore?: number; comment?: string }>;
 
@@ -45,24 +46,34 @@ function enqueue(path: string, method: string, body: string): void {
   writeOutbox(items);
 }
 
-async function request<T>(path: string, init?: RequestInit, queued = false): Promise<T | null> {
+function timeoutSignal(ms: number): AbortSignal {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    return AbortSignal.timeout(ms);
+  }
+  const controller = new AbortController();
+  window.setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
+async function request<T>(path: string, init?: RequestInit, queued = false, persist = true): Promise<T | null> {
   try {
     const response = await fetch(`/api/v1/training${path}`, {
       ...init,
+      signal: init?.signal ?? timeoutSignal(4000),
       headers: {
         'Content-Type': 'application/json',
         ...(init?.headers ?? {}),
       },
     });
     if (!response.ok) {
-      if (!queued && init?.method && init.method !== 'GET' && typeof init.body === 'string') {
+      if (persist && !queued && init?.method && init.method !== 'GET' && typeof init.body === 'string') {
         enqueue(path, init.method, init.body);
       }
       return null;
     }
     return (await response.json()) as T;
   } catch {
-    if (!queued && init?.method && init.method !== 'GET' && typeof init.body === 'string') {
+    if (persist && !queued && init?.method && init.method !== 'GET' && typeof init.body === 'string') {
       enqueue(path, init.method, init.body);
     }
     return null;
@@ -116,11 +127,11 @@ export function pushClass(session: ClassSession): void {
   });
 }
 
-export function pushOverlay(lessonId: string, overlay: { expertScore?: number; comment?: string }): void {
-  void request(`/overlays/${lessonId}`, {
+export function pushOverlay(lessonId: string, overlay: { expertScore?: number; comment?: string }): Promise<void> {
+  return request(`/overlays/${lessonId}`, {
     method: 'PUT',
     body: JSON.stringify(overlay),
-  });
+  }).then(() => undefined);
 }
 
 export function pushAudit(id: string, payload: Record<string, unknown>): void {
@@ -166,4 +177,83 @@ export async function pullAudit(): Promise<unknown[] | null> {
 export async function pullLive(): Promise<LivePresence[]> {
   const rows = await request<LivePresence[]>('/live');
   return Array.isArray(rows) ? rows : [];
+}
+
+export type RemoteCue = {
+  id: string;
+  login: string;
+  type: InterventionType;
+  note: string;
+  at: string;
+  llmSent: boolean;
+  dismissed: boolean;
+};
+
+export function pushCue(cue: RemoteCue): void {
+  void request(`/cues/${encodeURIComponent(cue.id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(cue),
+  });
+}
+
+export async function pullCues(login?: string): Promise<RemoteCue[]> {
+  const suffix = login ? `?login=${encodeURIComponent(login)}` : '';
+  const rows = await request<RemoteCue[]>(`/cues${suffix}`);
+  return Array.isArray(rows) ? rows : [];
+}
+
+export type CatalogPayload = {
+  overlays?: Record<string, unknown>;
+  custom?: unknown[];
+  updatedAt?: string | null;
+};
+
+export function pullCatalog() {
+  return request<CatalogPayload>('/catalog');
+}
+
+export function pushCatalog(payload: CatalogPayload): void {
+  void request('/catalog', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export type RecordingMeta = {
+  id: string;
+  lessonId?: string | null;
+  login: string;
+  scenarioId: string;
+  mime: string;
+  durationSec: number;
+  createdAt: string;
+};
+
+export function pullRecordings(login?: string) {
+  const suffix = login ? `?login=${encodeURIComponent(login)}` : '';
+  return request<RecordingMeta[]>(`/recordings${suffix}`);
+}
+
+export async function uploadRecording(input: {
+  lessonId?: string;
+  login: string;
+  scenarioId?: string;
+  mime?: string;
+  durationSec?: number;
+  data: string;
+}): Promise<{ id: string } | null> {
+  return request(
+    '/recordings',
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+      signal: timeoutSignal(120_000),
+    },
+    false,
+    false,
+  );
+}
+
+export function recordingUrl(id: string) {
+  return `/api/v1/training/recordings/${id}`;
 }

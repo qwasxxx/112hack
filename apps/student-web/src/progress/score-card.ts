@@ -472,8 +472,21 @@ function scoreServices(
   const expected = serviceLabels(facts.services) || '—';
   const got = names.join(', ') || '—';
   if (!facts.services.length) {
-    checks.push({ id: 'services', label: 'Службы', expected, got, state: names.length ? 'match' : 'empty', points: names.length ? max : 0, max });
-    return { points: names.length ? max : 0, missing };
+    const sentFire = names.some((name) => serviceHit(name, 'fire'));
+    const points = sentFire ? 0 : max;
+    if (sentFire) {
+      note(findings, 'services-extra-fire', 'Службы', 'По билету пожарные не нужны', 'error');
+    }
+    checks.push({
+      id: 'services',
+      label: 'Службы',
+      expected: 'не пожарные',
+      got,
+      state: sentFire ? 'miss' : 'match',
+      points,
+      max,
+    });
+    return { points, missing };
   }
   const hits = facts.services.length - missing.length;
   const points = Math.round((max * hits) / facts.services.length);

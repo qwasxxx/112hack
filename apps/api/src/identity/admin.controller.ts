@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Post } from '@nestjs/common';
+import { Controller, Get, Inject, Param, Post } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service';
 import { AdminService } from './admin.service';
 
@@ -34,5 +34,17 @@ export class AdminController {
       payload: { userCount: snapshot.users.length, lessonCount: snapshot.lessons.length },
     });
     return snapshot;
+  }
+
+  @Post('services/:id/:action')
+  async toggle(@Param('id') id: string, @Param('action') action: string) {
+    const result = await this.admin.control(id, action);
+    await this.audit.append({
+      action: action === 'start' ? 'service_started' : 'service_stopped',
+      entityType: 'service',
+      entityId: id,
+      payload: result,
+    });
+    return result;
   }
 }

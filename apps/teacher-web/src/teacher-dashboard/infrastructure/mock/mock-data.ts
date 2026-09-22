@@ -424,6 +424,7 @@ export const resultsSeed: CompletedResult[] = students.slice(0, 7).map((student,
     ],
     transcriptEvidence: transcript(index + 10),
     teacherComment: '',
+    confirmed: true,
   };
 });
 

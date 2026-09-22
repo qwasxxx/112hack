@@ -5,9 +5,9 @@ import { buildLessonSystemPrompt } from '../data/ags-tickets';
 import { createLlmStream } from '../lib/llm-stream';
 import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
-import { enqueueTtsAudio, stopTtsAudio, takeSpeechChunks, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
+import { beginCallRecording, enqueueTtsAudio, stopTtsAudio, takeSpeechChunks, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
 import type { TranscriptTurn } from '../progress';
-import { patchLive, takePendingLlmCues } from '../progress';
+import { patchLive, refreshCuesFromApi, subscribeCues, takePendingLlmCues } from '../progress';
 
 type Line = {
   id: string;
@@ -30,7 +30,7 @@ type Props = {
   opening?: string;
   hint?: string;
   panelTitle?: string;
-  onCallEnded?: (payload: { lines: TranscriptTurn[]; seconds: number }) => void;
+  onCallEnded?: (payload: { lines: TranscriptTurn[]; seconds: number; audio?: Promise<Blob | null> }) => void;
   operatorLogin?: string;
 };
 
@@ -46,6 +46,7 @@ export function CallPage(props: Props) {
   const [recording, setRecording] = useState(false);
   const [callState, setCallState] = useState<CallState>('idle');
   const [micError, setMicError] = useState<string | undefined>();
+  const [muted, setMuted] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const linesRef = useRef<Line[]>([]);
   const streamRef = useRef<ReturnType<typeof createSttStream> | undefined>(undefined);
@@ -61,10 +62,15 @@ export function CallPage(props: Props) {
   const spokenTtsRef = useRef('');
   const userSpokeRef = useRef(false);
   const awaitingReplyRef = useRef(false);
+  const replyShownRef = useRef(false);
+  const pendingUserRef = useRef('');
+  const lastSentRef = useRef('');
   const staleGensRef = useRef(new Set<number>());
   const endedSentRef = useRef(false);
+  const recorderRef = useRef<{ stop: () => Promise<Blob | null> } | undefined>(undefined);
+  const mutedRef = useRef(false);
+  const voiceRef = useRef(props.scenario.ttsVoice);
   const aiVoiceId = conversationRole;
-  const ttsVoice = conversationRole === 'victim' ? props.scenario.ttsVoice : undefined;
   const showCard = !embedded && props.section !== 'theory';
   const sectionLabel = props.section === 'theory' ? 'Теория' : props.section === 'exam' ? 'Экзамен' : 'Тренировка';
   const youAre = conversationRole === 'victim' ? 'Вы — оператор' : 'Вы — заявитель';
@@ -103,14 +109,36 @@ export function CallPage(props: Props) {
     if (!login) {
       return;
     }
-    const timer = window.setInterval(() => {
+    const apply = () => {
+      if (!llmRef.current) {
+        return;
+      }
       const pending = takePendingLlmCues(login);
       for (const cue of pending) {
-        llmRef.current?.intervene(cue.type, cue.note);
+        if (cue.type === 'set_emotional_state') {
+          const base = voiceRef.current ?? props.scenario.ttsVoice;
+          const speaker = base?.speaker ?? 'xenia';
+          const gender = base?.gender ?? 'female';
+          voiceRef.current = {
+            speaker,
+            gender,
+            emotion: 'panic',
+            pitch: 'high',
+            speed: 1.18,
+          };
+        }
+        llmRef.current.intervene(cue.type, cue.note);
       }
-    }, 1200);
-    return () => window.clearInterval(timer);
-  }, [props.operatorLogin]);
+    };
+    apply();
+    const timer = window.setInterval(apply, 800);
+    const stop = subscribeCues(apply);
+    void refreshCuesFromApi(login).then(apply);
+    return () => {
+      window.clearInterval(timer);
+      stop();
+    };
+  }, [props.operatorLogin, props.scenario.ttsVoice]);
 
   useEffect(() => {
     let armed = false;
@@ -127,6 +155,8 @@ export function CallPage(props: Props) {
         window.clearTimeout(flushTimerRef.current);
       }
       void streamRef.current?.stop();
+      void recorderRef.current?.stop();
+      recorderRef.current = undefined;
       void llmRef.current?.stop();
       stopTtsAudio();
       streamRef.current = undefined;
@@ -140,6 +170,7 @@ export function CallPage(props: Props) {
     }
     startingRef.current = true;
     leavingRef.current = false;
+    setSeconds(0);
     unlockTtsAudio();
     seenFinalsRef.current = new Set();
     finalsRef.current = emptyTranscript();
@@ -152,6 +183,9 @@ export function CallPage(props: Props) {
     spokenTtsRef.current = '';
     userSpokeRef.current = false;
     awaitingReplyRef.current = false;
+    replyShownRef.current = false;
+    pendingUserRef.current = '';
+    lastSentRef.current = '';
     staleGensRef.current = new Set();
     ttsHoldRef.current = false;
     endedSentRef.current = false;
@@ -174,12 +208,14 @@ export function CallPage(props: Props) {
       ]);
       spokenTtsRef.current = opening;
       holdMicForTts();
-      void enqueueTtsAudio(opening, aiVoiceId, ttsVoice).finally(() => {
+      void enqueueTtsAudio(opening, aiVoiceId, callerVoice()).finally(() => {
         if (leavingRef.current || awaitingReplyRef.current) {
           return;
         }
         ttsHoldRef.current = false;
-        streamRef.current?.setCaptureEnabled(true);
+        if (!mutedRef.current) {
+          streamRef.current?.setCaptureEnabled(true);
+        }
       });
     }
     const callId = crypto.randomUUID();
@@ -197,16 +233,24 @@ export function CallPage(props: Props) {
           if (typeof event.gen === 'number') {
             staleGensRef.current.add(event.gen);
           }
-          stopTtsAudio();
-          spokenTtsRef.current = '';
-          ttsHoldRef.current = false;
-          streamRef.current?.setCaptureEnabled(true);
-          setLines((current) => current.filter((line) => !(line.role === aiRole && line.live)));
+          awaitingReplyRef.current = false;
+          if (!ttsHoldRef.current) {
+            replyShownRef.current = false;
+          }
+          setLines((current) =>
+            current.map((line) =>
+              line.role === aiRole && line.live ? { ...line, live: false, id: crypto.randomUUID() } : line,
+            ),
+          );
           return;
         }
         if (event.type === 'assistant_partial' && event.text.trim()) {
           if (!userSpokeRef.current && isSameSpeech(event.text, opening)) {
             return;
+          }
+          replyShownRef.current = true;
+          if (!ttsHoldRef.current) {
+            holdMicForTts();
           }
           setLines((current) => upsertLive(current, aiRole, event.text, 'llm'));
           feedAiSpeech(event.text, false);
@@ -214,6 +258,12 @@ export function CallPage(props: Props) {
         if (event.type === 'assistant_final') {
           awaitingReplyRef.current = false;
           if (!event.text.trim()) {
+            replyShownRef.current = false;
+            awaitingReplyRef.current = false;
+            ttsHoldRef.current = false;
+            if (!mutedRef.current) {
+              streamRef.current?.setCaptureEnabled(true);
+            }
             if (userSpokeRef.current) {
               setMicError('Модель не вернула ответ. Повторите фразу.');
             }
@@ -221,15 +271,24 @@ export function CallPage(props: Props) {
           }
           if (!userSpokeRef.current && isSameSpeech(event.text, opening)) {
             ttsHoldRef.current = false;
-            streamRef.current?.setCaptureEnabled(true);
+            if (!mutedRef.current) {
+              streamRef.current?.setCaptureEnabled(true);
+            }
             return;
           }
+          replyShownRef.current = true;
           setLines((current) => commitLive(current, aiRole, event.text, 'llm'));
           void speakAi(event.text);
         }
       },
       onError: (message) => {
         setMicError(message);
+        ttsHoldRef.current = false;
+        replyShownRef.current = false;
+        awaitingReplyRef.current = false;
+        if (!mutedRef.current) {
+          streamRef.current?.setCaptureEnabled(true);
+        }
       },
     });
     llmRef.current = llm;
@@ -242,11 +301,17 @@ export function CallPage(props: Props) {
       const text = composeUtterance(utterancePartsRef.current, liveSttRef.current);
       utterancePartsRef.current = [];
       liveSttRef.current = '';
-      if (!text.trim()) {
+      if (!text.trim() || repeatsSent(text, lastSentRef.current)) {
+        setLines((current) => current.filter((line) => !(line.live && line.role === userRole)));
         return;
       }
       const id = crypto.randomUUID();
-      setLines((current) => replaceOrAppendUser(current, userRole, aiRole, text, id, 'stt'));
+      lastSentRef.current = text;
+      setLines((current) => replaceOrAppendUser(current, userRole, text, id, 'stt'));
+      if (replyShownRef.current) {
+        pendingUserRef.current = text;
+        return;
+      }
       beginUserTurn();
       awaitingReplyRef.current = true;
       llmRef.current?.sendUserFinal(id, text);
@@ -256,12 +321,12 @@ export function CallPage(props: Props) {
       if (flushTimerRef.current !== undefined) {
         window.clearTimeout(flushTimerRef.current);
       }
-      flushTimerRef.current = window.setTimeout(flushUtterance, 180);
+      flushTimerRef.current = window.setTimeout(flushUtterance, 1000);
     };
 
     const showUserSpeech = (parts: string[], live: string) => {
       const text = composeUtterance(parts, live);
-      if (!text.trim()) {
+      if (!text.trim() || repeatsSent(text, lastSentRef.current)) {
         return;
       }
       setLines((current) => upsertLive(current, userRole, text, 'stt'));
@@ -269,7 +334,7 @@ export function CallPage(props: Props) {
 
     const stream = createSttStream({
       onEvent: (event) => {
-        if (ttsHoldRef.current) {
+        if (ttsHoldRef.current || mutedRef.current) {
           return;
         }
         finalsRef.current = applySttEvent(finalsRef.current, event);
@@ -278,9 +343,7 @@ export function CallPage(props: Props) {
             liveSttRef.current = event.text;
           }
           showUserSpeech(utterancePartsRef.current, liveSttRef.current);
-          if (flushTimerRef.current !== undefined) {
-            scheduleFlush();
-          }
+          scheduleFlush();
         }
         if (event.type === 'final') {
           const last = finalsRef.current.finals.at(-1);
@@ -325,7 +388,17 @@ export function CallPage(props: Props) {
     }
     try {
       await stream.start();
+      const mic = stream.mediaStream();
+      if (mic) {
+        try {
+          recorderRef.current = beginCallRecording(mic);
+        } catch {
+          recorderRef.current = undefined;
+        }
+      }
       if (ttsHoldRef.current) {
+        stream.setCaptureEnabled(false);
+      } else if (mutedRef.current) {
         stream.setCaptureEnabled(false);
       }
     } catch (error: unknown) {
@@ -341,7 +414,15 @@ export function CallPage(props: Props) {
     }
   }
 
+  function callerVoice() {
+    return conversationRole === 'victim' ? voiceRef.current ?? props.scenario.ttsVoice : undefined;
+  }
+
   function holdMicForTts() {
+    const pending = composeUtterance(utterancePartsRef.current, liveSttRef.current).trim();
+    if (pending && !repeatsSent(pending, lastSentRef.current)) {
+      pendingUserRef.current = pending;
+    }
     ttsHoldRef.current = true;
     if (flushTimerRef.current !== undefined) {
       window.clearTimeout(flushTimerRef.current);
@@ -353,7 +434,9 @@ export function CallPage(props: Props) {
   }
 
   function feedAiSpeech(text: string, final: boolean) {
-    if (spokenTtsRef.current && !text.startsWith(spokenTtsRef.current)) {
+    const spokenNow = spokenTtsRef.current;
+    const extended = !spokenNow || continuesSpeech(text, spokenNow);
+    if (spokenNow && !extended) {
       stopTtsAudio();
       spokenTtsRef.current = '';
     }
@@ -371,7 +454,7 @@ export function CallPage(props: Props) {
       return;
     }
     for (const chunk of pending) {
-      void enqueueTtsAudio(chunk, aiVoiceId, ttsVoice);
+      void enqueueTtsAudio(chunk, aiVoiceId, callerVoice());
     }
   }
 
@@ -382,8 +465,27 @@ export function CallPage(props: Props) {
       await waitTtsQueue();
     } finally {
       ttsHoldRef.current = false;
-      if (!leavingRef.current) {
+      replyShownRef.current = false;
+      if (!leavingRef.current && !mutedRef.current) {
         streamRef.current?.setCaptureEnabled(true);
+      }
+      const sent = lastSentRef.current;
+      const queued = pendingUserRef.current.trim();
+      pendingUserRef.current = '';
+      lastSentRef.current = '';
+      if (queued && !leavingRef.current && !repeatsSent(queued, sent)) {
+        const id = crypto.randomUUID();
+        lastSentRef.current = queued;
+        setLines((current) => {
+          const lastUser = [...current].reverse().find((line) => line.role === userRole && !line.live);
+          if (lastUser && repeatsSent(queued, lastUser.text)) {
+            return current;
+          }
+          return replaceOrAppendUser(current, userRole, queued, id, 'stt');
+        });
+        userSpokeRef.current = true;
+        awaitingReplyRef.current = true;
+        llmRef.current?.sendUserFinal(id, queued);
       }
     }
   }
@@ -393,7 +495,9 @@ export function CallPage(props: Props) {
     spokenTtsRef.current = '';
     stopTtsAudio();
     ttsHoldRef.current = false;
-    streamRef.current?.setCaptureEnabled(true);
+    if (!mutedRef.current) {
+      streamRef.current?.setCaptureEnabled(true);
+    }
   }
 
   function addOperatorLine(text: string) {
@@ -402,7 +506,12 @@ export function CallPage(props: Props) {
       return;
     }
     const id = crypto.randomUUID();
-    setLines((current) => replaceOrAppendUser(current, userRole, aiRole, trimmed, id, 'typed'));
+    setLines((current) => replaceOrAppendUser(current, userRole, trimmed, id, 'typed'));
+    if (replyShownRef.current) {
+      pendingUserRef.current = trimmed;
+      setDraft('');
+      return;
+    }
     beginUserTurn();
     awaitingReplyRef.current = true;
     llmRef.current?.sendUserFinal(id, trimmed);
@@ -413,12 +522,25 @@ export function CallPage(props: Props) {
     addOperatorLine(draft);
   }
 
-  function emitEnded(snapshot: TranscriptTurn[]) {
+  function toggleMute() {
+    setMuted((current) => {
+      const next = !current;
+      mutedRef.current = next;
+      if (next) {
+        streamRef.current?.setCaptureEnabled(false);
+      } else if (!ttsHoldRef.current) {
+        streamRef.current?.setCaptureEnabled(true);
+      }
+      return next;
+    });
+  }
+
+  function emitEnded(snapshot: TranscriptTurn[], audio?: Promise<Blob | null>) {
     if (endedSentRef.current) {
       return;
     }
     endedSentRef.current = true;
-    props.onCallEnded?.({ lines: snapshot, seconds });
+    props.onCallEnded?.({ lines: snapshot, seconds, audio });
     if (!embedded && !props.onCallEnded) {
       props.onLeave();
     }
@@ -429,7 +551,9 @@ export function CallPage(props: Props) {
       .filter((line) => !line.live && line.text.trim())
       .map((line) => ({ role: line.role, text: line.text.trim(), at: line.at || Date.now() }));
     if (!streamRef.current && !llmRef.current) {
-      emitEnded(snapshot);
+      const rec = recorderRef.current;
+      recorderRef.current = undefined;
+      emitEnded(snapshot, rec ? rec.stop().catch(() => null) : undefined);
       return;
     }
     leavingRef.current = true;
@@ -445,13 +569,16 @@ export function CallPage(props: Props) {
       snapshot.push({ role: userRole, text: leftover.trim(), at: Date.now() });
       setLines((current) => commitLive(current, userRole, leftover, 'stt'));
     }
+    const rec = recorderRef.current;
+    recorderRef.current = undefined;
+    const audio = rec ? rec.stop().catch(() => null) : undefined;
     await streamRef.current?.stop();
     streamRef.current = undefined;
     await llmRef.current?.stop();
     llmRef.current = undefined;
     setRecording(false);
     setCallState('ended');
-    emitEnded(snapshot);
+    emitEnded(snapshot, audio);
   }
 
   function setField(key: string, value: string) {
@@ -469,14 +596,16 @@ export function CallPage(props: Props) {
             : callState === 'error'
               ? 'Ошибка звонка'
               : 'Учебный вызов';
-  const micLabel =
+  const micStatus =
     callState === 'connecting'
-      ? 'Подключение…'
-      : recording
-        ? 'Говорите…'
-        : callState === 'error'
-          ? 'Повторить'
-          : 'Позвонить';
+      ? 'Соединение…'
+      : callState === 'error' || micError
+        ? 'Можно ответить текстом'
+        : muted
+          ? 'Микрофон выключен'
+          : recording
+            ? 'Слушаю'
+            : 'Соединение…';
 
   useEffect(() => {
     if (!props.autoStart) {
@@ -495,15 +624,14 @@ export function CallPage(props: Props) {
             <p className={`call-live${callState === 'listening' ? ' call-live-on' : ''}`}>{liveLabel}</p>
             <h1>{props.panelTitle ?? 'Разговор'}</h1>
           </div>
-          {callState === 'ended' ? null : (
-            <button
-              type="button"
-              className="btn btn-danger"
-              onClick={() => void hangup()}
-            >
-              Завершить
-            </button>
-          )}
+          <div className="call-panel-meta">
+            <span className="mono">{clock}</span>
+            {callState === 'ended' ? null : (
+              <button type="button" className="btn btn-danger" onClick={() => void hangup()}>
+                Завершить
+              </button>
+            )}
+          </div>
         </header>
       ) : (
       <header className="call-bar">
@@ -534,14 +662,14 @@ export function CallPage(props: Props) {
       )}
 
       <div className={`call-body${showCard ? '' : ' call-body-solo'}`}>
-        <section className="panel call-log" aria-label="Разговор">
-          <h2>Разговор</h2>
+        <section className={`panel call-log${embedded ? ' call-log-panel' : ''}`} aria-label="Разговор">
+          {embedded ? null : <h2>Разговор</h2>}
           <div className="log" ref={logRef}>
             {lines.length === 0 ? (
               <p className="hint">
                 {props.hint ??
                   (conversationRole === 'victim'
-                    ? 'После соединения заявитель начнёт разговор. Отвечайте как оператор 112.'
+                    ? 'После соединения заявитель начнёт разговор. Отвечайте голосом или текстом.'
                     : 'Вы заявитель. Задайте оператору вопросы по ситуации — в ответ будут эталонные формулировки.')}
               </p>
             ) : null}
@@ -555,6 +683,43 @@ export function CallPage(props: Props) {
 
           {callState === 'ended' ? (
             <p className="hint">Вызов завершён. Открывается разбор.</p>
+          ) : embedded ? (
+            <div className="composer composer-dock">
+              <div className="composer-status">
+                <span
+                  className={`composer-mic${recording && !muted ? ' is-live' : ''}${muted ? ' is-muted' : ''}`}
+                  aria-hidden="true"
+                />
+                <p>{micStatus}</p>
+                {callState === 'error' ? (
+                  <button type="button" className="composer-side" onClick={() => void startCall()}>
+                    Повторить
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={`composer-side${muted ? ' is-on' : ''}`}
+                    onClick={toggleMute}
+                    disabled={callState !== 'listening'}
+                  >
+                    {muted ? 'Вкл. микрофон' : 'Выкл. микрофон'}
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="Ответить текстом · Enter"
+                rows={2}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendDraft();
+                  }
+                }}
+              />
+              {micError ? <p className="hint">{micError}</p> : null}
+            </div>
           ) : (
             <form
               className="composer"
@@ -582,7 +747,7 @@ export function CallPage(props: Props) {
                   disabled={recording || callState === 'listening'}
                   onClick={() => void startCall()}
                 >
-                  {micLabel}
+                  {micStatus === 'Слушаю' ? 'Говорите…' : callState === 'error' ? 'Повторить' : 'Позвонить'}
                 </button>
                 <button type="submit" className="btn btn-primary">
                   Отправить
@@ -651,6 +816,30 @@ function isSameSpeech(left: string, right: string): boolean {
   return Boolean(a && b && a === b);
 }
 
+function repeatsSent(text: string, sent: string): boolean {
+  const clean = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
+  const next = clean(text);
+  const prev = clean(sent);
+  if (!next || !prev) {
+    return false;
+  }
+  if (next === prev || prev.includes(next)) {
+    return true;
+  }
+  return next.startsWith(prev) && next.length <= prev.length + 8;
+}
+
+function continuesSpeech(text: string, spoken: string): boolean {
+  const clean = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const next = clean(text);
+  const prev = clean(spoken);
+  return Boolean(prev && next && (next.startsWith(prev) || prev.startsWith(next)));
+}
+
 function upsertLive(current: Line[], role: Line['role'], text: string, source: Line['source']): Line[] {
   const next = current.filter((line) => !(line.live && line.source === source));
   const prev = current.find((line) => line.live && line.source === source);
@@ -660,17 +849,16 @@ function upsertLive(current: Line[], role: Line['role'], text: string, source: L
 function replaceOrAppendUser(
   current: Line[],
   userRole: Line['role'],
-  aiRole: Line['role'],
   text: string,
   id: string,
   source: Line['source'],
 ): Line[] {
-  const cleaned = current.filter((line) => !(line.role === aiRole && line.live));
-  const last = cleaned.at(-1);
+  const kept = current.filter((line) => !(line.live && line.role === userRole));
+  const last = kept.at(-1);
   if (last?.role === userRole) {
-    return [...cleaned.slice(0, -1), { id, role: userRole, text, source, at: last.at || Date.now() }];
+    return [...kept.slice(0, -1), { id, role: userRole, text, source, at: last.at || Date.now() }];
   }
-  return [...cleaned, { id, role: userRole, text, source, at: Date.now() }];
+  return [...kept, { id, role: userRole, text, source, at: Date.now() }];
 }
 
 function commitLive(current: Line[], role: Line['role'], text: string, source: Line['source']): Line[] {

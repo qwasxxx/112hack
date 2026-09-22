@@ -96,5 +96,16 @@ export function scoreTrainingLesson(input: TrainingScoreInput): Omit<LessonRecor
     interviewScore: call.interview,
     comment: scrubWhatRemark(input.ai?.comment ?? '', whatKnown),
     judgeSource: input.ai?.source,
+    reviewFields: card.checks.map((item) => ({
+      label: item.label,
+      expected: item.expected,
+      got: item.got,
+      state: item.state,
+      points: item.points,
+      max: item.max,
+    })),
+    transcript: input.transcript
+      .filter((item) => item.text.trim())
+      .map((item) => ({ role: item.role, text: item.text })),
   };
 }

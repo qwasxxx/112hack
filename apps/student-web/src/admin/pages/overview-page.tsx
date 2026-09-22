@@ -30,6 +30,7 @@ const SERVICE_VIEW: Record<ServiceId, { title: string; layer: string }> = {
   realtime: { title: 'Realtime', layer: 'Сессии вызовов' },
   stt: { title: 'STT', layer: 'Распознавание речи, локально' },
   llm: { title: 'LLM', layer: 'Диалоговый модуль, локально' },
+  tts: { title: 'TTS', layer: 'Синтез речи, локально' },
   postgres: { title: 'Локальная БД', layer: 'PostgreSQL учебного контура' },
   sip: { title: 'SIP / VoIP', layer: 'Не входит в контур' },
 };

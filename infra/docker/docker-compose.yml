@@ -13,6 +13,7 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    container_name: sys112-postgres
     environment:
       POSTGRES_USER: sys112
       POSTGRES_PASSWORD: sys112
@@ -41,6 +42,9 @@ services:
       STT_HEALTH_URL: http://stt:8090/health
       LLM_HEALTH_URL: http://llm:8091/health
       TTS_HEALTH_URL: http://tts:8092/health
+      DOCKER_SOCK: /var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "3000:3000"
     depends_on:

@@ -114,8 +114,12 @@ assert.match(read('src/features/dds-training/use-dds-session.ts'), /Получе
 assert.match(read('src/features/dds-training/types.ts'), /export function nextDdsStatuses/);
 assert.match(read('src/features/dds-training/callback-prompt.ts'), /buildDdsCallbackPrompt/);
 assert.match(read('src/features/dds-training/display.ts'), /export function splitDdsAddress/);
-assert.match(read('src/progress/score-dds.ts'), /dds-services-missing/);
+assert.match(read('src/progress/score-dds.ts'), /dds-naryad/);
 assert.match(read('src/progress/score-dds.ts'), /serviceVeto/);
+assert.doesNotMatch(read('src/progress/score-dds.ts'), /dds-services-missing/);
+assert.match(read('src/features/dds-training/dds-card.tsx'), /СлужБис/);
+assert.match(read('src/features/dds-training/dds-card.tsx'), /Добавьте службы/);
+assert.match(read('src/features/dds-training/display.ts'), /ownChipLabel/);
 assert.match(read('src/pages/catalog-page.tsx'), /Назначенные/);
 assert.match(read('src/progress/assignments.ts'), /assignedScenarioIds/);
 assert.match(read('src/progress/live-presence.ts'), /upsertLive/);
