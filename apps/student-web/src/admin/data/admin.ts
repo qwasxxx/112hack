@@ -18,6 +18,9 @@ export type ServiceRecord = {
   title: string;
   detail: string;
   running: boolean;
+  ready?: boolean;
+  latencyMs?: number;
+  note?: string;
   startedAt?: string;
   lastChangeAt: string;
 };
@@ -87,6 +90,8 @@ export type ContourSettings = {
   backupHour: string;
   lastBackupAt: string;
   lastBackupStatus: BackupStatus;
+  lastBackupFile?: string;
+  lastBackupDir?: string;
   logLevel: 'info' | 'debug' | 'warn';
   logRetentionDays: string;
   tls: boolean;

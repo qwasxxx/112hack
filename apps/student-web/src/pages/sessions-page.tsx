@@ -56,10 +56,10 @@ function officialPass(item: LessonRecord, score: number | undefined): boolean {
 export function SessionsBoard(props: { login: string; name: string }) {
   const records = lessonsNewestFirst(props.login);
   const reviews = useTeacherReviews();
-  const confirmed = records.filter((item) => reviews[item.id] != null);
-  const passedCount = records.filter((item) => officialPass(item, reviews[item.id])).length;
+  const confirmed = records.filter((item) => reviews[item.id]?.expertScore != null);
+  const passedCount = records.filter((item) => officialPass(item, reviews[item.id]?.expertScore)).length;
   const avg = confirmed.length
-    ? Math.round(confirmed.reduce((sum, item) => sum + (reviews[item.id] ?? 0), 0) / confirmed.length)
+    ? Math.round(confirmed.reduce((sum, item) => sum + (reviews[item.id]?.expertScore ?? 0), 0) / confirmed.length)
     : 0;
   const recs = historyRecommendations(records);
 
@@ -115,7 +115,8 @@ export function SessionsBoard(props: { login: string; name: string }) {
       ) : (
         <ul className="sessions-list">
           {records.map((item) => {
-            const official = reviews[item.id];
+            const official = reviews[item.id]?.expertScore;
+            const teacherComment = reviews[item.id]?.comment;
             const waiting = official == null;
             const passed = officialPass(item, official);
             return (
@@ -150,6 +151,12 @@ export function SessionsBoard(props: { login: string; name: string }) {
               ) : (
                 <p className="sessions-ok">Замечаний нет</p>
               )}
+              {teacherComment ? (
+                <p className="sessions-teacher">
+                  <span>Комментарий преподавателя</span>
+                  {teacherComment}
+                </p>
+              ) : null}
               {item.recommendations[0] ? <p className="sessions-hint">{item.recommendations[0]}</p> : null}
               {item.reactionSeconds != null ? (
                 <p className="sessions-summary">Реакция на входящий: {item.reactionSeconds} с</p>

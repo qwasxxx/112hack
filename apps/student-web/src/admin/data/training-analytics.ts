@@ -50,6 +50,13 @@ export type TrainingActivity = {
   detail: string;
 };
 
+export type LastAttempt = {
+  name: string;
+  login: string;
+  at: string;
+  score: number;
+};
+
 export type TrainingAnalytics = {
   studentCount: number;
   activeStudents: number;
@@ -60,6 +67,8 @@ export type TrainingAnalytics = {
   completion: number;
   avgScore: number;
   catalogSize: number;
+  scoreSamples: number;
+  lastAttempt: LastAttempt | null;
   scoreTrend: number[];
   categories: CategoryScore[];
   distribution: ProgressBucket[];
@@ -149,9 +158,10 @@ export function buildTrainingAnalytics(
   const scoreTrend = [...scored]
     .sort((a, b) => new Date(a.lastAt).getTime() - new Date(b.lastAt).getTime())
     .map((row) => row.lastScore);
-  if (scoreTrend.length === 1) {
-    scoreTrend.unshift(scoreTrend[0]);
-  }
+  const newest = [...scored].sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime())[0];
+  const lastAttempt: LastAttempt | null = newest
+    ? { name: newest.name, login: newest.login, at: newest.lastAt, score: newest.lastScore }
+    : null;
 
   const categoryMap = new Map<Exclude<TrainingCategory, 'all'>, { total: number; attempts: number }>();
   const scenarioMap = new Map<string, ScenarioUsage>();
@@ -261,7 +271,9 @@ export function buildTrainingAnalytics(
     completion: lessonsTotal === 0 ? 0 : Math.round((lessonsDone / lessonsTotal) * 100),
     avgScore,
     catalogSize: SCENARIOS.length,
-    scoreTrend: scoreTrend.length > 0 ? scoreTrend : [0, 0],
+    scoreSamples: scored.length,
+    lastAttempt,
+    scoreTrend,
     categories,
     distribution,
     scenarios,

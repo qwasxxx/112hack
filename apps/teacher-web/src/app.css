@@ -1950,8 +1950,11 @@
   box-shadow: 0 8px 16px rgb(21 32 51 / 8%);
 }
 .td-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   max-width: 1280px;
-  padding: 24px 28px 40px;
+  padding: 24px 28px 24px;
   overflow: auto;
 }
 .td-page {
@@ -1993,6 +1996,45 @@
 }
 .td-panel {
   padding: 20px;
+}
+.td-legacy-status {
+  padding-bottom: 12px;
+}
+.td-app .td-legacy-status .status {
+  margin: 10px 0 0;
+}
+.td-app .exam.td-legacy-exam {
+  margin-top: 0;
+  padding: 20px;
+  border: 1px solid #d7dde3;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(21 32 51 / 4%);
+  color: var(--catalog-ink);
+}
+.td-app .exam.td-legacy-exam h2 {
+  color: var(--catalog-ink);
+}
+.td-app .exam.td-legacy-exam .muted,
+.td-app .exam.td-legacy-exam p {
+  color: var(--catalog-muted);
+}
+.td-app .exam.td-legacy-exam .exam-btn {
+  border-color: #d7dde3;
+  background: #f6f8fa;
+  color: var(--catalog-ink);
+  cursor: pointer;
+  opacity: 1;
+}
+.td-app .exam.td-legacy-exam .exam-btn:hover {
+  border-color: #9aa8b6;
+  background: #eef3f7;
+}
+.td-app .exam.td-legacy-exam .exam-btn span {
+  color: var(--catalog-muted);
+}
+.td-app .exam.td-legacy-exam .exam-btn strong {
+  color: var(--catalog-ink);
 }
 .td-metrics {
   gap: 12px;

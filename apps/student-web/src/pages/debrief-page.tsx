@@ -18,8 +18,11 @@ import {
   type TranscriptTurn,
 } from '../progress';
 import { cardView, ticketFactsFrom } from '../progress/ticket-facts';
-import { uploadRecording } from '../progress/remote';
-import { saveLocalRecording } from '../../../teacher-web/src/teacher-dashboard/infrastructure/local-recording';
+import { recordingUrl, uploadRecording } from '../progress/remote';
+import {
+  loadLocalRecording,
+  saveLocalRecording,
+} from '../../../teacher-web/src/teacher-dashboard/infrastructure/local-recording';
 import { useTeacherReviews } from '../progress/use-teacher-review';
 import { blobToBase64, blobToWav } from '../lib/capture-audio';
 import { StudentShell } from '../student-shell/student-shell';
@@ -79,6 +82,18 @@ const JUDGE_STEPS = [
   'Разбираю стенограмму',
   'Оцениваю тон и темп вопросов',
 ];
+
+function TeacherNote(props: { text?: string }) {
+  if (!props.text) {
+    return null;
+  }
+  return (
+    <p className="debrief-comment debrief-teacher-comment">
+      <span>Комментарий преподавателя</span>
+      {props.text}
+    </p>
+  );
+}
 
 function ReviewHero(props: {
   draft: number;
@@ -144,6 +159,7 @@ export function DebriefPage(props: Props) {
       }
       const wav = blob.type.includes('wav') ? blob : await blobToWav(blob);
       await saveLocalRecording(saved.id, wav).catch(() => undefined);
+      setRecord((current) => ({ ...current, id: saved.id }));
       const data = await blobToBase64(wav);
       const uploaded = await uploadRecording({
         lessonId: saved.id,
@@ -155,7 +171,7 @@ export function DebriefPage(props: Props) {
       });
       if (uploaded?.id) {
         patchLesson(props.operatorLogin, saved.id, { recordingId: uploaded.id });
-        setRecord((current) => ({ ...current, recordingId: uploaded.id }));
+        setRecord((current) => ({ ...current, id: saved.id, recordingId: uploaded.id }));
       }
     }).catch(() => undefined);
   }, [base, finish.audio, finish.durationSec, finish.scenario.id, props.operatorLogin]);
@@ -313,7 +329,9 @@ function ResultScreen(props: {
 }) {
   const record = props.record;
   const reviews = useTeacherReviews();
-  const official = record.id === 'pending' ? undefined : reviews[record.id];
+  const review = record.id === 'pending' ? undefined : reviews[record.id];
+  const official = review?.expertScore;
+  const teacherComment = review?.comment;
   const threshold = props.kind === 'exam' ? PASS_SCORE_EXAM : PASS_SCORE;
   const sms = props.channel === 'sms';
   const rows = sms
@@ -377,6 +395,7 @@ function ResultScreen(props: {
         </ul>
       </section>
 
+      <TeacherNote text={teacherComment} />
       {record.comment ? <p className="debrief-comment">{record.comment}</p> : null}
 
       <div className="debrief-notes-grid">
@@ -421,11 +440,11 @@ function ResultScreen(props: {
             Справка о зачёте
           </button>
         ) : null}
-        {record.recordingId ? (
-          <a className="debrief-primary" href={`/api/v1/training/recordings/${record.recordingId}`} download>
-            Скачать WAV
-          </a>
-        ) : null}
+        <DownloadWavButton
+          lessonId={record.id}
+          recordingId={record.recordingId}
+          filename={`sys112-${record.scenarioCode || 'zvonok'}.wav`}
+        />
         <button type="button" onClick={props.onBriefing}>
           К уроку
         </button>
@@ -583,7 +602,9 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
   }, [finish, props.operatorLogin]);
   const [record, setRecord] = useState<LessonRecord>(() => ({ ...base, id: 'pending' }));
   const reviews = useTeacherReviews();
-  const official = record.id === 'pending' ? undefined : reviews[record.id];
+  const review = record.id === 'pending' ? undefined : reviews[record.id];
+  const official = review?.expertScore;
+  const teacherComment = review?.comment;
   const [revealed, setRevealed] = useState(false);
   const [step, setStep] = useState(0);
   const savedId = useRef<string | null>(null);
@@ -605,6 +626,7 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
       }
       const wav = blob.type.includes('wav') ? blob : await blobToWav(blob);
       await saveLocalRecording(saved.id, wav).catch(() => undefined);
+      setRecord((current) => ({ ...current, id: saved.id }));
       const data = await blobToBase64(wav);
       const uploaded = await uploadRecording({
         lessonId: saved.id,
@@ -616,7 +638,7 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
       });
       if (uploaded?.id) {
         patchLesson(props.operatorLogin, saved.id, { recordingId: uploaded.id });
-        setRecord((current) => ({ ...current, recordingId: uploaded.id }));
+        setRecord((current) => ({ ...current, id: saved.id, recordingId: uploaded.id }));
       }
     }).catch(() => undefined);
   }, [base, finish.audio, finish.scenario.id, props.operatorLogin]);
@@ -698,6 +720,7 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
                 ))}
               </ul>
             </section>
+            <TeacherNote text={teacherComment} />
             <div className="debrief-notes-grid">
               <section className="debrief-notes">
                 <h2>Замечания</h2>
@@ -739,11 +762,11 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
                   Справка о зачёте
                 </button>
               ) : null}
-              {record.recordingId ? (
-                <a className="debrief-primary" href={`/api/v1/training/recordings/${record.recordingId}`} download>
-                  Скачать WAV
-                </a>
-              ) : null}
+              <DownloadWavButton
+                lessonId={record.id}
+                recordingId={record.recordingId}
+                filename={`sys112-${record.scenarioCode || 'zvonok'}.wav`}
+              />
               <button type="button" onClick={props.onBriefing}>
                 К уроку
               </button>
@@ -876,4 +899,71 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
         : []),
     ];
   });
+}
+
+function DownloadWavButton(props: { lessonId: string; recordingId?: string; filename: string }) {
+  const [busy, setBusy] = useState(false);
+  const [hasLocal, setHasLocal] = useState(false);
+  const [error, setError] = useState('');
+  const lessonId = props.lessonId !== 'pending' ? props.lessonId : '';
+
+  useEffect(() => {
+    if (!lessonId) {
+      setHasLocal(false);
+      return;
+    }
+    let cancelled = false;
+    void loadLocalRecording(lessonId).then((blob) => {
+      if (!cancelled) {
+        setHasLocal(Boolean(blob?.size));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lessonId]);
+
+  if (!props.recordingId && !hasLocal) {
+    return null;
+  }
+
+  async function download() {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const local = lessonId ? await loadLocalRecording(lessonId) : null;
+      let blob = local && local.size ? local : null;
+      if (!blob && props.recordingId) {
+        const response = await fetch(`${recordingUrl(props.recordingId)}?download=1`);
+        if (!response.ok) {
+          throw new Error('missing');
+        }
+        blob = await response.blob();
+      }
+      if (!blob?.size) {
+        throw new Error('missing');
+      }
+      const href = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = props.filename.endsWith('.wav') ? props.filename : `${props.filename}.wav`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(href), 1500);
+    } catch {
+      setError('Файл записи недоступен');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button type="button" className="debrief-primary" onClick={() => void download()} disabled={busy}>
+      {busy ? 'Готовлю WAV…' : error || 'Скачать WAV'}
+    </button>
+  );
 }

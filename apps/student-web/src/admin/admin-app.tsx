@@ -4,6 +4,7 @@ import sidebarBase from '../assets/catalog/catalog-sidebar-base.webp';
 import { AccountBar } from '../auth/account-bar';
 import { type Account, type ManagedAccountInput, type Session } from '../auth/accounts';
 import {
+  AUDIT_EVENT_LABEL,
   INITIAL_AUDIT,
   INITIAL_BACKUPS,
   INITIAL_PROGRESS,
@@ -27,7 +28,14 @@ import {
   persistSettings,
   persistTraining,
 } from './data/system-persistence';
-import { createRemoteBackup, pullBackupStatus, pullContourStatus, toggleRemoteService } from './data/admin-remote';
+import {
+  createRemoteBackup,
+  pullBackupStatus,
+  pullContourStatus,
+  pullRemoteAudit,
+  toggleRemoteService,
+  type RemoteAuditRow,
+} from './data/admin-remote';
 import { bindAdminDashboardTilt, playAdminPress, useAdminTilt } from './admin-tilt';
 import { ContourPage } from './pages/contour-page';
 import { JournalPage } from './pages/journal-page';
@@ -143,6 +151,9 @@ export function AdminApp(props: Props) {
               title: hit.title || prev?.title || hit.id,
               detail: prev?.detail || '',
               running,
+              ready: hit.ready,
+              latencyMs: hit.latencyMs,
+              note: hit.note,
               lastChangeAt: at,
               startedAt: running ? prev?.startedAt || at : undefined,
             };
@@ -150,14 +161,33 @@ export function AdminApp(props: Props) {
         });
       });
       void pullBackupStatus().then((status) => {
-        if (cancelled || !status?.lastAt) {
+        if (cancelled || !status) {
           return;
         }
-        setSettings((current) =>
-          current.lastBackupAt === status.lastAt
-            ? current
-            : { ...current, lastBackupAt: status.lastAt as string, lastBackupStatus: 'ok' },
-        );
+        setSettings((current) => {
+          const lastAt = status.lastAt ?? current.lastBackupAt;
+          const lastFile = status.lastFile ?? current.lastBackupFile;
+          if (
+            current.lastBackupAt === lastAt &&
+            current.lastBackupFile === lastFile &&
+            current.lastBackupDir === status.dir
+          ) {
+            return current;
+          }
+          return {
+            ...current,
+            lastBackupAt: lastAt,
+            lastBackupStatus: status.lastAt ? 'ok' : current.lastBackupStatus,
+            lastBackupFile: lastFile,
+            lastBackupDir: status.dir,
+          };
+        });
+      });
+      void pullRemoteAudit().then((rows) => {
+        if (cancelled || !rows?.length) {
+          return;
+        }
+        setAudit((current) => mergeRemoteAudit(current, rows));
       });
     };
     syncStatus();
@@ -426,6 +456,20 @@ export function AdminApp(props: Props) {
         record.note,
         ok ? 'ok' : 'error',
       );
+      if (ok) {
+        void pullBackupStatus().then((status) => {
+          if (!status) {
+            return;
+          }
+          setSettings((current) => ({
+            ...current,
+            lastBackupAt: status.lastAt ?? at,
+            lastBackupStatus: 'ok',
+            lastBackupFile: status.lastFile ?? current.lastBackupFile,
+            lastBackupDir: status.dir ?? current.lastBackupDir,
+          }));
+        });
+      }
     });
   }
 
@@ -575,6 +619,48 @@ export function AdminApp(props: Props) {
       </div>
     </div>
   );
+}
+
+function mapRemoteAuditRow(row: RemoteAuditRow): AuditEntry {
+  const payload =
+    row.payload && typeof row.payload === 'object' ? (row.payload as Record<string, unknown>) : {};
+  const message = typeof payload.message === 'string' ? payload.message : '';
+  const failed = payload.ok === false;
+  const eventType: AuditEventType =
+    row.action === 'backup_created'
+      ? 'backup_created'
+      : row.action === 'service_started'
+        ? 'service_started'
+        : row.action === 'service_stopped'
+          ? 'service_stopped'
+          : 'service_error';
+  return {
+    id: `api-${row.id}`,
+    at: row.at,
+    actor: 'Система',
+    actorLogin: 'api',
+    action: AUDIT_EVENT_LABEL[eventType],
+    eventType,
+    target: row.target,
+    details: message || 'запись API',
+    severity: failed ? 'error' : eventType === 'service_stopped' ? 'warn' : 'ok',
+  };
+}
+
+function mergeRemoteAudit(current: AuditEntry[], rows: RemoteAuditRow[]): AuditEntry[] {
+  const remote = rows.map(mapRemoteAuditRow);
+  const local = current.filter((item) => !item.id.startsWith('api-'));
+  const merged = [...remote, ...local];
+  const seen = new Set<string>();
+  return merged
+    .filter((item) => {
+      if (seen.has(item.id)) {
+        return false;
+      }
+      seen.add(item.id);
+      return true;
+    })
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 }
 
 function makeAuditEntry(

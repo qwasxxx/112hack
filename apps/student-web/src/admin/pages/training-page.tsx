@@ -112,13 +112,17 @@ export function TrainingPage(props: Props) {
             <span>Завершение</span>
             <strong>{stats.completion}%</strong>
             <small>
-              {stats.lessonsDone} из {stats.lessonsTotal} модулей
+              сдано {stats.lessonsDone} из {stats.lessonsTotal} карточек · не балл
             </small>
           </article>
           <article className="ad-metric ad-health-mod ad-metric--accent">
             <span>Средний результат</span>
             <strong>{stats.avgScore}%</strong>
-            <small>по последним сессиям</small>
+            <small>
+              {stats.scoreSamples === 0
+                ? 'нет завершённых попыток'
+                : `средний балл ${stats.scoreSamples} последн. ${stats.scoreSamples === 1 ? 'попытки' : 'попыток'}`}
+            </small>
           </article>
         </div>
       </section>
@@ -130,9 +134,15 @@ export function TrainingPage(props: Props) {
               <p className="ad-kicker">Динамика</p>
               <h2>Средний результат</h2>
             </div>
-            <span className="ad-help">{stats.avgScore}%</span>
+            <span className="ad-help">
+              {stats.scoreSamples === 0 ? 'нет попыток' : `${stats.avgScore}% · средний балл`}
+            </span>
           </div>
-          <Sparkline values={stats.scoreTrend} label="Динамика среднего балла" />
+          <ScoreTrend
+            values={stats.scoreTrend}
+            samples={stats.scoreSamples}
+            last={stats.lastAttempt}
+          />
         </section>
         <section className="ad-surface" aria-label="Результаты по категориям">
           <div className="ad-surface-head">
@@ -140,6 +150,7 @@ export function TrainingPage(props: Props) {
               <p className="ad-kicker">Категории</p>
               <h2>Результаты по типам</h2>
             </div>
+            <span className="ad-help">средний балл попыток</span>
           </div>
           <div className="ad-bars">
             {stats.categories.map((item) => (
@@ -211,11 +222,11 @@ export function TrainingPage(props: Props) {
               <article key={item.code} className="ad-train-card">
                 <span className="mono">{item.code}</span>
                 <strong>{item.title}</strong>
-                <div className="meter" aria-label={`Использование ${item.usage}%`}>
+                <div className="meter" aria-label={`Нагрузка ${item.usage}% относительно самой частой карточки`}>
                   <span style={{ width: `${item.usage}%` }} />
                 </div>
                 <small>
-                  {item.attempts} сессий · среднее {item.avg}% · {item.category}
+                  {item.attempts} сессий · балл {item.avg}% · {item.category} · полоса = нагрузка, не балл
                 </small>
               </article>
             ))
@@ -270,19 +281,53 @@ export function TrainingPage(props: Props) {
               </span>
               <div className="ad-train-progress">
                 <span>
-                  Пройдено {row.lessonsDone}/{row.lessonsTotal}
+                  Сдано {row.lessonsDone}/{row.lessonsTotal} карточек
                 </span>
-                <div className="meter" aria-label={`Прогресс ${row.overall}%`}>
+                <div className="meter" aria-label={`Доля карточек ${row.overall}%`}>
                   <span style={{ width: `${row.overall}%` }} />
                 </div>
               </div>
               <small>
-                Последний результат {row.lastScore}% · {formatWhen(row.lastAt)}
+                Последний балл {row.lastScore}% · {formatWhen(row.lastAt)} · полоса = доля каталога
               </small>
             </article>
           ))}
         </div>
       </section>
+    </div>
+  );
+}
+
+function ScoreTrend(props: {
+  values: number[];
+  samples: number;
+  last: { name: string; score: number; at: string } | null;
+}) {
+  if (props.samples === 0 || !props.last) {
+    return (
+      <p className="ad-trend-empty">
+        Нет завершённых попыток в выбранном срезе. Это не заполненность контура — график появится после второй
+        сессии с другим баллом.
+      </p>
+    );
+  }
+  if (props.samples === 1) {
+    return (
+      <div className="ad-trend-single">
+        <strong>{props.last.score}%</strong>
+        <p>
+          Одна попытка · {props.last.name} · {formatWhen(props.last.at)}. Динамики ещё нет: линия из одной точки
+          не строится.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="ad-trend-chart">
+      <Sparkline values={props.values} label="Динамика среднего балла по последним попыткам" />
+      <p className="ad-trend-caption">
+        {props.samples} попыток · от {Math.min(...props.values)}% до {Math.max(...props.values)}%
+      </p>
     </div>
   );
 }

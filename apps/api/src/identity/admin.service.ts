@@ -7,12 +7,28 @@ import { controlService, type ControllableService } from './docker-control';
 
 const env = loadEnv();
 
-async function ping(url: string): Promise<boolean> {
+type Probe = { ok: boolean; ready: boolean; latencyMs: number; note: string };
+
+async function probe(url: string): Promise<Probe> {
+  const started = Date.now();
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(2500) });
-    return response.ok;
+    const latencyMs = Date.now() - started;
+    if (!response.ok) {
+      return { ok: false, ready: false, latencyMs, note: `HTTP ${response.status}` };
+    }
+    const body = (await response.json().catch(() => ({}))) as { status?: string; model?: string };
+    const status = typeof body.status === 'string' ? body.status : 'ok';
+    const ready = status === 'ok' || status === 'ready';
+    const model = typeof body.model === 'string' ? body.model : '';
+    const note = !ready
+      ? status === 'loading'
+        ? `загрузка${model ? ` ${model}` : ''} · ${latencyMs} мс`
+        : `${status} · ${latencyMs} мс`
+      : `${model ? `${model} · ` : ''}${latencyMs} мс`;
+    return { ok: true, ready, latencyMs, note };
   } catch {
-    return false;
+    return { ok: false, ready: false, latencyMs: Date.now() - started, note: 'нет ответа' };
   }
 }
 
@@ -42,21 +58,21 @@ export class AdminService implements OnModuleInit, OnModuleDestroy {
   async status() {
     const postgres = await this.database.ping();
     const [stt, llm, tts] = await Promise.all([
-      ping(env.STT_HEALTH_URL),
-      ping(env.LLM_HEALTH_URL),
-      ping(env.TTS_HEALTH_URL),
+      probe(env.STT_HEALTH_URL),
+      probe(env.LLM_HEALTH_URL),
+      probe(env.TTS_HEALTH_URL),
     ]);
     const at = new Date().toISOString();
     return {
       at,
       services: [
-        { id: 'api', running: true, title: 'API' },
-        { id: 'realtime', running: true, title: 'Realtime' },
-        { id: 'stt', running: stt, title: 'STT' },
-        { id: 'llm', running: llm, title: 'LLM' },
-        { id: 'tts', running: tts, title: 'TTS' },
-        { id: 'postgres', running: postgres, title: 'PostgreSQL' },
-        { id: 'sip', running: false, title: 'SIP / VoIP' },
+        { id: 'api', running: true, ready: true, title: 'API', note: 'шлюз отвечает' },
+        { id: 'realtime', running: true, ready: true, title: 'Realtime', note: 'сессии вызовов' },
+        { id: 'stt', running: stt.ok, ready: stt.ready, latencyMs: stt.latencyMs, title: 'STT', note: stt.note },
+        { id: 'llm', running: llm.ok, ready: llm.ready, latencyMs: llm.latencyMs, title: 'LLM', note: llm.note },
+        { id: 'tts', running: tts.ok, ready: tts.ready, latencyMs: tts.latencyMs, title: 'TTS', note: tts.note },
+        { id: 'postgres', running: postgres, ready: postgres, title: 'PostgreSQL', note: postgres ? 'пинг ок' : 'нет пинга' },
+        { id: 'sip', running: false, ready: false, title: 'SIP / VoIP', note: 'не в учебном контуре' },
       ],
     };
   }

@@ -37,10 +37,13 @@ export function resolveServiceView(service: ServiceRecord, live: LiveHealth): Se
   if (service.id === 'postgres' && !live.dbLive) {
     return 'error';
   }
+  if ((service.id === 'stt' || service.id === 'llm' || service.id === 'tts') && service.ready === false) {
+    return 'checking';
+  }
   return 'running';
 }
 
-export function serviceStatusLabel(state: ServiceViewState): string {
+export function serviceStatusLabel(state: ServiceViewState, note?: string): string {
   if (state === 'running') {
     return 'Работает';
   }
@@ -48,7 +51,7 @@ export function serviceStatusLabel(state: ServiceViewState): string {
     return 'Остановлен';
   }
   if (state === 'checking') {
-    return 'Проверка';
+    return note?.includes('загрузка') ? 'Загрузка модели' : 'Проверка';
   }
   return 'Нет связи';
 }

@@ -353,6 +353,21 @@
   line-height: 1.5;
 }
 
+.debrief-teacher-comment {
+  background: linear-gradient(180deg, #1d4a36, #163628);
+  box-shadow: 0 16px 32px rgba(22, 54, 40, 0.22);
+}
+
+.debrief-teacher-comment span {
+  display: block;
+  margin-bottom: 6px;
+  color: #c7e6d4;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .debrief-notes-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -407,7 +422,8 @@
   animation: debrief-rise 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.debrief-actions button {
+.debrief-actions button,
+.debrief-actions a {
   min-height: 40px;
   padding: 0 16px;
   border: 1px solid #d5dce3;
@@ -418,6 +434,14 @@
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.debrief-actions button:disabled {
+  opacity: 0.65;
+  cursor: wait;
 }
 
 .debrief-primary {

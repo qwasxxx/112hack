@@ -116,7 +116,7 @@ export function ContourPage(props: Props) {
           <article className={`ad-metric ad-health-mod ${dbLive && dbService?.running ? '' : 'ad-metric--warn'}`}>
             <span>Локальная БД</span>
             <strong>{dbLive && dbService?.running ? 'онлайн' : 'сбой'}</strong>
-            <small>IndexedDB · {props.userCount} учёток</small>
+            <small>PostgreSQL · {props.userCount} учёток в каталоге</small>
           </article>
           <article className={`ad-metric ad-health-mod ${backupOk ? '' : 'ad-metric--warn'}`}>
             <span>Хранение / копии</span>
@@ -165,15 +165,17 @@ export function ContourPage(props: Props) {
                 <div className="ad-service-copy">
                   <strong>{service.title}</strong>
                   <span>{service.detail}</span>
+                  {service.note ? <span className="ad-ops-note">{service.note}</span> : null}
                   <div className="ad-ops-meta">
                     <span>
                       Аптайм · {view === 'checking' ? 'проверка' : formatUptime(service.startedAt, service.running)}
                     </span>
                     <span>Смена · {formatWhenFull(service.lastChangeAt)}</span>
+                    {service.latencyMs != null ? <span>Ответ · {service.latencyMs} мс</span> : null}
                   </div>
                 </div>
                 <div className="ad-ops-actions">
-                  <span className={`ad-pill is-${tone}`}>{serviceStatusLabel(view)}</span>
+                  <span className={`ad-pill is-${tone}`}>{serviceStatusLabel(view, service.note)}</span>
                   <button
                     type="button"
                     className={`ad-action ${serviceActionDanger(view) ? 'btn btn-danger' : 'btn btn-primary'}`}
@@ -196,7 +198,7 @@ export function ContourPage(props: Props) {
               <p className="ad-kicker">Хранение</p>
               <h2>Резервное копирование</h2>
             </div>
-            <span className="ad-help">Локальный снимок IndexedDB, без выгрузки в облако</span>
+            <span className="ad-help">Снимок PostgreSQL на диск API, без облака</span>
           </div>
           <div className="ad-backup-grid">
             <article className="ad-backup-stat">
@@ -209,12 +211,16 @@ export function ContourPage(props: Props) {
             <article className="ad-backup-stat">
               <span>Расписание</span>
               <strong>{props.settings.backupHour}</strong>
-              <small>ежедневный локальный снимок</small>
+              <small>сервер пишет раз в сутки · это поле только для отображения</small>
             </article>
             <article className="ad-backup-stat">
               <span>История</span>
               <strong>{props.backups.length}</strong>
-              <small>только метаданные на этой машине</small>
+              <small>
+                {props.settings.lastBackupFile
+                  ? props.settings.lastBackupFile
+                  : 'скачивается JSON, история — метаданные браузера'}
+              </small>
             </article>
           </div>
           <div className="ad-backup-toolbar">
@@ -255,7 +261,7 @@ export function ContourPage(props: Props) {
             </article>
             <article className="ad-env-item">
               <span>Хранение</span>
-              <strong>IndexedDB · {dbLive ? 'здорово' : 'нет доступа'}</strong>
+              <strong>PostgreSQL · {dbLive ? 'здорово' : 'нет доступа'}</strong>
             </article>
             <article className="ad-env-item">
               <span>TLS / RBAC</span>

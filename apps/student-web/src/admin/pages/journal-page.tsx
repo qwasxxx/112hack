@@ -53,15 +53,14 @@ export function JournalPage(props: Props) {
           <p className="ad-kicker">Аудит действий</p>
           <h1>Журнал</h1>
           <p className="ad-lead">
-            Единый локальный журнал учебного контура: вход, учётки, сервисы, копии и сессии. Записи
-            сохраняются на этой машине.
+            Журнал учебного контура: локальные действия в браузере и события API (сервисы, копии).
           </p>
         </div>
         <div className="ad-health-flag">
           <span className="ad-health-pulse" aria-hidden="true" />
           <div>
             <strong>{props.audit.length} событий</strong>
-            <small>локальный репозиторий аудита</small>
+            <small>браузер + audit_log API</small>
           </div>
         </div>
       </header>

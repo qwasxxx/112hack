@@ -12,7 +12,22 @@ export type RemoteUser = {
 
 export type ContourStatus = {
   at: string;
-  services: Array<{ id: string; running: boolean; title: string }>;
+  services: Array<{
+    id: string;
+    running: boolean;
+    title: string;
+    ready?: boolean;
+    latencyMs?: number;
+    note?: string;
+  }>;
+};
+
+export type RemoteAuditRow = {
+  id: string;
+  at: string;
+  action: string;
+  target: string;
+  payload?: unknown;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T | null> {
@@ -78,7 +93,11 @@ export function pullContourStatus() {
 }
 
 export function pullBackupStatus() {
-  return request<{ lastAt: string | null; lastFile: string | null }>('/api/v1/admin/backup/status');
+  return request<{ lastAt: string | null; lastFile: string | null; dir?: string }>('/api/v1/admin/backup/status');
+}
+
+export function pullRemoteAudit() {
+  return request<RemoteAuditRow[]>('/api/v1/admin/audit');
 }
 
 export function createRemoteBackup() {

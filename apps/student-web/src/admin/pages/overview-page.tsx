@@ -148,9 +148,9 @@ export function OverviewPage(props: Props) {
                 <span className="ad-service-rail" aria-hidden="true" />
                 <div className="ad-service-copy">
                   <strong>{view.title}</strong>
-                  <span>{view.layer}</span>
+                  <span>{service.note || view.layer}</span>
                 </div>
-                <span className={`ad-pill is-${tone}`}>{serviceStatusLabel(state)}</span>
+                <span className={`ad-pill is-${tone}`}>{serviceStatusLabel(state, service.note)}</span>
               </article>
             );
           })}
@@ -223,18 +223,22 @@ export function OverviewPage(props: Props) {
               <p className="ad-kicker">Хранение</p>
               <h2>Резервное копирование</h2>
             </div>
-            <span className="ad-help">Локальный снимок, не реже раза в сутки</span>
+            <span className="ad-help">Снимок PostgreSQL на этой машине</span>
           </div>
           <div className="ad-backup-grid">
             <article className="ad-backup-stat">
               <span>Последняя копия</span>
               <strong>{formatWhen(props.settings.lastBackupAt)}</strong>
-              <small>снимок локальной БД</small>
+              <small>
+                {props.settings.lastBackupFile
+                  ? props.settings.lastBackupFile
+                  : 'снимок PostgreSQL · учётки и занятия'}
+              </small>
             </article>
             <article className="ad-backup-stat">
               <span>Расписание</span>
               <strong>{props.settings.backupHour}</strong>
-              <small>ежедневный запуск</small>
+              <small>сервер пишет раз в сутки, поле в UI не запускает job</small>
             </article>
             <article className="ad-backup-stat">
               <span>Журналы</span>
