@@ -63,6 +63,8 @@ export type DdsQueueCard = {
   callbackDone: boolean;
   editingStatus: boolean;
   statusForm: DdsStatusForm;
+  chs: boolean;
+  chp: boolean;
 };
 
 export type DdsCardScore = {
@@ -146,6 +148,8 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
         callbackDone: false,
         editingStatus: false,
         statusForm: emptyForm('Добавлена', ''),
+        chs: false,
+        chp: false,
       } satisfies DdsQueueCard;
     });
   }, [lane, scenario]);
@@ -320,6 +324,14 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     }
   }
 
+  function toggleMark(key: 'chs' | 'chp') {
+    if (!activeId) {
+      return;
+    }
+    patchQueue(activeId, (item) => ({ ...item, [key]: !item[key] }));
+    log('status_change', key);
+  }
+
   function markCallback() {
     if (!activeId) {
       return;
@@ -448,6 +460,8 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     statusForm: active?.statusForm ?? emptyForm('Добавлена', ''),
     statusOptions: nextDdsStatuses(active?.workplaceStatus ?? 'Добавлена'),
     callbackDone: active?.callbackDone ?? false,
+    chs: active?.chs ?? false,
+    chp: active?.chp ?? false,
     canComplete: canComplete(active),
     canEditStatus: Boolean(active && nextDdsStatuses(active.workplaceStatus).length),
     completeActive,
@@ -460,6 +474,7 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     patchStatusForm,
     applyStatus,
     markCallback,
+    toggleMark,
     dispatchCard: () => finishCard('dispatch'),
     transferCard: () => finishCard('transfer'),
     closeShift,
@@ -473,6 +488,8 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
         source: item.source,
         sourceLabel: sourceCaption(item.source),
         workplaceStatus: item.workplaceStatus,
+        chs: item.chs,
+        chp: item.chp,
         shortLine: journalIncidentLine(item.scenario.title, card.classifierClass),
       };
     }),

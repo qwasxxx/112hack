@@ -9,6 +9,8 @@ type Item = {
   sourceLabel?: string;
   role?: 'own' | 'foreign';
   workplaceStatus?: DdsServiceStatus;
+  chs?: boolean;
+  chp?: boolean;
   shortLine?: string;
 };
 
@@ -136,8 +138,12 @@ export function DdsJournal(props: Props) {
                   <LinkIcon />
                 </span>
                 <span className="dds-chs">
-                  <LightningIcon />
-                  <TargetIcon />
+                  <span className={item.chs ? 'is-on' : 'is-off'}>
+                    <LightningIcon />
+                  </span>
+                  <span className={item.chp ? 'is-on' : 'is-off'}>
+                    <TargetIcon />
+                  </span>
                 </span>
                 <span className="dds-oper">0</span>
                 <span>4</span>

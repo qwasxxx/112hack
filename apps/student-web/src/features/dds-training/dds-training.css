@@ -338,6 +338,10 @@
   gap: 3px;
 }
 
+.dds-chs .is-off {
+  opacity: 0.28;
+}
+
 .dds-status-cell {
   display: inline-flex;
   align-items: center;
@@ -484,13 +488,21 @@
   flex-direction: column;
 }
 
-.dds-modes span {
+.dds-modes button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 28px;
+  border: 0;
   background: #d9d9d9;
   font-size: 12px;
+  cursor: pointer;
+}
+
+.dds-modes .dds-lamp {
+  min-height: 22px;
+  background: #fff;
+  color: #333;
 }
 
 .dds-modes .is-on {
@@ -548,6 +560,12 @@
   border: 1px solid #ccc;
   background: #fff;
   cursor: pointer;
+}
+
+.dds-flag.is-on {
+  background: #1e88e5;
+  color: #fff;
+  border-color: #1565c0;
 }
 
 .dds-pencil:disabled {

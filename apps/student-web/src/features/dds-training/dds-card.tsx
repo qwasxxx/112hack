@@ -6,7 +6,8 @@ import type { DdsDraft } from './incoming-card';
 import type { DdsIncidentCardViewModel, DdsServiceChip, DdsServiceStatus, DdsStatusEvent } from './types';
 import type { DdsStatusForm } from './use-dds-session';
 
-type Modal = 'map' | 'recordings' | 'sms' | 'injured' | 'services' | null;
+type Modal = 'map' | 'recordings' | 'sms' | 'injured' | 'services' | 'sheet' | null;
+type CardMode = 'view' | 'edit';
 
 const CATALOG = EVIDENCED_SERVICE_LINES.map(parseServiceLine);
 
@@ -23,6 +24,9 @@ type Props = {
   statusOptions: DdsServiceStatus[];
   canEditStatus: boolean;
   callbackDone: boolean;
+  chs: boolean;
+  chp: boolean;
+  onToggleMark: (key: 'chs' | 'chp') => void;
   onPatch: (next: Partial<DdsDraft>) => void;
   onStartStatus: () => void;
   onCancelStatus: () => void;
@@ -35,6 +39,7 @@ type Props = {
 
 export function DdsCard(props: Props) {
   const [modal, setModal] = useState<Modal>(null);
+  const [mode, setMode] = useState<CardMode>('edit');
   const [historyOf, setHistoryOf] = useState<'own' | string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [overflow, setOverflow] = useState(false);
@@ -62,11 +67,21 @@ export function DdsCard(props: Props) {
     window.setTimeout(() => setNotice(null), 3200);
   }
 
+  const locked = mode === 'view';
+
   function openOwn() {
     setHistoryOf('own');
     if (props.canEditStatus) {
       props.onStartStatus();
     }
+  }
+
+  function guardEdit(next: Partial<DdsDraft>) {
+    if (locked) {
+      flash('Сейчас «просмотр». Чтобы править карточку, нажмите «дополнение».');
+      return;
+    }
+    props.onPatch(next);
   }
 
   return (
@@ -88,7 +103,8 @@ export function DdsCard(props: Props) {
           <span className="dds-aon-row">
             <input
               value={props.draft.callerPhone}
-              onChange={(event) => props.onPatch({ callerPhone: event.target.value })}
+              readOnly={locked}
+              onChange={(event) => guardEdit({ callerPhone: event.target.value })}
               aria-label="АОН"
             />
             <button type="button" onClick={props.onCallback} title="Перезвонить по АОН">
@@ -101,7 +117,8 @@ export function DdsCard(props: Props) {
           <span className="dds-aon-row">
             <input
               value={props.draft.callerPhone}
-              onChange={(event) => props.onPatch({ callerPhone: event.target.value })}
+              readOnly={locked}
+              onChange={(event) => guardEdit({ callerPhone: event.target.value })}
               aria-label="предоставленный"
             />
             <button type="button" onClick={props.onCallback} title="Перезвонить заявителю">
@@ -113,7 +130,8 @@ export function DdsCard(props: Props) {
           <span className="dds-phone-top">☎ телефон на место</span>
           <input
             value={props.draft.callerPhone}
-            onChange={(event) => props.onPatch({ callerPhone: event.target.value })}
+            readOnly={locked}
+            onChange={(event) => guardEdit({ callerPhone: event.target.value })}
             aria-label="телефон на место"
           />
         </label>
@@ -125,8 +143,21 @@ export function DdsCard(props: Props) {
           </span>
         </div>
         <div className="dds-modes">
-          <span>просмотр</span>
-          <span className="is-on">дополнение</span>
+          <button type="button" className={mode === 'view' ? 'is-on' : ''} onClick={() => setMode('view')}>
+            просмотр
+          </button>
+          <button type="button" className={mode === 'edit' ? 'is-on' : ''} onClick={() => setMode('edit')}>
+            дополнение
+          </button>
+          <button
+            type="button"
+            className="dds-lamp"
+            onClick={() => setModal('map')}
+            aria-label="Показать адрес на карте"
+            title="Адрес на карте"
+          >
+            <LampIcon />
+          </button>
         </div>
       </header>
 
@@ -135,20 +166,43 @@ export function DdsCard(props: Props) {
           <span>ФИО заявителя</span>
           <input
             value={props.draft.callerName}
-            onChange={(event) => props.onPatch({ callerName: event.target.value })}
+            readOnly={locked}
+            onChange={(event) => guardEdit({ callerName: event.target.value })}
             aria-label="ФИО заявителя"
           />
         </div>
         <div className="dds-flags">
-          <button type="button" className="dds-flag-text" onClick={() => setModal('injured')}>
+          <button
+            type="button"
+            className="dds-flag-text"
+            onClick={() => {
+              if (locked) {
+                flash('Сейчас «просмотр». Пострадавших правят в «дополнении».');
+                return;
+              }
+              setModal('injured');
+            }}
+          >
             Пострадавшие {injuredYes ? 'есть' : 'нет'}
           </button>
           <span>Отказ от скорой: нет</span>
           <span>Заблокированные: нет</span>
-          <button type="button" className="dds-flag">
+          <button
+            type="button"
+            className={`dds-flag${props.chs ? ' is-on' : ''}`}
+            aria-pressed={props.chs}
+            title="Чрезвычайная ситуация"
+            onClick={() => props.onToggleMark('chs')}
+          >
             ЧС
           </button>
-          <button type="button" className="dds-flag">
+          <button
+            type="button"
+            className={`dds-flag${props.chp ? ' is-on' : ''}`}
+            aria-pressed={props.chp}
+            title="Чрезвычайное происшествие"
+            onClick={() => props.onToggleMark('chp')}
+          >
             ЧП
           </button>
           <button
@@ -340,10 +394,16 @@ export function DdsCard(props: Props) {
           <b>⌄</b>
         </button>
         <span className="dds-footer-spacer" />
-        <button type="button" className="dds-doc" onClick={props.onClose} aria-label="Закрыть карточку">
+        <button
+          type="button"
+          className="dds-doc"
+          onClick={() => setModal('sheet')}
+          aria-label="Текст карточки"
+          title="Текст карточки"
+        >
           ▣
         </button>
-        <button type="button" className="dds-close" onClick={props.onClose} aria-label="Закрыть">
+        <button type="button" className="dds-close" onClick={props.onClose} aria-label="К списку происшествий" title="К списку">
           ×
         </button>
       </footer>
@@ -413,6 +473,17 @@ export function DdsCard(props: Props) {
           Входящих SMS по этой карточке нет.
         </DdsDialog>
       ) : null}
+      {modal === 'sheet' ? (
+        <DdsDialog title={`Карточка ${props.card.number}`} onClose={() => setModal(null)}>
+          <p>{address.title}</p>
+          <p>{props.card.typeTitle}</p>
+          <p>{props.draft.description}</p>
+          <p>
+            {props.draft.callerName || 'Заявитель не указан'}
+            {props.draft.callerPhone ? ` · ${props.draft.callerPhone}` : ''}
+          </p>
+        </DdsDialog>
+      ) : null}
       {modal === 'injured' ? (
         <DdsDialog title="Пострадавшие" onClose={() => setModal(null)}>
           <div className="dds-injured-pick">
@@ -465,6 +536,17 @@ function ChipButton(props: { chip: DdsServiceChip; onClick: () => void }) {
         {props.chip.statusTime} {props.chip.status}
       </small>
     </button>
+  );
+}
+
+function LampIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M7 2h8v4l3 3v2h-3l-1 2H9L8 11H5V9l2-3V2zm3 14h2v4h-2z"
+      />
+    </svg>
   );
 }
 

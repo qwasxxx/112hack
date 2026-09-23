@@ -160,6 +160,9 @@ export function DdsTrainingPage(props: Props) {
             statusOptions={session.statusOptions}
             canEditStatus={session.canEditStatus}
             callbackDone={session.callbackDone}
+            chs={session.chs}
+            chp={session.chp}
+            onToggleMark={session.toggleMark}
             onPatch={session.patch}
             onStartStatus={session.startStatusEdit}
             onCancelStatus={session.cancelStatusEdit}
