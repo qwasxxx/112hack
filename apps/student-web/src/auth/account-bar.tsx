@@ -3,7 +3,7 @@ import { ROLE_LABEL } from './accounts';
 
 type Props = {
   user: Session;
-  onLogout: () => void;
+  onLogout?: () => void;
 };
 
 export function AccountBar(props: Props) {
@@ -16,9 +16,11 @@ export function AccountBar(props: Props) {
         ) : null}
         {props.user.name}
       </span>
-      <button type="button" className="link" onClick={props.onLogout}>
-        Выйти
-      </button>
+      {props.onLogout ? (
+        <button type="button" className="link" onClick={props.onLogout}>
+          Выйти
+        </button>
+      ) : null}
     </div>
   );
 }

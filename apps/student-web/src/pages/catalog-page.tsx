@@ -36,6 +36,7 @@ type Props = {
   onSessions: () => void;
   onHandbook: () => void;
   onCatalog: () => void;
+  onLogout: () => void;
 };
 
 type DifficultyFilter = 'all' | TrainingScenario['difficulty'];
@@ -147,6 +148,7 @@ export function CatalogPage(props: Props) {
         onSessions={props.onSessions}
         onHandbook={props.onHandbook}
         onCatalog={props.onCatalog}
+        onLogout={props.onLogout}
       />
       <div className="catalog-shell">
         <CatalogHeader accountBar={props.accountBar} />
@@ -242,6 +244,7 @@ function StudentSidebar(props: {
   onSessions: () => void;
   onHandbook: () => void;
   onCatalog: () => void;
+  onLogout: () => void;
 }) {
   return (
     <aside className="catalog-sidebar" aria-label="Навигация обучающегося">
@@ -286,6 +289,13 @@ function StudentSidebar(props: {
           active={props.view === 'handbook'}
           onActivate={props.onHandbook}
         />
+        <CatalogNavItem
+          label="Выйти из аккаунта"
+          icon="logout"
+          active={false}
+          logout
+          onActivate={props.onLogout}
+        />
       </nav>
       <div className="catalog-sidebar-art" aria-hidden="true">
         <img src={sidebarBase} alt="" />
@@ -296,8 +306,9 @@ function StudentSidebar(props: {
 
 function CatalogNavItem(props: {
   label: string;
-  icon: 'book' | 'layers' | 'bars' | 'gear' | 'phone' | 'clock';
+  icon: 'book' | 'layers' | 'bars' | 'gear' | 'phone' | 'clock' | 'logout';
   active: boolean;
+  logout?: boolean;
   onActivate?: () => void;
 }) {
   const tilt = useCatalogTilt<HTMLButtonElement>({ x: 2.2, y: 2.4 }, 'button');
@@ -306,7 +317,7 @@ function CatalogNavItem(props: {
     <button
       ref={tilt.ref}
       type="button"
-      className={`catalog-nav-item catalog-tilt${props.active ? ' is-active' : ''}`}
+      className={`catalog-nav-item catalog-tilt${props.active ? ' is-active' : ''}${props.logout ? ' catalog-nav-logout' : ''}`}
       title={props.label}
       aria-current={props.active ? 'page' : undefined}
       aria-disabled={props.onActivate ? undefined : true}
@@ -874,7 +885,8 @@ function CatalogGlyph(props: {
     | 'people'
     | 'clock'
     | 'phone'
-    | 'shield';
+    | 'shield'
+    | 'logout';
 }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -963,6 +975,15 @@ function CatalogGlyph(props: {
           d="M12 3.5l7 2.4v6.3c0 4.1-2.8 7.3-7 8.8-4.2-1.5-7-4.7-7-8.8V5.9L12 3.5z"
           stroke="currentColor"
           strokeWidth="1.7"
+          strokeLinejoin="round"
+        />
+      ) : null}
+      {props.name === 'logout' ? (
+        <path
+          d="M10 6H6.5A1.5 1.5 0 0 0 5 7.5v9A1.5 1.5 0 0 0 6.5 18H10M10 12h9m0 0-2.5-2.5M19 12l-2.5 2.5"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
           strokeLinejoin="round"
         />
       ) : null}

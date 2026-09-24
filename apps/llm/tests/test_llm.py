@@ -204,8 +204,28 @@ def test_apply_teacher_intervention_keeps_ticket_facts():
     detail = apply_teacher_intervention(session, "set_emotional_state", "паника")
     extra = session_scenario_extra(session)
     assert "паника" in detail
-    assert "УКАЗАНИЕ ПРЕПОДАВАТЕЛЯ" in extra
+    assert "УКАЗАНИЕ ПРЕПОДАВАТЕЛЯ [set_emotional_state]" in extra
     assert "Вызывает мама" in extra
+    from sys112_llm.conversation import TEACHER_NUDGE_TEXT, repair_victim_reply
+
+    ticket = "ЧТО СЛУЧИЛОСЬ: Горит контейнер. Пострадавших нет."
+    session2 = manager.create("cue-2", "victim", ticket)
+    apply_teacher_intervention(session2, "add_circumstance", "Появился пострадавший, лежит без сознания")
+    forced = repair_victim_reply(
+        "Пострадавших нет, горит контейнер.",
+        TEACHER_NUDGE_TEXT,
+        "victim",
+        session_scenario_extra(session2),
+    )
+    assert "пострадавший" in forced.lower()
+    kept = repair_victim_reply(
+        "Тут человек лежит без сознания.",
+        "что случилось?",
+        "victim",
+        session_scenario_extra(session2),
+    )
+    assert "сознан" in kept.lower()
+    assert "контейнер" not in kept.lower()
 
 
 def test_repair_topic_shift_lighting_not_apartment_fire():
@@ -284,14 +304,31 @@ def test_not_ready_and_missing_model():
 def test_repair_victim_does_not_play_blind_on_dispatch():
     from sys112_llm.conversation import repair_victim_reply
 
-    assert (
-        repair_victim_reply(
-            "не слышу, не вижу.",
-            "хорошо я вас услышал направляю на вас в службы",
-            "victim",
-        )
-        == "Хорошо, жду."
+    ack = repair_victim_reply(
+        "не слышу, не вижу.",
+        "хорошо я вас услышал направляю на вас в службы",
+        "victim",
     )
+    assert "не слышу" not in ack.lower()
+    assert "не вижу" not in ack.lower()
+    varied = repair_victim_reply(
+        "У нас на кухне уже горит, скорее.",
+        "что случилось?",
+        "victim",
+        "ЧТО СЛУЧИЛОСЬ: Пожар на кухне.",
+    )
+    assert varied == "У нас на кухне уже горит, скорее."
+    leaked = repair_victim_reply(
+        "Я не могу выполнить этот запрос. Я — языковая модель, у меня нет физического тела.",
+        "что случилось?",
+        "victim",
+        "ЧТО СЛУЧИЛОСЬ: Горит контейнер у дома.",
+    )
+    assert "языков" not in leaked.lower()
+    assert "запрос" not in leaked.lower()
+    assert "контейнер" in leaked.lower()
+    trapped = repair_victim_reply("Я не могу двигаться, нога зажата.", "что с вами?", "victim")
+    assert trapped.startswith("Я не могу двигаться")
     assert repair_victim_reply("Не знаю.", "Какой этаж?", "victim") == "Не знаю."
     assert repair_victim_reply("Горит контейнер у дома.", "Что случилось?", "victim") == "Горит контейнер у дома."
     assert (
@@ -305,6 +342,42 @@ def test_repair_victim_does_not_play_blind_on_dispatch():
             "КТО ЗВОНИТ: мама. Имени заявителя нет — не выдумывай",
         )
         == "Я мама."
+    )
+    assert (
+        repair_victim_reply(
+            "Да, я мама, у меня нет имени, которое я могу назвать.",
+            "в смысле, мама?",
+            "victim",
+            "КТО ЗВОНИТ: мама. Имени заявителя нет — не выдумывай",
+        )
+        == "Я мама."
+    )
+    assert (
+        repair_victim_reply(
+            "У меня нет имени, которое я могу назвать.",
+            "как вас зовут?",
+            "victim",
+            "КТО ЗВОНИТ: Иванов Иван Иванович",
+        )
+        == "Я Иванов Иван Иванович."
+    )
+    assert (
+        repair_victim_reply(
+            "Я мама.",
+            "Кто вы?",
+            "victim",
+            "КТО ЗВОНИТ: Сидоров Иван Сергеевич\nНе говори, что ты мама и что имени нет.",
+        )
+        == "Я Сидоров Иван Сергеевич."
+    )
+    assert (
+        repair_victim_reply(
+            "Я мама.",
+            "Вы кто?",
+            "victim",
+            "КТО ЗВОНИТ: Сидоров Иван Сергеевич",
+        )
+        == "Я Сидоров Иван Сергеевич."
     )
     extra_addr = (
         "АДРЕС (назови, только если спросили): Волгоградская область, город Волжский, "

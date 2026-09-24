@@ -13,3 +13,4 @@ silero-stress>=1.0.0
 silero-tts
 sounddevice
 num2words
+fish-audio-sdk>=1.0.0

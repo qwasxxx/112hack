@@ -20,8 +20,8 @@
 }
 
 .briefing-body {
-  display: grid;
-  grid-template-rows: auto auto;
+  display: flex;
+  flex-direction: column;
   align-content: start;
   min-height: 0;
   overflow: visible;
@@ -133,10 +133,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(332px, 360px);
   grid-auto-flow: row;
-  align-items: stretch;
-  align-content: start;
+  align-items: start;
   gap: 16px;
-  min-height: 0;
   padding: 0 22px 20px;
   overflow: visible;
 }
@@ -151,8 +149,7 @@
   --catalog-tilt-sx: 0px;
   --catalog-tilt-sy: 12px;
   position: relative;
-  min-height: 0;
-  height: 100%;
+  height: auto;
   overflow: visible;
   background: var(--briefing-panel);
   border: 1px solid var(--briefing-line);
@@ -679,7 +676,6 @@
 
   .briefing-main,
   .briefing-lessons {
-    flex: 0 0 auto;
     width: 100%;
     height: auto;
   }

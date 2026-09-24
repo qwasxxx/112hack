@@ -12,17 +12,24 @@ if (-not (Test-Path $Py)) {
 & $Py -m pip install -r (Join-Path $Stt "requirements.txt")
 
 $env:PYTHONPATH = Join-Path $Stt "src"
-$env:STT_MODE = "local"
-$env:STT_MODEL_PATH = $Model
-$env:STT_SAMPLE_RATE = "8000"
-$env:STT_NUM_THREADS = "2"
-$env:STT_DECODING_METHOD = "greedy_search"
-$env:STT_ONNX_PROVIDER = "cpu"
-$env:STT_ENDPOINT_RULE1 = "1.2"
-$env:STT_ENDPOINT_RULE2 = "0.7"
-$env:STT_ENDPOINT_CONFIRM = "0.12"
 $env:STT_HOST = "127.0.0.1"
 $env:STT_PORT = "8090"
-
-& $Py (Join-Path $Stt "scripts\download_model.py")
+$EnvFile = Join-Path $Root ".env"
+if (Test-Path $EnvFile) {
+  Get-Content $EnvFile | ForEach-Object {
+    if ($_ -match '^\s*([^#=]+)=(.*)$') {
+      $name = $Matches[1].Trim()
+      if (-not [string]::IsNullOrEmpty($name) -and -not (Test-Path "Env:$name")) {
+        Set-Item -Path "Env:$name" -Value $Matches[2].Trim().Trim('"').Trim("'")
+      }
+    }
+  }
+}
+if (-not $env:STT_MODE) {
+  $env:STT_MODE = "huggingface"
+}
+if ($env:STT_MODE -eq "local") {
+  $env:STT_MODEL_PATH = $Model
+  & $Py (Join-Path $Stt "scripts\download_model.py")
+}
 & $Py -m uvicorn sys112_stt.app:app --host 127.0.0.1 --port 8090

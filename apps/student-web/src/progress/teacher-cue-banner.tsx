@@ -26,7 +26,6 @@ export function TeacherCueBanner(props: { login: string }) {
       <strong>Преподаватель</strong>
       <span>
         {CUE_LABEL[cue.type]}
-        {cue.note ? ` — ${cue.note}` : ''}
       </span>
       <button type="button" onClick={() => dismissCue(cue.id)}>
         Скрыть

@@ -6,6 +6,8 @@ from typing import Any, Protocol
 
 from sys112_stt.audio import pcm_s16le_to_float32
 from sys112_stt.config import (
+    HF_STT_MODES,
+    HF_TOKEN,
     STT_DECODING_METHOD,
     STT_ENDPOINT_CONFIRM,
     STT_ENDPOINT_RULE1,
@@ -41,6 +43,8 @@ def model_files_present(model_dir: Path) -> bool:
 
 
 def load_recognizer() -> tuple[RecognizerLike | None, str]:
+    if STT_MODE in HF_STT_MODES:
+        return None, "ready" if HF_TOKEN else "not_ready"
     if STT_MODE == "mock":
         return None, "mock"
     if not model_files_present(STT_MODEL_DIR):
@@ -204,6 +208,10 @@ def _is_shorter_partial(previous: str, visible: str) -> bool:
 
 
 def create_session(recognizer: RecognizerLike | None, status: str) -> SttSession:
+    if STT_MODE in HF_STT_MODES:
+        from sys112_stt.engine_hf import HuggingFaceSttSession
+
+        return HuggingFaceSttSession()  # type: ignore[return-value]
     mock = recognizer is None or status != "ready"
     if recognizer is None:
         return SttSession(recognizer=None, stream=None, mock=mock)

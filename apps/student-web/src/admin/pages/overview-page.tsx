@@ -28,7 +28,7 @@ type Props = {
 const SERVICE_VIEW: Record<ServiceId, { title: string; layer: string }> = {
   api: { title: 'API', layer: 'Учебный контур, REST' },
   realtime: { title: 'Realtime', layer: 'Сессии вызовов' },
-  stt: { title: 'STT', layer: 'Распознавание речи, локально' },
+  stt: { title: 'STT', layer: 'Распознавание речи' },
   llm: { title: 'LLM', layer: 'Диалоговый модуль, локально' },
   tts: { title: 'TTS', layer: 'Синтез речи, локально' },
   postgres: { title: 'Локальная БД', layer: 'PostgreSQL учебного контура' },

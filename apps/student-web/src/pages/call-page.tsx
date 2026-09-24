@@ -34,6 +34,23 @@ type Props = {
   operatorLogin?: string;
 };
 
+function voiceForTeacherCue(type: string, note: string): { emotion: string; pitch: string; speed: number } | undefined {
+  const text = note.toLowerCase();
+  if (type === 'inject_event' || text.includes('паник') || text.includes('крич')) {
+    return { emotion: 'panic', pitch: 'high', speed: 1.18 };
+  }
+  if (text.includes('зол') || text.includes('орёт') || text.includes('орет')) {
+    return { emotion: 'angry', pitch: 'low', speed: 1.14 };
+  }
+  if (text.includes('растер') || text.includes('плач')) {
+    return { emotion: 'crying', pitch: 'high', speed: 0.94 };
+  }
+  if (type === 'set_emotional_state') {
+    return { emotion: 'panic', pitch: 'high', speed: 1.18 };
+  }
+  return undefined;
+}
+
 export function CallPage(props: Props) {
   const embedded = props.variant === 'panel';
   const conversationRole = SECTION_AI_ROLE[props.section];
@@ -115,16 +132,15 @@ export function CallPage(props: Props) {
       }
       const pending = takePendingLlmCues(login);
       for (const cue of pending) {
-        if (cue.type === 'set_emotional_state') {
+        const tone = voiceForTeacherCue(cue.type, cue.note || '');
+        if (tone) {
           const base = voiceRef.current ?? props.scenario.ttsVoice;
-          const speaker = base?.speaker ?? 'xenia';
-          const gender = base?.gender ?? 'female';
           voiceRef.current = {
-            speaker,
-            gender,
-            emotion: 'panic',
-            pitch: 'high',
-            speed: 1.18,
+            speaker: base?.speaker ?? 'xenia',
+            gender: base?.gender ?? 'female',
+            emotion: tone.emotion,
+            pitch: tone.pitch,
+            speed: tone.speed,
           };
         }
         llmRef.current.intervene(cue.type, cue.note);
@@ -301,7 +317,7 @@ export function CallPage(props: Props) {
       const text = composeUtterance(utterancePartsRef.current, liveSttRef.current);
       utterancePartsRef.current = [];
       liveSttRef.current = '';
-      if (!text.trim() || repeatsSent(text, lastSentRef.current)) {
+      if (!text.trim() || repeatsSent(text, lastSentRef.current) || isPhantomSpeech(text)) {
         setLines((current) => current.filter((line) => !(line.live && line.role === userRole)));
         return;
       }
@@ -326,7 +342,10 @@ export function CallPage(props: Props) {
 
     const showUserSpeech = (parts: string[], live: string) => {
       const text = composeUtterance(parts, live);
-      if (!text.trim() || repeatsSent(text, lastSentRef.current)) {
+      if (!text.trim() || repeatsSent(text, lastSentRef.current) || isPhantomSpeech(text)) {
+        if (isPhantomSpeech(text)) {
+          setLines((current) => current.filter((line) => !(line.live && line.role === userRole)));
+        }
         return;
       }
       setLines((current) => upsertLive(current, userRole, text, 'stt'));
@@ -361,8 +380,8 @@ export function CallPage(props: Props) {
           scheduleFlush();
         }
       },
-      onError: (message) => {
-        setMicError(message);
+      onError: () => {
+        setMicError('Не расслышал. Повторите фразу.');
       },
     });
     streamRef.current = stream;
@@ -803,6 +822,14 @@ export function CallPage(props: Props) {
       </div>
     </div>
   );
+}
+
+function isPhantomSpeech(text: string): boolean {
+  const clean = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+  return /^(спасибо|спасибо большое|большое спасибо|благодарю|благодарю вас|пожалуйста)$/.test(clean);
 }
 
 function isSameSpeech(left: string, right: string): boolean {

@@ -9,6 +9,23 @@ def _env(name: str, default: str) -> str:
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
+
+def _load_fish_env() -> None:
+    path = REPO_ROOT / ".env"
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key.startswith("FISH_") and key not in os.environ:
+            os.environ[key] = value.strip().strip('"').strip("'")
+
+
+_load_fish_env()
+
 TTS_HOST = _env("TTS_HOST", "0.0.0.0")
 TTS_PORT = int(_env("TTS_PORT", "8092"))
 TTS_LANGUAGE = _env("TTS_LANGUAGE", "ru")
@@ -39,3 +56,18 @@ TTS_AMBIENT_DIR = Path(_env("TTS_AMBIENT_DIR", str(REPO_ROOT / "models" / "tts" 
 if not TTS_AMBIENT_DIR.is_absolute():
     TTS_AMBIENT_DIR = (Path.cwd() / TTS_AMBIENT_DIR).resolve()
 AMBIENT_TYPES = ("traffic_siren", "car_crash", "crowd_panic", "phone_static")
+
+FISH_API_KEY = _env("FISH_API_KEY", "")
+FISH_MODEL = _env("FISH_MODEL", "s2.1-pro")
+FISH_LATENCY = _env("FISH_LATENCY", "balanced")
+FISH_FORMAT = _env("FISH_FORMAT", "pcm")
+FISH_SAMPLE_RATE = int(_env("FISH_SAMPLE_RATE", "44100"))
+FISH_REFERENCE_ID = _env("FISH_REFERENCE_ID", "")
+FISH_REFERENCE_AUDIO = _env("FISH_REFERENCE_AUDIO", "")
+FISH_REFERENCE_TEXT = _env("FISH_REFERENCE_TEXT", "")
+FISH_OPERATOR_REFERENCE_ID = _env("FISH_OPERATOR_REFERENCE_ID", "")
+FISH_VICTIM_REFERENCE_ID = _env("FISH_VICTIM_REFERENCE_ID", "")
+FISH_OPERATOR_REFERENCE_AUDIO = _env("FISH_OPERATOR_REFERENCE_AUDIO", "")
+FISH_VICTIM_REFERENCE_AUDIO = _env("FISH_VICTIM_REFERENCE_AUDIO", "")
+FISH_OPERATOR_REFERENCE_TEXT = _env("FISH_OPERATOR_REFERENCE_TEXT", "")
+FISH_VICTIM_REFERENCE_TEXT = _env("FISH_VICTIM_REFERENCE_TEXT", "")

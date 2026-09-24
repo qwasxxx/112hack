@@ -1,22 +1,21 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import '../pages/catalog-page.css';
 import sidebarBase from '../assets/catalog/catalog-sidebar-base.webp';
+import { LEARNER_TRACK_LABEL, type LearnerTrack } from '../learner-track';
 import { bindElementTilt, playStudentPress, useStudentTilt } from './student-tilt';
-
-const SIDEBAR_ITEMS = [
-  { id: 'scenarios', label: 'Учебные сценарии', icon: 'book' as const },
-  { id: 'sessions', label: 'Мои сессии', icon: 'layers' as const },
-  { id: 'reference', label: 'Справочные материалы', icon: 'bars' as const },
-];
 
 export type ShellView = 'scenarios' | 'sessions' | 'reference';
 
 type ShellProps = {
   accountBar: ReactNode;
   view?: ShellView;
+  track?: LearnerTrack;
+  onTrack?: (track: LearnerTrack) => void;
   onCatalog: () => void;
   onSessions?: () => void;
   onHandbook?: () => void;
+  onTheory?: () => void;
+  onLogout?: () => void;
   children: ReactNode;
 };
 
@@ -28,10 +27,14 @@ export function StudentShell(props: ShellProps) {
       <StudentSidebar
         collapsed={sidebarCollapsed}
         view={props.view ?? 'scenarios'}
+        track={props.track ?? 'operator112'}
         onToggle={() => setSidebarCollapsed((value) => !value)}
         onCatalog={props.onCatalog}
         onSessions={props.onSessions}
         onHandbook={props.onHandbook}
+        onTrack={props.onTrack}
+        onTheory={props.onTheory}
+        onLogout={props.onLogout}
       />
       <div className="catalog-shell">
         <StudentHeader accountBar={props.accountBar} />
@@ -44,11 +47,20 @@ export function StudentShell(props: ShellProps) {
 function StudentSidebar(props: {
   collapsed: boolean;
   view: ShellView;
+  track: LearnerTrack;
   onToggle: () => void;
   onCatalog: () => void;
   onSessions?: () => void;
   onHandbook?: () => void;
+  onTrack?: (track: LearnerTrack) => void;
+  onTheory?: () => void;
+  onLogout?: () => void;
 }) {
+  function openTrack(track: LearnerTrack) {
+    props.onTrack?.(track);
+    props.onCatalog();
+  }
+
   return (
     <aside className="catalog-sidebar" aria-label="Навигация обучающегося">
       <div className="catalog-sidebar-brand">
@@ -59,21 +71,34 @@ function StudentSidebar(props: {
         <CollapseButton collapsed={props.collapsed} onToggle={props.onToggle} />
       </div>
       <nav className="catalog-nav">
-        {SIDEBAR_ITEMS.map((item) => (
-          <NavItem
-            key={item.id}
-            label={item.label}
-            icon={item.icon}
-            active={item.id === props.view}
-            onActivate={
-              item.id === 'scenarios'
-                ? props.onCatalog
-                : item.id === 'sessions'
-                  ? props.onSessions
-                  : props.onHandbook
-            }
-          />
-        ))}
+        <NavItem
+          label={LEARNER_TRACK_LABEL.operator112}
+          icon="phone"
+          active={props.track === 'operator112' && props.view === 'scenarios'}
+          onActivate={() => openTrack('operator112')}
+        />
+        <NavItem
+          label={LEARNER_TRACK_LABEL.dds}
+          icon="layers"
+          active={props.track === 'dds' && props.view === 'scenarios'}
+          onActivate={() => openTrack('dds')}
+        />
+        <NavItem label="Теория АРМ-112" icon="book" active={false} onActivate={props.onTheory} />
+        <NavItem
+          label="Мои сессии"
+          icon="clock"
+          active={props.view === 'sessions'}
+          onActivate={props.onSessions}
+        />
+        <NavItem
+          label="Справочные материалы"
+          icon="bars"
+          active={props.view === 'reference'}
+          onActivate={props.onHandbook}
+        />
+        {props.onLogout ? (
+          <NavItem label="Выйти из аккаунта" icon="logout" active={false} onActivate={props.onLogout} logout />
+        ) : null}
       </nav>
       <div className="catalog-sidebar-art" aria-hidden="true">
         <img src={sidebarBase} alt="" />
@@ -84,8 +109,9 @@ function StudentSidebar(props: {
 
 function NavItem(props: {
   label: string;
-  icon: 'book' | 'layers' | 'bars' | 'gear';
+  icon: 'book' | 'layers' | 'bars' | 'gear' | 'phone' | 'clock' | 'logout';
   active: boolean;
+  logout?: boolean;
   onActivate?: () => void;
 }) {
   const tilt = useStudentTilt<HTMLButtonElement>({ x: 2.2, y: 2.4 }, 'button');
@@ -94,7 +120,7 @@ function NavItem(props: {
     <button
       ref={tilt.ref}
       type="button"
-      className={`catalog-nav-item catalog-tilt${props.active ? ' is-active' : ''}`}
+      className={`catalog-nav-item catalog-tilt${props.active ? ' is-active' : ''}${props.logout ? ' catalog-nav-logout' : ''}`}
       title={props.label}
       aria-current={props.active ? 'page' : undefined}
       aria-disabled={props.onActivate ? undefined : true}
@@ -182,7 +208,7 @@ function UserControls(props: { children: ReactNode }) {
   );
 }
 
-function ShellGlyph(props: { name: 'collapse' | 'expand' | 'book' | 'layers' | 'bars' | 'gear' }) {
+function ShellGlyph(props: { name: 'collapse' | 'expand' | 'book' | 'layers' | 'bars' | 'gear' | 'phone' | 'clock' | 'logout' }) {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
       {props.name === 'collapse' ? (
@@ -226,6 +252,31 @@ function ShellGlyph(props: { name: 'collapse' | 'expand' | 'book' | 'layers' | '
           d="M12 8.2a3.8 3.8 0 1 1 0 7.6 3.8 3.8 0 0 1 0-7.6zm7.2 3.1l1.7-1-1-1.8-2 .4a7 7 0 0 0-1.2-1.2l.4-2-1.8-1-1 1.7a7 7 0 0 0-1.6 0L11 4.7l-1.8 1 .4 2a7 7 0 0 0-1.2 1.2l-2-.4-1 1.8 1.7 1a7 7 0 0 0 0 1.6l-1.7 1 1 1.8 2-.4c.37.45.76.86 1.2 1.2l-.4 2 1.8 1 1-1.7a7 7 0 0 0 1.6 0l1 1.7 1.8-1-.4-2c.44-.34.83-.75 1.2-1.2l2 .4 1-1.8-1.7-1a7 7 0 0 0 0-1.6z"
           stroke="currentColor"
           strokeWidth="1.3"
+        />
+      ) : null}
+      {props.name === 'clock' ? (
+        <path
+          d="M12 20.5a8.5 8.5 0 1 1 0-17 8.5 8.5 0 0 1 0 17zm0-8.5V8.2m0 3.8 3.4 2.2"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+        />
+      ) : null}
+      {props.name === 'phone' ? (
+        <path
+          d="M8.2 3.8h2.3l1.2 3.1-1.5 1.1a12.5 12.5 0 0 0 5.3 5.3l1.1-1.5 3.1 1.2v2.3c0 .8-.5 1.7-2.2 1.9C9.8 18.4 5.6 14.2 4.3 6c.2-1.7 1.1-2.2 1.9-2.2z"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+      ) : null}
+      {props.name === 'logout' ? (
+        <path
+          d="M10 6H6.5A1.5 1.5 0 0 0 5 7.5v9A1.5 1.5 0 0 0 6.5 18H10M10 12h9m0 0-2.5-2.5M19 12l-2.5 2.5"
+          stroke="currentColor"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
       ) : null}
     </svg>

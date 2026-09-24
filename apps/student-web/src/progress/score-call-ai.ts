@@ -12,7 +12,7 @@ export async function requestCallAiScore(input: {
   rules: string;
 }): Promise<AiScore | null> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 9000);
+  const timer = window.setTimeout(() => controller.abort(), 50000);
   try {
     const response = await fetch('/api/llm/score-call', {
       method: 'POST',

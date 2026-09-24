@@ -53,6 +53,7 @@ class SynthesizeRequest(BaseModel):
     pitch: str | None = None
     speed: float | None = None
     play: bool = False
+    reference_id: str | None = None
 
 
 @app.get("/health")
@@ -70,11 +71,58 @@ def _frame(chunk: bytes) -> bytes:
     return struct.pack("<I", len(chunk)) + chunk
 
 
+async def _streamed(body: SynthesizeRequest, role: str, voice_id: str | None, started: float) -> StreamingResponse:
+    try:
+        agen = engine.synthesize_stream(
+            body.text,
+            voice_id,
+            body.emotion,
+            body.conversation_role,
+            body.ambient_type,
+            body.random_sfx,
+            role,
+            body.gender,
+            body.speed,
+            body.reference_id,
+        ).__aiter__()
+        first = await anext(agen)
+    except StopAsyncIteration:
+        raise HTTPException(status_code=500, detail="Speech synthesis failed") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception:
+        logger.exception("[TTS] Synthesis failed")
+        raise HTTPException(status_code=500, detail="Speech synthesis failed") from None
+
+    tta_ms = (time.perf_counter() - started) * 1000
+    logger.info("[TTS] Time-To-Audio %.1fms http_first_chunk bytes=%s role=%s", tta_ms, len(first), role)
+
+    async def generate():
+        yield _frame(first)
+        async for chunk in agen:
+            if chunk:
+                yield _frame(chunk)
+        yield struct.pack("<I", 0)
+
+    return StreamingResponse(
+        generate(),
+        media_type="application/octet-stream",
+        headers={
+            "X-TTS-Stream": "1",
+            "X-TTS-TTA-MS": f"{tta_ms:.1f}",
+            "X-TTS-Role": role,
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @app.post("/api/v1/tts/synthesize")
 async def synthesize(body: SynthesizeRequest) -> StreamingResponse:
     started = time.perf_counter()
     voice_id = body.speaker or body.voice_id
     role = resolve_role(body.role, body.conversation_role, voice_id)
+    if getattr(engine, "streaming", False):
+        return await _streamed(body, role, voice_id, started)
     try:
         first = await asyncio.to_thread(
             engine.synthesize_role,

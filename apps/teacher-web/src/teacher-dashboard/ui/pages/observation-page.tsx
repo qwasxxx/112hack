@@ -1,34 +1,34 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import type { InterventionType } from '@sys112/shared-types';
 import type { ActiveSession } from '../../domain/entities';
 import { difficultyLabels, formatDuration } from '../../domain/value-objects';
 import { StatusBadge } from '../components/common';
 
-interface Action {
+const MODES: Array<{
   type: InterventionType;
   label: string;
-  hint: string;
-}
-
-const PRESETS: Partial<Record<InterventionType, string[]>> = {
-  set_emotional_state: [
-    'Паника: кричит, путает слова, «скорее приезжайте»',
-    'Злость: орёт на оператора, требует выслать службу',
-    'Растерянность: плачет, не может назвать этаж',
-  ],
-  add_circumstance: [
-    'Появился пострадавший, лежит без сознания',
-    'Дым пошёл в соседнюю квартиру',
-    'Слышны дети за закрытой дверью',
-  ],
-  inject_event: [
-    'Слышен удар, связь прерывается, крик «алло»',
-    'Лопнуло стекло, заявитель задыхается',
-    'На фоне крик «там человек!»',
-  ],
-  force_state: ['Обстановка резко ухудшилась, нужна эвакуация'],
-  adjust_difficulty: ['Путает корпус и подъезд, потом поправляется'],
-};
+  lead: string;
+  placeholder: string;
+}> = [
+  {
+    type: 'add_circumstance',
+    label: 'Новое обстоятельство',
+    lead: 'Заявитель сразу скажет это вслух и дальше будет держаться этого факта.',
+    placeholder: 'Появился пострадавший, лежит без сознания',
+  },
+  {
+    type: 'adjust_difficulty',
+    label: 'Усложнить',
+    lead: 'Заявитель начнёт путаться и ошибаться так, как вы написали.',
+    placeholder: 'Путает номер дома и называет соседний подъезд',
+  },
+  {
+    type: 'set_emotional_state',
+    label: 'Сменить тон',
+    lead: 'Голос и следующие фразы станут такими. Факты билета не меняются.',
+    placeholder: 'Паника: кричит, торопит, путает слова',
+  },
+];
 
 function formatLineTime(value: string): string {
   const stamp = Date.parse(value);
@@ -42,37 +42,42 @@ function formatLineTime(value: string): string {
 
 export function ObservationPage({
   session,
-  examActions,
   onBack,
   onIntervene,
 }: {
   session: ActiveSession;
-  examActions: Action[];
+  examActions?: unknown;
   onBack: () => void;
   onIntervene: (type: InterventionType, note: string) => Promise<void>;
 }) {
   const [note, setNote] = useState('');
-  const [busy, setBusy] = useState<InterventionType | null>(null);
+  const [mode, setMode] = useState<InterventionType>('add_circumstance');
+  const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const filled = session.requiredActions.filter((item) => item.completed).length;
   const total = session.requiredActions.length;
   const fields = Object.entries(session.incidentCard);
   const live = session.status === 'live';
-  const chips = useMemo(
-    () => examActions.flatMap((action) => (PRESETS[action.type] ?? []).map((text) => ({ type: action.type, text }))),
-    [examActions],
-  );
-  const act = async (action: Action, override?: string) => {
-    const payload = (override ?? note).trim();
-    setBusy(action.type);
+  const selected = MODES.find((item) => item.type === mode) ?? MODES[0];
+  const text = note.trim();
+  const canSend = live && text.length > 0 && !busy;
+
+  const send = async () => {
+    if (!text) {
+      setError('Напишите, что произошло. Без текста указание не уходит.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
     try {
-      await onIntervene(action.type, payload);
-      setSent(`${action.label}: ${payload || action.hint}`);
-      if (!override) {
-        setNote('');
-      }
+      await onIntervene(selected.type, text);
+      setSent(`${selected.label}: ${text}`);
+      setNote('');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось отправить');
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
 
@@ -148,11 +153,11 @@ export function ObservationPage({
           <dl className="td-card-fields">
             {fields.length ? (
               fields.map(([key, value]) => {
-                const text = String(value ?? '').trim();
+                const valueText = String(value ?? '').trim();
                 return (
-                  <div key={key} className={text ? 'is-filled' : 'is-empty'}>
+                  <div key={key} className={valueText ? 'is-filled' : 'is-empty'}>
                     <dt>{key}</dt>
-                    <dd>{text || 'не заполнено'}</dd>
+                    <dd>{valueText || 'не заполнено'}</dd>
                   </div>
                 );
               })
@@ -178,50 +183,46 @@ export function ObservationPage({
         <section className="td-panel td-observe-intervene">
           <div className="td-section-title">
             <div>
-              <h3>Вмешательство преподавателя</h3>
-              <span className="td-help">
-                Указание сразу уходит ученику на АРМ и меняет реплику заявителя в живом звонке
-              </span>
+              <h3>Ход звонка</h3>
+              <span className="td-help">Сначала текст, потом одно действие. Пока не отправите — в звонке ничего не меняется.</span>
             </div>
           </div>
           {sent && (
             <p className="td-observe-sent" role="status">
-              Отправлено: {sent}
+              Ушло в звонок: {sent}
             </p>
           )}
+          {error && <p className="td-observe-error">{error}</p>}
+          <div className="td-cue-modes" role="radiogroup" aria-label="Что сделать">
+            {MODES.map((item) => (
+              <button
+                key={item.type}
+                type="button"
+                role="radio"
+                aria-checked={mode === item.type}
+                className={`td-cue-mode ${mode === item.type ? 'is-selected' : ''}`}
+                onClick={() => setMode(item.type)}
+              >
+                <strong>{item.label}</strong>
+                <span>{item.lead}</span>
+              </button>
+            ))}
+          </div>
           <label className="td-field">
-            Свой текст ситуации
+            Что произошло
             <textarea
               value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="Если пусто — система подставит случайную ситуацию из списка ниже"
+              onChange={(event) => {
+                setNote(event.target.value);
+                setError(null);
+              }}
+              placeholder={selected.placeholder}
+              rows={3}
             />
           </label>
-          <div className="td-observe-chips" aria-label="Готовые ситуации">
-            {chips.map((chip) => (
-              <button
-                key={`${chip.type}-${chip.text}`}
-                type="button"
-                className="td-chip"
-                onClick={() => setNote(chip.text)}
-              >
-                {chip.text}
-              </button>
-            ))}
-          </div>
-          <div className="td-action-grid">
-            {examActions.map((action) => (
-              <button
-                disabled={busy !== null}
-                key={action.type}
-                className={`td-action-btn td-action-btn--${action.type}`}
-                onClick={() => void act(action)}
-              >
-                <strong>{busy === action.type ? 'Отправка…' : action.label}</strong>
-                <span>{note.trim() ? 'отправить с текстом выше' : action.hint}</span>
-              </button>
-            ))}
-          </div>
+          <button type="button" className="td-btn td-btn--primary td-cue-send" disabled={!canSend} onClick={() => void send()}>
+            {busy ? 'Отправка…' : live ? 'Отправить в звонок' : 'Нет живого звонка'}
+          </button>
         </section>
       </div>
     </div>

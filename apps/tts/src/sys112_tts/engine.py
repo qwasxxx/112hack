@@ -5,7 +5,9 @@ from sys112_tts.engine_silero import EMOTIONS, build_silero_ssml, build_ssml
 
 _backend = (TTS_BACKEND or "silero").strip().lower()
 
-if _backend in {"qwen3", "qwen", "qwen-tts"}:
+if _backend in {"fish", "fish-audio", "fishaudio", "s2-pro", "s2.1-pro"}:
+    from sys112_tts.engine_fish import FishTTSEngine as _Engine
+elif _backend in {"qwen3", "qwen", "qwen-tts"}:
     from sys112_tts.engine_qwen import Qwen3TTSEngine as _Engine
 else:
     from sys112_tts.engine_silero import SileroTTSEngine as _Engine

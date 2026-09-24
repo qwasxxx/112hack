@@ -91,3 +91,55 @@ def test_health_payload_keys():
         assert body["local"] is True
         assert "stt" in body
         assert body["status"] in ("ok", "degraded")
+
+
+def _tone(seconds: float, amplitude: int = 9000, rate: int = 8000) -> bytes:
+    import math
+
+    count = int(rate * seconds)
+    out = bytearray()
+    for index in range(count):
+        value = int(amplitude * math.sin(2 * math.pi * 220 * index / rate))
+        out += int(max(-32767, min(32767, value))).to_bytes(2, "little", signed=True)
+    return bytes(out)
+
+
+def test_hf_finalizes_phrase_once():
+    import asyncio
+
+    from sys112_stt.engine_hf import HuggingFaceSttSession
+
+    calls = {"n": 0}
+
+    async def fake(wav: bytes) -> str:
+        assert wav.startswith(b"RIFF")
+        calls["n"] += 1
+        return "у меня пожар"
+
+    async def run():
+        session = HuggingFaceSttSession(transcribe=fake, sample_rate=8000)
+        events = []
+        events.extend(await session.accept_pcm(_tone(0.8)))
+        events.extend(await session.accept_pcm(b"\x00\x00" * int(8000 * 0.7)))
+        return events
+
+    events = asyncio.run(run())
+    assert calls["n"] == 1
+    assert any(item["type"] == "final" and item["text"] == "у меня пожар" for item in events)
+
+
+def test_hf_ignores_short_noise():
+    import asyncio
+
+    from sys112_stt.engine_hf import HuggingFaceSttSession
+
+    async def fake(_wav: bytes) -> str:
+        raise AssertionError("short noise must not call the API")
+
+    async def run():
+        session = HuggingFaceSttSession(transcribe=fake, sample_rate=8000)
+        events = await session.accept_pcm(_tone(0.2, amplitude=9000))
+        events.extend(await session.accept_pcm(b"\x00\x00" * int(8000 * 0.7)))
+        return events
+
+    assert asyncio.run(run()) == []

@@ -39,7 +39,7 @@ export function StudentApp(props: Props) {
   const [track, setTrack] = useState<LearnerTrack>(() => readLearnerTrack());
   const liveStarted = useRef<string | null>(null);
   const liveKey = useRef('');
-  const bar = <AccountBar user={props.operator} onLogout={props.onLogout} />;
+  const bar = <AccountBar user={props.operator} />;
 
   useEffect(() => {
     return () => {
@@ -117,6 +117,9 @@ export function StudentApp(props: Props) {
         scenario={screen.scenario}
         track={track}
         accountBar={bar}
+        onLogout={props.onLogout}
+        onTrack={changeTrack}
+        onTheory={() => setScreen({ name: 'theory' })}
         onBack={() => setScreen({ name: 'catalog' })}
         onSessions={() => setScreen({ name: 'sessions' })}
         onHandbook={() => setScreen({ name: 'handbook' })}
@@ -184,6 +187,10 @@ export function StudentApp(props: Props) {
         operatorLogin={props.operator.login}
         operatorName={props.operator.name}
         accountBar={bar}
+        track={track}
+        onLogout={props.onLogout}
+        onTrack={changeTrack}
+        onTheory={() => setScreen({ name: 'theory' })}
         onCatalog={() => setScreen({ name: 'catalog' })}
         onSessions={() => setScreen({ name: 'sessions' })}
         onHandbook={() => setScreen({ name: 'handbook' })}
@@ -199,6 +206,10 @@ export function StudentApp(props: Props) {
         operatorLogin={props.operator.login}
         operatorName={props.operator.name}
         accountBar={bar}
+        track={track}
+        onLogout={props.onLogout}
+        onTrack={changeTrack}
+        onTheory={() => setScreen({ name: 'theory' })}
         onCatalog={() => setScreen({ name: 'catalog' })}
         onSessions={() => setScreen({ name: 'sessions' })}
         onHandbook={() => setScreen({ name: 'handbook' })}
@@ -223,6 +234,7 @@ export function StudentApp(props: Props) {
       onSessions={() => setScreen({ name: 'sessions' })}
       onHandbook={() => setScreen({ name: 'handbook' })}
       onCatalog={() => setScreen({ name: 'catalog' })}
+      onLogout={props.onLogout}
     />
   );
 }

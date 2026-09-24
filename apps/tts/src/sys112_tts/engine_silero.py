@@ -37,6 +37,8 @@ EMOTIONS = {
     "panic_crying": {"rate": "1.08", "pitch": "medium", "volume": "medium"},
     "victim_panic": {"rate": "1.12", "pitch": "medium", "volume": "medium"},
     "victim_scared": {"rate": "1.08", "pitch": "medium", "volume": "medium"},
+    "angry": {"rate": "1.14", "pitch": "low", "volume": "loud"},
+    "crying": {"rate": "0.94", "pitch": "high", "volume": "medium"},
 }
 
 

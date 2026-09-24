@@ -6,18 +6,20 @@ const tones = { ok: '#3dcc8a', warn: '#e0b341', bad: '#e35d6a' } as const;
 
 const EXAM_ACTIONS: Array<{ type: InterventionType; label: string; hint: string }> = [
   {
-    type: 'set_emotional_state',
-    label: 'Негативные эмоции',
-    hint: 'Паника, злость, растерянность',
-  },
-  {
     type: 'add_circumstance',
     label: 'Новое обстоятельство',
-    hint: 'Дым усилился, появился пострадавший',
+    hint: 'Заявитель сразу говорит ваш текст',
   },
-  { type: 'inject_event', label: 'Внезапное событие', hint: 'Слышен удар, связь прерывается' },
-  { type: 'force_state', label: 'Смена фазы сценария', hint: 'Обстановка на месте резко меняется' },
-  { type: 'adjust_difficulty', label: 'Усложнить диалог', hint: 'Заявитель путает адрес и факты' },
+  {
+    type: 'adjust_difficulty',
+    label: 'Усложнить',
+    hint: 'Заявитель путается так, как вы написали',
+  },
+  {
+    type: 'set_emotional_state',
+    label: 'Сменить тон',
+    hint: 'Голос и речь меняются по вашему тексту',
+  },
 ];
 
 function Dot(props: { tone: keyof typeof tones; label: string }) {
@@ -89,26 +91,10 @@ export function App() {
       }
       examPanel={
         <section className="exam td-legacy-exam">
-          <h2>Экзамен</h2>
+          <h2>Живой звонок</h2>
           <p className="muted">
-            На экзамене и в живом наблюдении команды сразу меняют тон заявителя: эмоции, новое
-            обстоятельство, внезапное событие, смена фазы. Заявитель отвечает короткой репликой, факты
-            билета остаются.
+            Откройте занятие ученика, напишите что произошло и отправьте. Пока текст не отправлен, заявитель ничего нового не говорит.
           </p>
-          <div className="exam-actions">
-            {EXAM_ACTIONS.map((action) => (
-              <button
-                key={action.type}
-                type="button"
-                className="exam-btn"
-                disabled
-                title={action.hint}
-              >
-                <strong>{action.label}</strong>
-                <span>{action.hint}</span>
-              </button>
-            ))}
-          </div>
         </section>
       }
     />

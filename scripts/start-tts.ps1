@@ -25,6 +25,8 @@ if ($env:TTS_BACKEND -match "qwen") {
   Write-Host "[TTS] Installing qwen-tts for CPU..."
   & $Py -m pip install -q -r (Join-Path $Tts "requirements-qwen.txt")
   Write-Host "[TTS] Qwen3-TTS $($env:TTS_QWEN_MODEL) on $($env:TTS_DEVICE)"
+} elseif ($env:TTS_BACKEND -match "fish") {
+  Write-Host "[TTS] Fish Audio s2.1-pro latency=balanced"
 } else {
   Write-Host "[TTS] Ensuring Silero v5_5_ru model..."
   & $Py (Join-Path $Tts "scripts\download_silero.py")

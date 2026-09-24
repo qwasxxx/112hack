@@ -25,6 +25,9 @@ type Props = {
   onHandbook?: () => void;
   onStart: (section: LessonSection) => void;
   onStartDds: () => void;
+  onTrack: (track: LearnerTrack) => void;
+  onTheory: () => void;
+  onLogout: () => void;
 };
 
 type LessonIcon = LessonSection | 'dds';
@@ -67,6 +70,10 @@ export function BriefingPage(props: Props) {
   return (
     <StudentShell
       accountBar={props.accountBar}
+      track={props.track}
+      onTrack={props.onTrack}
+      onTheory={props.onTheory}
+      onLogout={props.onLogout}
       onCatalog={props.onBack}
       onSessions={props.onSessions}
       onHandbook={props.onHandbook}

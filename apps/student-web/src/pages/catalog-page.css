@@ -151,6 +151,11 @@
   color: #fff;
 }
 
+.catalog-nav-logout {
+  margin-top: 10px;
+  color: #8fa0b3;
+}
+
 .catalog-nav-item.is-active {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;

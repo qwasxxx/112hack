@@ -415,6 +415,19 @@ function extractPhone(text: string): string | undefined {
   return match?.[0].replace(/[^\d]/g, '') || undefined;
 }
 
+function nameCoach(caller: string | undefined): string {
+  if (caller?.startsWith('мама')) {
+    return 'Если спросили как зовут — только короткая фраза «Я мама». Не объясняй, что имени нет и что его не можешь назвать.';
+  }
+  if (caller?.startsWith('отец') || caller?.startsWith('супруг')) {
+    return 'Если спросили как зовут — коротко «Я отец» или «Я муж». Не объясняй, что имени нет.';
+  }
+  if (caller && /[А-ЯЁ][а-яё]+/.test(caller)) {
+    return `Если спросили кто вы или как зовут — только «Я ${caller}».`;
+  }
+  return 'Если спросили как зовут и имени в билете нет — коротко «Не знаю». Не объясняй, почему имени нет.';
+}
+
 function extractCallerHint(situation: string): string | undefined {
   if (/вызывает мама|звонит мама/i.test(situation)) {
     return 'мама. Имени заявителя в билете нет — не выдумывай Свету, Марию и любые другие имена. Если спросили как зовут: «я мама»';
@@ -570,6 +583,13 @@ function genderFromFio(full: string): CallerTtsVoice['gender'] | undefined {
 }
 
 function inferCallerGender(situation: string, ticket: number, n: number): CallerTtsVoice['gender'] {
+  const hint = extractCallerHint(situation) ?? '';
+  if (/^(мама|подруга|соседка|бабушка|дочь)/i.test(hint)) {
+    return 'female';
+  }
+  if (/^(отец|супруг)/i.test(hint)) {
+    return 'male';
+  }
   if (/вызывает мама|звонит мама|подруга|соседка|бабушка|, дочь|дочь,|звонит сама/i.test(situation)) {
     return 'female';
   }
@@ -752,7 +772,7 @@ export function buildLessonSystemPrompt(scenario: TrainingScenario, section: Les
   return [
     facts,
     `Уже сказано: «${scenario.callerOpening}». Не повторяй эту фразу.`,
-    'Имена — только из строк выше. Нет имени заявителя: не выдумывай Свету и любые ФИО. Как вас зовут → «я мама» / «не знаю, как записать». Как давно: если времени нет — «Только что». Если оператор не спрашивает факт, а говорит что услышал или направит помощь — «хорошо» или «жду». Не говори «не вижу» и «не слышу». Не коверкай слова. Слова полностью, без сокращений.',
+    `Имена — только из строк выше. ${nameCoach(caller)} Как давно: если времени нет — «Только что». Если оператор не спрашивает факт, а говорит что услышал или направит помощь — «хорошо» или «жду». Не говори «не вижу», «не слышу», «не за что» и «я слушаю». Не коверкай слова. Слова полностью, без сокращений.`,
   ]
     .filter(Boolean)
     .join('\n');

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -30,7 +31,9 @@ from sys112_llm.conversation import (
     apply_teacher_intervention,
     call_score_messages,
     generation_messages,
+    TEACHER_NUDGE_TEXT,
     last_user_text,
+    breaks_character,
     repair_victim_reply,
     session_scenario_extra,
     should_speak_intervention,
@@ -197,9 +200,10 @@ async def score_call(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         raw = await client.complete_chat(
             messages,
-            max_tokens=min(LLM_ANALYSIS_MAX_TOKENS, 180),
+            max_tokens=max(LLM_ANALYSIS_MAX_TOKENS, 1600),
             temperature=0.2,
-            think=False,
+            think=True,
+            timeout_sec=50,
         )
     except Exception:
         logger.exception("[LLM] Call score failed")
@@ -210,6 +214,7 @@ async def score_call(payload: dict[str, Any]) -> dict[str, Any]:
             "source": "rules",
         }
     parsed = parse_score_json(raw)
+    parsed["source"] = f"{LLM_PROVIDER}:{LLM_MODEL_NAME}:think"
     return parsed
 
 
@@ -464,7 +469,9 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
                 return
             continue
         if full:
-            if session.conversation_role == "victim":
+            if breaks_character(full) and session.conversation_role != "victim":
+                full = "Назовите адрес, где это происходит."
+            elif session.conversation_role == "victim":
                 full = repair_victim_reply(
                     full,
                     last_user_text(session),
@@ -523,8 +530,23 @@ async def _generate(
             continue
         visible += chunk
         spoken = sanitize_speech(visible)
-        if not spoken or spoken == last_sent:
+        if not spoken or spoken == last_sent or breaks_character(spoken):
             continue
+        if len(spoken) < 48 and not re.search(r"[.!?…]$", spoken):
+            continue
+        if live is not None and partial_type == "assistant_partial" and live.conversation_role == "victim":
+            operator_line = last_user_text(live)
+            holds_mama = bool(re.search(r"\bя\s+мам", spoken, re.IGNORECASE))
+            holds_nudge = operator_line.strip() == TEACHER_NUDGE_TEXT
+            if holds_mama or holds_nudge:
+                fixed = repair_victim_reply(
+                    spoken,
+                    operator_line,
+                    "victim",
+                    session_scenario_extra(live),
+                )
+                if fixed != spoken:
+                    continue
         if live is not None and partial_type == "assistant_partial":
             live.emitted = True
         await ws.send_json({"type": partial_type, "text": spoken, "gen": gen_id})

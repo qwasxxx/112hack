@@ -114,17 +114,18 @@ class LlamaClient:
         stream: bool,
         max_tokens: int,
     ) -> dict:
-        provider_max_tokens = max(max_tokens, 512) if LLM_PROVIDER == "huggingface" else max_tokens
         payload = {
             "model": LLM_MODEL_NAME,
             "messages": messages,
             "stream": stream,
             "temperature": LLM_TEMPERATURE,
             "top_p": LLM_TOP_P,
-            "max_tokens": provider_max_tokens,
+            "max_tokens": max_tokens,
             "stop": ["\n\n", "Оператор:", "Заявитель:"],
         }
-        if LLM_PROVIDER != "huggingface":
+        if LLM_PROVIDER == "huggingface":
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
+        else:
             payload.update(
                 {
                     "top_k": LLM_TOP_K,
@@ -154,6 +155,8 @@ class LlamaClient:
             await self._prefetch_unlocked(messages)
 
     async def _prefetch_unlocked(self, messages: list[dict[str, str]]) -> None:
+        if LLM_PROVIDER == "huggingface":
+            return
         response = None
         for tokens in (0, 1):
             payload = self._chat_payload(messages, stream=False, max_tokens=tokens)
@@ -228,7 +231,8 @@ class LlamaClient:
                         round(float(timings.get("predicted_ms") or 0)),
                         timings.get("predicted_n"),
                     )
-                delta = chunk.get("choices", [{}])[0].get("delta", {})
+                choice = (chunk.get("choices") or [{}])[0]
+                delta = choice.get("delta") or {}
                 piece = delta.get("content") or ""
                 if piece:
                     yield piece
@@ -265,8 +269,9 @@ class LlamaClient:
         payload["stop"] = []
         if think:
             payload["chat_template_kwargs"] = {"enable_thinking": True}
-            payload["enable_thinking"] = True
-            payload["reasoning_effort"] = "medium"
+            if LLM_PROVIDER != "huggingface":
+                payload["enable_thinking"] = True
+                payload["reasoning_effort"] = "medium"
         extra: dict[str, float] = {}
         if timeout_sec is not None:
             extra["timeout"] = timeout_sec
@@ -280,5 +285,8 @@ class LlamaClient:
         )
         response.raise_for_status()
         data = response.json()
-        content = str((data.get("choices") or [{}])[0].get("message", {}).get("content") or "")
+        message = (data.get("choices") or [{}])[0].get("message") or {}
+        content = str(message.get("content") or "")
+        if not content.strip():
+            content = str(message.get("reasoning_content") or "")
         return strip_reasoning(content)

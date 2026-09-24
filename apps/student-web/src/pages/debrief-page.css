@@ -415,6 +415,18 @@
   color: var(--catalog-muted);
 }
 
+.debrief-toolbar {
+  padding: 0;
+}
+
+.debrief-toolbar .debrief-actions {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+}
+
 .debrief-actions {
   display: flex;
   flex-wrap: wrap;

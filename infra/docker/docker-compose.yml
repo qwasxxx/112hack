@@ -178,8 +178,14 @@ services:
       TTS_PORT: "8092"
       TTS_LANGUAGE: ru
       TTS_THREADS: "4"
-      TTS_BACKEND: silero
+      TTS_BACKEND: ${TTS_BACKEND:-silero}
       TTS_DEVICE: cpu
+      FISH_API_KEY: ${FISH_API_KEY:-}
+      FISH_MODEL: ${FISH_MODEL:-s2.1-pro}
+      FISH_LATENCY: ${FISH_LATENCY:-balanced}
+      FISH_REFERENCE_ID: ${FISH_REFERENCE_ID:-}
+      FISH_REFERENCE_AUDIO: ${FISH_REFERENCE_AUDIO:-}
+      FISH_REFERENCE_TEXT: ${FISH_REFERENCE_TEXT:-}
     volumes:
       - tts-cache:/root/.cache
     ports:

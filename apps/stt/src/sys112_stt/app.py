@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -11,8 +12,9 @@ from typing import Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from sys112_stt.config import STT_MODE, STT_MODEL_DIR
+from sys112_stt.config import HF_STT_MODES, STT_HF_MODEL, STT_MODE, STT_MODEL_DIR
 from sys112_stt.engine import create_session, load_recognizer, model_files_present
+from sys112_stt.engine_hf import access_message
 
 logger = logging.getLogger("sys112_stt")
 
@@ -40,13 +42,14 @@ app.add_middleware(
 @app.get("/health")
 def health() -> dict[str, Any]:
     ready = stt_status == "ready"
+    remote = STT_MODE in HF_STT_MODES
     return {
         "status": "ok" if ready else "degraded",
         "stt": "ready" if ready else stt_status,
-        "model": "t-one",
-        "local": True,
+        "model": STT_HF_MODEL if remote else "t-one",
+        "local": not remote,
         "mode": STT_MODE,
-        "model_present": model_files_present(STT_MODEL_DIR),
+        "model_present": True if remote else model_files_present(STT_MODEL_DIR),
     }
 
 
@@ -60,6 +63,9 @@ async def control_stop() -> dict[str, bool]:
 async def stt_socket(ws: WebSocket) -> None:
     await ws.accept()
     session = create_session(recognizer, stt_status)
+    if getattr(session, "remote", False):
+        await _remote_stt(ws, session)
+        return
     session_id = str(uuid.uuid4())
     started = False
     try:
@@ -71,6 +77,15 @@ async def stt_socket(ws: WebSocket) -> None:
                 payload = json.loads(message["text"])
                 kind = payload.get("type")
                 if kind == "start":
+                    if STT_MODE in HF_STT_MODES and stt_status != "ready":
+                        await ws.send_json(
+                            {
+                                "type": "error",
+                                "message": access_message(401),
+                                "code": "model_not_ready",
+                            }
+                        )
+                        continue
                     if session.mock and STT_MODE != "mock":
                         await ws.send_json(
                             {
@@ -86,20 +101,74 @@ async def stt_socket(ws: WebSocket) -> None:
                     )
                     continue
                 if kind == "stop":
-                    for event in session.finish():
+                    for event in await _as_events(session.finish()):
                         await ws.send_json(event)
                     break
                 continue
             data = message.get("bytes")
             if not started or not data:
                 continue
-            for event in session.accept_pcm(data):
+            for event in await _as_events(session.accept_pcm(data)):
                 await ws.send_json(event)
     except WebSocketDisconnect:
-        session.finish()
+        await _as_events(session.finish())
     except Exception:
         logger.exception("stt session failed")
         try:
-            await ws.send_json({"type": "error", "message": "Ошибка распознавания."})
+            await ws.send_json({"type": "error", "message": "Не расслышал. Повторите фразу."})
         except Exception:
             pass
+
+
+async def _remote_stt(ws: WebSocket, session: Any) -> None:
+    session_id = str(uuid.uuid4())
+    started = False
+
+    async def write() -> None:
+        try:
+            while True:
+                event = await session.queue.get()
+                if event is None:
+                    return
+                await ws.send_json(event)
+        except Exception:
+            return
+
+    writer = asyncio.create_task(write())
+    try:
+        while True:
+            message = await ws.receive()
+            if message.get("type") == "websocket.disconnect":
+                break
+            if message.get("text") is not None:
+                payload = json.loads(message["text"])
+                kind = payload.get("type")
+                if kind == "start":
+                    if stt_status != "ready":
+                        await ws.send_json(
+                            {"type": "error", "message": access_message(401), "code": "model_not_ready"}
+                        )
+                        continue
+                    started = True
+                    await ws.send_json(
+                        {"type": "ready", "session_id": session_id, "stt": stt_status, "sample_rate": 8000}
+                    )
+                    continue
+                if kind == "stop":
+                    break
+                continue
+            data = message.get("bytes")
+            if started and data:
+                session.feed(data)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await session.finish()
+        await session.queue.put(None)
+        await writer
+
+
+async def _as_events(value: Any) -> list[dict[str, Any]]:
+    if inspect.isawaitable(value):
+        value = await value
+    return list(value or [])

@@ -25,6 +25,7 @@ import {
 } from '../../../teacher-web/src/teacher-dashboard/infrastructure/local-recording';
 import { useTeacherReviews } from '../progress/use-teacher-review';
 import { blobToBase64, blobToWav } from '../lib/capture-audio';
+import type { LearnerTrack } from '../learner-track';
 import { StudentShell } from '../student-shell/student-shell';
 import './sessions-page.css';
 import './debrief-page.css';
@@ -68,6 +69,10 @@ type Props = {
   operatorLogin: string;
   operatorName: string;
   accountBar: ReactNode;
+  track: LearnerTrack;
+  onLogout: () => void;
+  onTrack: (track: LearnerTrack) => void;
+  onTheory: () => void;
   onCatalog: () => void;
   onSessions: () => void;
   onHandbook?: () => void;
@@ -256,13 +261,20 @@ export function DebriefPage(props: Props) {
   return (
     <StudentShell
       accountBar={props.accountBar}
+      track={props.track}
+      onTrack={props.onTrack}
+      onTheory={props.onTheory}
+      onLogout={props.onLogout}
       onCatalog={props.onCatalog}
       onSessions={props.onSessions}
       onHandbook={props.onHandbook}
     >
       <div className={`debrief-body${revealed ? ' is-revealed' : ' is-judging'}`}>
         {!revealed ? (
-          <JudgeScreen operatorName={props.operatorName} step={step} reduced={reduced} />
+          <>
+            <LessonExitBar onSessions={props.onSessions} onBriefing={props.onBriefing} onCatalog={props.onCatalog} />
+            <JudgeScreen operatorName={props.operatorName} step={step} reduced={reduced} />
+          </>
         ) : (
           <ResultScreen
             record={record}
@@ -456,6 +468,24 @@ function ResultScreen(props: {
   );
 }
 
+function LessonExitBar(props: { onSessions: () => void; onBriefing: () => void; onCatalog: () => void }) {
+  return (
+    <div className="debrief-toolbar">
+      <div className="debrief-actions">
+        <button type="button" className="debrief-primary" onClick={props.onSessions}>
+          Мои сессии
+        </button>
+        <button type="button" onClick={props.onBriefing}>
+          К уроку
+        </button>
+        <button type="button" onClick={props.onCatalog}>
+          К списку
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ScoreRow(props: { label: string; value: number; max: number; hint: string; delay: number; play: boolean }) {
   const shown = useCountUp(props.value, props.play, 900, props.delay);
   const pct = props.max <= 0 ? 0 : Math.max(0, Math.min(100, (props.value / props.max) * 100));
@@ -554,6 +584,10 @@ type DdsDebriefProps = {
   operatorLogin: string;
   operatorName: string;
   accountBar: ReactNode;
+  track: LearnerTrack;
+  onLogout: () => void;
+  onTrack: (track: LearnerTrack) => void;
+  onTheory: () => void;
   onCatalog: () => void;
   onSessions: () => void;
   onHandbook?: () => void;
@@ -662,21 +696,28 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
   return (
     <StudentShell
       accountBar={props.accountBar}
+      track={props.track}
+      onTrack={props.onTrack}
+      onTheory={props.onTheory}
+      onLogout={props.onLogout}
       onCatalog={props.onCatalog}
       onSessions={props.onSessions}
       onHandbook={props.onHandbook}
     >
       <div className={`debrief-body${revealed ? ' is-revealed' : ' is-judging'}`}>
         {!revealed ? (
-          <JudgeScreen
-            operatorName={props.operatorName}
-            step={step}
-            reduced={reduced}
-            mark="ДДС"
-            title="Проверяю обработку смены"
-            lead="Карточки сверяются с эталоном: приём, наряд, статусы, пострадавшие, телефон и закрытие в 112."
-            steps={DDS_JUDGE_STEPS}
-          />
+          <>
+            <LessonExitBar onSessions={props.onSessions} onBriefing={props.onBriefing} onCatalog={props.onCatalog} />
+            <JudgeScreen
+              operatorName={props.operatorName}
+              step={step}
+              reduced={reduced}
+              mark="ДДС"
+              title="Проверяю обработку смены"
+              lead="Карточки сверяются с эталоном: приём, наряд, статусы, пострадавшие, телефон и закрытие в 112."
+              steps={DDS_JUDGE_STEPS}
+            />
+          </>
         ) : (
           <>
             <header className="debrief-head">

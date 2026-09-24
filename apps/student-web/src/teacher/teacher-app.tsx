@@ -5,22 +5,24 @@ import '../../../teacher-web/src/app.css';
 import type { Session } from '../auth/accounts';
 import { AccountBar } from '../auth/account-bar';
 import { LocalTeacherDashboardRepository } from './local-teacher-repository';
-import { readClassSession, readLiveSessions, startClass, stopClass, hydrateFromApi } from '../progress';
+import { readClassSession, startClass, stopClass, hydrateFromApi } from '../progress';
 
 const EXAM_ACTIONS: Array<{ type: InterventionType; label: string; hint: string }> = [
   {
-    type: 'set_emotional_state',
-    label: 'Негативные эмоции',
-    hint: 'Паника, злость, растерянность',
-  },
-  {
     type: 'add_circumstance',
     label: 'Новое обстоятельство',
-    hint: 'Дым усилился, появился пострадавший',
+    hint: 'Заявитель сразу говорит ваш текст',
   },
-  { type: 'inject_event', label: 'Внезапное событие', hint: 'Слышен удар, связь прерывается' },
-  { type: 'force_state', label: 'Смена фазы сценария', hint: 'Обстановка на месте резко меняется' },
-  { type: 'adjust_difficulty', label: 'Усложнить диалог', hint: 'Заявитель путает адрес и факты' },
+  {
+    type: 'adjust_difficulty',
+    label: 'Усложнить',
+    hint: 'Заявитель путается так, как вы написали',
+  },
+  {
+    type: 'set_emotional_state',
+    label: 'Сменить тон',
+    hint: 'Голос и речь меняются по вашему тексту',
+  },
 ];
 
 type Props = {
@@ -86,17 +88,6 @@ export function TeacherApp(props: Props) {
     setClassActive(readClassSession().active);
   }
 
-  async function applyExamCue(type: InterventionType, hint: string) {
-    const live = readLiveSessions();
-    if (!live.length) {
-      window.alert('Нет активных занятий. Пусть ученик откроет билет в другой вкладке.');
-      return;
-    }
-    await Promise.all(
-      live.map((item) => repository.applyIntervention({ callId: `live-${item.login}`, type, note: hint })),
-    );
-  }
-
   return (
     <TeacherDashboard
       apiStatus={apiStatus}
@@ -121,24 +112,10 @@ export function TeacherApp(props: Props) {
       }
       examPanel={
         <section className="exam td-legacy-exam">
-          <h2>Экзамен</h2>
+          <h2>Живой звонок</h2>
           <p className="muted">
-            Команда сразу уходит ученику на АРМ и в реплику заявителя, если идёт живой звонок.
+            Откройте занятие ученика, напишите что произошло и отправьте. Пока текст не отправлен, заявитель ничего нового не говорит.
           </p>
-          <div className="exam-actions">
-            {EXAM_ACTIONS.map((action) => (
-              <button
-                key={action.type}
-                type="button"
-                className="exam-btn"
-                title={action.hint}
-                onClick={() => void applyExamCue(action.type, action.hint)}
-              >
-                <strong>{action.label}</strong>
-                <span>{action.hint}</span>
-              </button>
-            ))}
-          </div>
         </section>
       }
     />

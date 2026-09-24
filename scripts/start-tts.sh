@@ -20,6 +20,8 @@ export TTS_QWEN_MODEL="${TTS_QWEN_MODEL:-Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice}"
 
 if echo "$TTS_BACKEND" | grep -qi qwen; then
   "$VENV/bin/python" -m pip install -q -r "$TTS/requirements-qwen.txt"
+elif echo "$TTS_BACKEND" | grep -qi fish; then
+  echo "[TTS] Fish Audio s2.1-pro latency=balanced"
 else
   "$VENV/bin/python" "$TTS/scripts/download_silero.py"
 fi
