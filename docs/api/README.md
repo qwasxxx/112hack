@@ -1,5 +1,3 @@
-REST: `/api/v1/*`
+# API
 
-Realtime: Socket.IO namespace `/realtime`, event name `event` / command name `command`.
-
-Contracts: `@sys112/shared-types`.
+Актуальное описание HTTP и WebSocket интерфейсов находится в [../api.md](../api.md). Этот файл оставлен как совместимая точка входа для прежних ссылок.

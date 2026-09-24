@@ -8,6 +8,23 @@ def _env(name: str, default: str) -> str:
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _load_repo_env() -> None:
+    path = REPO_ROOT / ".env"
+    if not path.exists():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        key = name.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value.strip().strip('"').strip("'")
+
+
+_load_repo_env()
 _DEFAULT_MODEL = REPO_ROOT / "models" / "llm" / "Qwen3-4B-Q4_K_M.gguf"
 
 LLM_MODE = _env("LLM_MODE", "local")
@@ -34,26 +51,7 @@ LLM_ANALYSIS_MAX_TOKENS = int(_env("LLM_ANALYSIS_MAX_TOKENS", "180"))
 OPENAI_API_KEY = _env("OPENAI_API_KEY", "")
 OPENAI_SCORE_MODEL = _env("OPENAI_SCORE_MODEL", "o3-mini")
 OPENAI_BASE_URL = _env("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-
-
-def _load_repo_env() -> None:
-    path = REPO_ROOT / ".env"
-    if not path.exists():
-        return
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        name, value = line.split("=", 1)
-        key = name.strip()
-        if key and key not in os.environ:
-            os.environ[key] = value.strip().strip('"').strip("'")
-
-
-_load_repo_env()
-OPENAI_API_KEY = _env("OPENAI_API_KEY", OPENAI_API_KEY)
-OPENAI_SCORE_MODEL = _env("OPENAI_SCORE_MODEL", OPENAI_SCORE_MODEL)
-OPENAI_BASE_URL = _env("OPENAI_BASE_URL", OPENAI_BASE_URL).rstrip("/")
+HF_TOKEN = _env("HF_TOKEN", "")
 
 
 def _default_threads() -> str:

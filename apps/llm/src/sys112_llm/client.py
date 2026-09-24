@@ -9,10 +9,12 @@ from collections.abc import AsyncIterator, Callable
 import httpx
 
 from sys112_llm.config import (
+    HF_TOKEN,
     LLM_BASE_URL,
     LLM_MAX_TOKENS,
     LLM_MIN_P,
     LLM_MODEL_NAME,
+    LLM_PROVIDER,
     LLM_REPEAT_PENALTY,
     LLM_TEMPERATURE,
     LLM_TIMEOUT_SEC,
@@ -94,6 +96,14 @@ class LlamaClient:
             trust_env=False,
         )
 
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if LLM_PROVIDER == "huggingface":
+            if not HF_TOKEN:
+                raise RuntimeError("HF_TOKEN is required for the Hugging Face provider")
+            headers["Authorization"] = f"Bearer {HF_TOKEN}"
+        return headers
+
     async def aclose(self) -> None:
         await self._http.aclose()
 
@@ -104,26 +114,37 @@ class LlamaClient:
         stream: bool,
         max_tokens: int,
     ) -> dict:
-        return {
+        provider_max_tokens = max(max_tokens, 512) if LLM_PROVIDER == "huggingface" else max_tokens
+        payload = {
             "model": LLM_MODEL_NAME,
             "messages": messages,
             "stream": stream,
             "temperature": LLM_TEMPERATURE,
             "top_p": LLM_TOP_P,
-            "top_k": LLM_TOP_K,
-            "min_p": LLM_MIN_P,
-            "max_tokens": max_tokens,
-            "repeat_penalty": LLM_REPEAT_PENALTY,
-            "cache_prompt": True,
+            "max_tokens": provider_max_tokens,
             "stop": ["\n\n", "Оператор:", "Заявитель:"],
-            "chat_template_kwargs": {"enable_thinking": False},
-            "enable_thinking": False,
-            "reasoning_effort": "low",
         }
+        if LLM_PROVIDER != "huggingface":
+            payload.update(
+                {
+                    "top_k": LLM_TOP_K,
+                    "min_p": LLM_MIN_P,
+                    "repeat_penalty": LLM_REPEAT_PENALTY,
+                    "cache_prompt": True,
+                    "chat_template_kwargs": {"enable_thinking": False},
+                    "enable_thinking": False,
+                    "reasoning_effort": "low",
+                }
+            )
+        return payload
 
     async def ready(self) -> bool:
+        if LLM_PROVIDER == "huggingface":
+            return bool(HF_TOKEN)
         try:
-            response = await self._http.get(f"{self.base_url}/v1/models", timeout=3.0)
+            response = await self._http.get(
+                f"{self.base_url}/v1/models", headers=self._headers(), timeout=5.0
+            )
             return response.status_code == 200
         except Exception:
             return False
@@ -139,7 +160,7 @@ class LlamaClient:
             response = await self._http.post(
                 f"{self.base_url}/v1/chat/completions",
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers=self._headers(),
             )
             if response.status_code != 400:
                 break
@@ -180,7 +201,7 @@ class LlamaClient:
             "POST",
             f"{self.base_url}/v1/chat/completions",
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers=self._headers(),
         ) as response:
             response.raise_for_status()
             async for line in response.aiter_lines():
@@ -254,7 +275,7 @@ class LlamaClient:
         response = await self._http.post(
             f"{self.base_url}/v1/chat/completions",
             json=payload,
-            headers={"Content-Type": "application/json"},
+            headers=self._headers(),
             **extra,
         )
         response.raise_for_status()

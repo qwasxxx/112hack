@@ -77,7 +77,7 @@ async def lifespan(_app: FastAPI):
                     break
                 await asyncio.sleep(2)
             if external:
-                raise RuntimeError(f"llama.cpp not ready at {LLM_BASE_URL}")
+                raise RuntimeError(f"external LLM provider not ready at {LLM_BASE_URL}")
             from sys112_llm.runtime import start_llama_process
 
             llama_process = await asyncio.to_thread(start_llama_process)
@@ -120,8 +120,8 @@ def health_payload() -> dict[str, Any]:
         "model": LLM_MODEL_NAME,
         "runtime": LLM_RUNTIME,
         "mode": LLM_MODE,
-        "local": True,
-        "model_present": model_present(),
+        "local": LLM_PROVIDER == "local",
+        "model_present": model_present() if LLM_PROVIDER == "local" else None,
     }
 
 
