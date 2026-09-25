@@ -46,14 +46,14 @@ pnpm dev:student
 | `DATABASE_URL` | PostgreSQL | `postgres://sys112:sys112@127.0.0.1:5435/sys112` |
 | `CORS_ORIGINS` | разрешённые origins API | localhost `5173`, при необходимости `5174` |
 | `STT_MODEL_PATH` | каталог T-one | путь внутри `models/` |
-| `LLM_PROVIDER` | провайдер LLM | `local` для подтверждённого офлайн-пути |
+| `LLM_PROVIDER` | провайдер LLM | `huggingface` по умолчанию в текущем compose; для локального пути требуется согласованная конфигурация сервиса |
 | `LLM_MODEL_PATH` | GGUF Qwen | путь внутри `models/llm/` |
 | `LLM_BASE_URL` | OpenAI-compatible endpoint | `http://127.0.0.1:8080` |
-| `TTS_BACKEND` | движок TTS | `silero` в Docker |
+| `TTS_BACKEND` | движок TTS | `fish` по умолчанию в текущем Docker Compose; локальные альтернативы задаются явно |
 | `OPENAI_API_KEY` | опциональный внешний скоринг | пусто для локального режима |
 | `HF_TOKEN` | внешний LLM-провайдер в незакоммиченной ветке | не нужен базовой версии; хранить только локально |
 
-`.env.example` содержит устаревшие TTS defaults (`tr-TR-EmelNeural`) и не все параметры текущего Python-кода; при расхождении источником истины являются `config.py` и compose.
+При расхождении конфигурационных файлов источником истины для Docker-стенда является `infra/docker/docker-compose.yml`, а для запуска сервисов вне Docker — соответствующий `config.py`.
 
 ## Тестовые данные
 

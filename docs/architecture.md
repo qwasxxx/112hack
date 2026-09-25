@@ -88,7 +88,7 @@ Partial-текст нужен для интерфейса, но не долже�
 ## Важные расхождения с прежним обзором
 
 - `docs/architecture/overview.md` описывает два рабочих frontend-контейнера, но compose запускает только `student-web`, который включает все роли.
-- Там указан Coqui XTTS-v2, но текущий compose задаёт `TTS_BACKEND=silero`.
+- Там указан Coqui XTTS-v2, но текущий compose по умолчанию задаёт `TTS_BACKEND=fish`; реализация поддерживает и локальные альтернативные движки через конфигурацию.
 - Описание RAG и scenario-engine относится к архитектурному каркасу; пользовательский демонстрационный поток хранится главным образом в `lesson_records`, `live_presence`, `ticket_catalog` и клиентском состоянии.
 - ADR 003 «TypeScript everywhere» больше не буквально верен: STT/LLM/TTS реализованы на Python.
 
