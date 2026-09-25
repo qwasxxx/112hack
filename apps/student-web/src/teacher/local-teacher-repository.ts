@@ -241,7 +241,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
   }
 
   async getDashboardSnapshot(): Promise<DashboardSnapshot> {
-    void this.hydrate();
+    await this.hydrate();
     this.refreshLive();
     const students = await this.students();
     const results = await this.getResults();
@@ -390,7 +390,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
   }
 
   async getScenarios(): Promise<Scenario[]> {
-    void this.hydrate();
+    await this.hydrate();
     refreshScenarioCatalog();
     return SCENARIOS.map((item) => toScenario(item.id)).filter((item): item is Scenario => Boolean(item));
   }
@@ -464,7 +464,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
   }
 
   async getResults(): Promise<CompletedResult[]> {
-    void this.hydrate();
+    await this.hydrate();
     const students = await this.students();
     return readAllLessons()
       .sort((a, b) => b.completedAt.localeCompare(a.completedAt))

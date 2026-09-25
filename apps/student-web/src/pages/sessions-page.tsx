@@ -1,4 +1,6 @@
-import { historyRecommendations, lessonsNewestFirst, printLessonCertificate, readLessons, PASS_SCORE, PASS_SCORE_EXAM, type LessonRecord } from '../progress';
+import { useEffect, useState } from 'react';
+import { historyRecommendations, lessonsNewestFirst, printLessonCertificate, readLessons, absorbLessons, PASS_SCORE, PASS_SCORE_EXAM, type LessonRecord } from '../progress';
+import { pullLessons } from '../progress/remote';
 import { useTeacherReviews } from '../progress/use-teacher-review';
 import './sessions-page.css';
 
@@ -54,7 +56,29 @@ function officialPass(item: LessonRecord, score: number | undefined): boolean {
 }
 
 export function SessionsBoard(props: { login: string; name: string }) {
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    let stop = false;
+    const load = () => {
+      void pullLessons(props.login).then((rows) => {
+        if (stop || !rows) {
+          return;
+        }
+        if (rows.length) {
+          absorbLessons(rows);
+        }
+        setVersion((current) => current + 1);
+      });
+    };
+    load();
+    const timer = window.setInterval(load, 5000);
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [props.login]);
   const records = lessonsNewestFirst(props.login);
+  void version;
   const reviews = useTeacherReviews();
   const confirmed = records.filter((item) => reviews[item.id]?.expertScore != null);
   const passedCount = records.filter((item) => officialPass(item, reviews[item.id]?.expertScore)).length;

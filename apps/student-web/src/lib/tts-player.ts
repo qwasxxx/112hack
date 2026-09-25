@@ -17,11 +17,7 @@ let recordChunks: Float32Array[] = [];
 let recordCarry = 0;
 
 function ttsUrl(): string {
-  const { protocol, hostname } = window.location;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return '/api/v1/tts/synthesize';
-  }
-  return `${protocol}//${hostname}:8092/api/v1/tts/synthesize`;
+  return '/api/v1/tts/synthesize';
 }
 
 function getAudioContext(): AudioContext {

@@ -14,7 +14,7 @@ type OutboxItem = {
 };
 
 const OUTBOX_KEY = 'sys112.outbox.v1';
-const OUTBOX_TTL_MS = 30_000;
+const OUTBOX_TTL_MS = 24 * 60 * 60 * 1000;
 
 function readOutbox(): OutboxItem[] {
   if (typeof localStorage === 'undefined') {
@@ -41,7 +41,9 @@ function writeOutbox(items: OutboxItem[]): void {
 
 function enqueue(path: string, method: string, body: string): void {
   const now = Date.now();
-  const items = readOutbox().filter((item) => now - item.at < OUTBOX_TTL_MS);
+  const items = readOutbox().filter(
+    (item) => now - item.at < OUTBOX_TTL_MS && !(item.path === path && item.method === method),
+  );
   items.push({ path, method, body, at: now });
   writeOutbox(items);
 }
@@ -152,10 +154,10 @@ export function removeLive(login: string): void {
   void request(`/live/${encodeURIComponent(login)}`, { method: 'DELETE' });
 }
 
-export async function pullLessons(login?: string): Promise<LessonRecord[]> {
+export async function pullLessons(login?: string): Promise<LessonRecord[] | null> {
   const suffix = login ? `?login=${encodeURIComponent(login)}` : '';
   const rows = await request<LessonRecord[]>(`/lessons${suffix}`);
-  return Array.isArray(rows) ? rows : [];
+  return Array.isArray(rows) ? rows : null;
 }
 
 export async function pullAssignments(): Promise<(AssignmentStore & { configured?: boolean }) | null> {
