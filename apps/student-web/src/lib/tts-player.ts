@@ -283,7 +283,7 @@ async function fetchTtsResponse(
       body: JSON.stringify({
         text,
         role: operator ? 'operator' : 'victim',
-        emotion: operator ? 'calm' : voice?.emotion || 'panic',
+        emotion: operator ? 'calm' : voice?.emotion || 'scared',
         conversation_role: operator ? 'operator' : 'victim',
         voice_id: operator ? 'operator_calm' : voice?.speaker || 'victim_panic',
         speaker: operator ? 'aidar' : voice?.speaker,

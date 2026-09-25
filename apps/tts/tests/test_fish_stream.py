@@ -27,14 +27,43 @@ def test_dispatcher_prosody_prefix() -> None:
 
 
 def test_victim_prosody_and_pause() -> None:
-    text = apply_fish_prosody("Помогите...", role="victim", emotion="panic")
-    assert text.startswith("[anxious] [rushed] [clear speech] ")
-    assert "[pause]" in text
+    text = apply_fish_prosody("Помогите...", role="victim", emotion="panic", gender="female")
+    assert text.startswith("[panicked] ")
+    assert "[short pause]" in text
+    assert "[breathing heavily]" not in text
 
 
-def test_existing_inline_tags_are_kept() -> None:
-    raw = "[serious] [clear speech] Алло."
-    assert apply_fish_prosody(raw, role="operator") == raw
+def test_ordinary_call_is_not_an_explosion() -> None:
+    text = apply_fish_prosody(
+        "Алло, ребенок упал с велосипеда, помогите.",
+        role="victim",
+        emotion="scared",
+        gender="female",
+    )
+    assert text.startswith("[nervous] ")
+    assert "[breathing heavily]" not in text
+    assert "[panicked]" not in text
+
+
+def test_severe_line_gets_one_breath() -> None:
+    text = apply_fish_prosody("Пожар, я задыхаюсь.", role="victim", emotion="panic", gender="female")
+    assert text.startswith("[breathing heavily] [panicked] ")
+
+
+def test_model_tags_are_replaced_by_delivery() -> None:
+    raw = "[serious] [clear speech] Алло, я задыхаюсь."
+    text = apply_fish_prosody(raw, role="victim", emotion="angry", gender="male")
+    assert text.startswith("[breathing heavily] [angry]")
+    assert "[serious]" not in text
+    assert "задыхаюсь" in text
+
+
+def test_teacher_tone_changes_tags() -> None:
+    crying = apply_fish_prosody("Не могу говорить.", role="victim", emotion="crying")
+    startled = apply_fish_prosody("Там человек лежит.", role="victim", emotion="startled")
+    assert crying.startswith("[crying]")
+    assert startled.startswith("[startled]")
+    assert "[gasping]" not in startled
 
 
 def test_pcm_chunk_is_wav() -> None:
@@ -116,7 +145,7 @@ def test_stream_requests_balanced_s2_and_wraps_pcm(monkeypatch: pytest.MonkeyPat
             yield "Нужна помощь."
 
         ws_chunk = b""
-        async for chunk in client.stream_llm(phrases(), role="victim", emotion="panic"):
+        async for chunk in client.stream_llm(phrases(), role="victim", emotion="panic", gender="female"):
             ws_chunk = chunk
             break
         return http_chunk, ws_chunk
@@ -132,9 +161,10 @@ def test_stream_requests_balanced_s2_and_wraps_pcm(monkeypatch: pytest.MonkeyPat
     assert str(http["text"]).startswith(DISPATCH_PREFIX)
     assert ws["latency"] == "balanced"
     assert ws["model"] == "s2.1-pro"
+    assert ws["reference_id"]
     ws_text = captured["ws_text"]
     assert isinstance(ws_text, list)
-    assert ws_text[0].startswith("[anxious] [rushed] [clear speech] ")
+    assert ws_text[0].startswith("[breathing heavily] [panicked] ")
     assert http_chunk[:4] == b"RIFF"
     assert ws_chunk[:4] == b"RIFF"
 

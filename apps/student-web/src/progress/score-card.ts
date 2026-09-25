@@ -115,17 +115,20 @@ function scoreAddress(
     checks.push({ id: 'address', label: 'Адрес', expected: facts.address, got: '—', state: 'empty', points: 0, max });
     return 0;
   }
-  const ratio = overlapRatio(facts.address, gotLine);
-  let points = Math.round(10 * ratio);
+  const overlap = addressOverlap(facts.address, gotLine);
   const houseGot = result.card.address.house.trim();
-  if (facts.house && houseGot && facts.house.toLowerCase() === houseGot.toLowerCase()) {
-    points += 2;
-  } else if (facts.house && gotLine.toLowerCase().includes(facts.house.toLowerCase())) {
-    points += 1;
+  const houseOk =
+    !facts.house ||
+    (houseGot && facts.house.toLowerCase() === houseGot.toLowerCase()) ||
+    gotLine.toLowerCase().includes(facts.house.toLowerCase());
+  let points =
+    overlap.ratio >= 0.75 && houseOk ? max : Math.round(max * overlap.ratio);
+  if (!houseOk) {
+    points = Math.max(0, points - 2);
   }
   points = Math.max(0, Math.min(max, points));
   if (points < 6) {
-    const missing = addressOverlap(facts.address, gotLine).missing.slice(0, 6);
+    const missing = overlap.missing.slice(0, 6);
     note(
       findings,
       'address-miss',
@@ -161,7 +164,7 @@ function scoreDescription(
     return 0;
   }
   const ratio = overlapRatio(facts.what, got);
-  const points = Math.max(0, Math.min(max, Math.round(max * ratio)));
+  const points = ratio >= 0.7 ? max : Math.max(0, Math.min(max, Math.round(max * ratio)));
   if (points < 3) {
     note(findings, 'description-miss', 'Описание со слов заявителя', 'Текст не отражает суть билета', 'error');
   } else if (points < max) {
@@ -521,9 +524,6 @@ function grammarNote(text: string): string | null {
   }
   if (/(.)\1{4,}/.test(t)) {
     return 'В описании повтор одних и тех же букв — проверьте опечатки.';
-  }
-  if (/[а-яё]{3,}\s+[а-яё]{3,}/.test(t) && t[0] === t[0].toLowerCase() && /[а-яё]/.test(t[0])) {
-    return 'Описание начинается со строчной — в карточке первую букву пишут заглавной.';
   }
   return null;
 }

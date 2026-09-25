@@ -417,7 +417,7 @@ function extractPhone(text: string): string | undefined {
 
 function nameCoach(caller: string | undefined): string {
   if (caller?.startsWith('мама')) {
-    return 'Если спросили как зовут — только короткая фраза «Я мама». Не объясняй, что имени нет и что его не можешь назвать.';
+    return 'Если спросили как зовут — не говори «Я мама». Назови имя из фактов билета, если оно есть, иначе коротко «Не знаю».';
   }
   if (caller?.startsWith('отец') || caller?.startsWith('супруг')) {
     return 'Если спросили как зовут — коротко «Я отец» или «Я муж». Не объясняй, что имени нет.';
@@ -429,8 +429,13 @@ function nameCoach(caller: string | undefined): string {
 }
 
 function extractCallerHint(situation: string): string | undefined {
+  const names = situation.match(/[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}/g);
+  const fio = names?.filter((item) => !/^Москва$|^Россия$/.test(item)).at(-1)?.trim();
+  if (fio) {
+    return fio;
+  }
   if (/вызывает мама|звонит мама/i.test(situation)) {
-    return 'мама. Имени заявителя в билете нет — не выдумывай Свету, Марию и любые другие имена. Если спросили как зовут: «я мама»';
+    return 'мама. Имени заявителя в билете нет — не выдумывай Свету, Марию и любые другие имена. Если спросили как зовут: «не знаю»';
   }
   if (/вызывает супруг/i.test(situation)) {
     return 'супруг. Имени в билете нет, не выдумывай';
@@ -456,9 +461,7 @@ function extractCallerHint(situation: string): string | undefined {
   if (/, дочь|дочь,/i.test(situation)) {
     return 'дочь';
   }
-  const names = situation.match(/[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}/g);
-  const fio = names?.filter((item) => !/^Москва$|^Россия$/.test(item)).at(-1)?.trim();
-  return fio || undefined;
+  return undefined;
 }
 
 export function situationWhat(situation: string): string {
@@ -609,10 +612,18 @@ function inferCallerGender(situation: string, ticket: number, n: number): Caller
   return (ticket * 3 + n) % 2 === 0 ? 'female' : 'male';
 }
 
+function callerEmotion(situation: string): CallerTtsVoice['emotion'] {
+  if (/пожар|взрыв|горит|пламя|газ|задых|без сознан|не могу дышать|умира|зажат|оруж/i.test(situation)) {
+    return 'panic';
+  }
+  return 'scared';
+}
+
 function pickCallerVoice(ticket: number, n: number, situation: string): CallerTtsVoice {
   const gender = inferCallerGender(situation, ticket, n);
   const pool = gender === 'female' ? FEMALE_VOICES : MALE_VOICES;
-  return pool[(ticket * 3 + n) % pool.length];
+  const voice = pool[(ticket * 3 + n) % pool.length];
+  return { ...voice, emotion: callerEmotion(situation), speed: voice.speed > 1.08 ? 1.05 : voice.speed };
 }
 
 function algorithmFor(services: ServiceKind[], text: string): string[] {

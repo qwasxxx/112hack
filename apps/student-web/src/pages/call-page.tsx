@@ -5,7 +5,7 @@ import { buildLessonSystemPrompt } from '../data/ags-tickets';
 import { createLlmStream } from '../lib/llm-stream';
 import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
-import { beginCallRecording, enqueueTtsAudio, stopTtsAudio, takeSpeechChunks, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
+import { beginCallRecording, enqueueTtsAudio, stopTtsAudio, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
 import type { TranscriptTurn } from '../progress';
 import { patchLive, refreshCuesFromApi, subscribeCues, takePendingLlmCues } from '../progress';
 
@@ -36,17 +36,30 @@ type Props = {
 
 function voiceForTeacherCue(type: string, note: string): { emotion: string; pitch: string; speed: number } | undefined {
   const text = note.toLowerCase();
-  if (type === 'inject_event' || text.includes('паник') || text.includes('крич')) {
-    return { emotion: 'panic', pitch: 'high', speed: 1.18 };
+  const tone =
+    /шепот|шепч|тихо/.test(text)
+      ? 'whisper'
+      : /зол|орёт|орет|злост|кричит на/.test(text)
+        ? 'angry'
+        : /плач|рыда|слёз|слез|растер/.test(text)
+          ? 'crying'
+          : /паник|задых|ужас|испуг|истер|крич/.test(text)
+            ? 'panic'
+            : '';
+  if (tone === 'whisper') {
+    return { emotion: 'whisper', pitch: 'low', speed: 0.92 };
   }
-  if (text.includes('зол') || text.includes('орёт') || text.includes('орет')) {
-    return { emotion: 'angry', pitch: 'low', speed: 1.14 };
+  if (tone === 'angry') {
+    return { emotion: 'angry', pitch: 'low', speed: 1.08 };
   }
-  if (text.includes('растер') || text.includes('плач')) {
+  if (tone === 'crying') {
     return { emotion: 'crying', pitch: 'high', speed: 0.94 };
   }
-  if (type === 'set_emotional_state') {
-    return { emotion: 'panic', pitch: 'high', speed: 1.18 };
+  if (tone === 'panic' || type === 'set_emotional_state') {
+    return { emotion: 'panic', pitch: 'high', speed: 1.08 };
+  }
+  if (type === 'add_circumstance' || type === 'inject_event' || type === 'force_state') {
+    return { emotion: 'startled', pitch: 'high', speed: 1.06 };
   }
   return undefined;
 }
@@ -224,7 +237,10 @@ export function CallPage(props: Props) {
       ]);
       spokenTtsRef.current = opening;
       holdMicForTts();
-      void enqueueTtsAudio(opening, aiVoiceId, callerVoice()).finally(() => {
+      void Promise.race([
+        enqueueTtsAudio(opening, aiVoiceId, callerVoice()),
+        new Promise((resolve) => window.setTimeout(resolve, 12000)),
+      ]).finally(() => {
         if (leavingRef.current || awaitingReplyRef.current) {
           return;
         }
@@ -269,7 +285,6 @@ export function CallPage(props: Props) {
             holdMicForTts();
           }
           setLines((current) => upsertLive(current, aiRole, event.text, 'llm'));
-          feedAiSpeech(event.text, false);
         }
         if (event.type === 'assistant_final') {
           awaitingReplyRef.current = false;
@@ -362,7 +377,6 @@ export function CallPage(props: Props) {
             liveSttRef.current = event.text;
           }
           showUserSpeech(utterancePartsRef.current, liveSttRef.current);
-          scheduleFlush();
         }
         if (event.type === 'final') {
           const last = finalsRef.current.finals.at(-1);
@@ -371,8 +385,15 @@ export function CallPage(props: Props) {
           }
           seenFinalsRef.current.add(last.id);
           const next = last.text.trim();
+          const previous = utterancePartsRef.current.at(-1) ?? '';
           const joined = composeUtterance(utterancePartsRef.current, '');
-          if (!joined || !joined.toLowerCase().includes(next.toLowerCase())) {
+          if (!previous) {
+            utterancePartsRef.current = [next];
+          } else if (repeatsSent(next, previous)) {
+            if (next.length >= previous.length) {
+              utterancePartsRef.current = [...utterancePartsRef.current.slice(0, -1), next];
+            }
+          } else if (!joined.toLowerCase().includes(next.toLowerCase())) {
             utterancePartsRef.current = [...utterancePartsRef.current, next];
           }
           liveSttRef.current = '';
@@ -452,36 +473,18 @@ export function CallPage(props: Props) {
     streamRef.current?.setCaptureEnabled(false);
   }
 
-  function feedAiSpeech(text: string, final: boolean) {
-    const spokenNow = spokenTtsRef.current;
-    const extended = !spokenNow || continuesSpeech(text, spokenNow);
-    if (spokenNow && !extended) {
-      stopTtsAudio();
-      spokenTtsRef.current = '';
-    }
-    const { chunks, spoken } = takeSpeechChunks(text, spokenTtsRef.current);
-    spokenTtsRef.current = spoken;
-    let pending = chunks;
-    if (final) {
-      const tail = text.slice(spokenTtsRef.current.length).trim();
-      if (tail) {
-        pending = [...pending, tail];
-        spokenTtsRef.current = text;
-      }
-    }
-    if (!pending.length) {
-      return;
-    }
-    for (const chunk of pending) {
-      void enqueueTtsAudio(chunk, aiVoiceId, callerVoice());
-    }
-  }
-
   async function speakAi(text: string) {
     holdMicForTts();
-    feedAiSpeech(text, true);
+    const fresh = text.trim();
+    if (fresh) {
+      spokenTtsRef.current = fresh;
+      void enqueueTtsAudio(fresh, aiVoiceId, callerVoice());
+    }
     try {
-      await waitTtsQueue();
+      await Promise.race([
+        waitTtsQueue(),
+        new Promise((resolve) => window.setTimeout(resolve, 12000)),
+      ]);
     } finally {
       ttsHoldRef.current = false;
       replyShownRef.current = false;
@@ -844,27 +847,27 @@ function isSameSpeech(left: string, right: string): boolean {
 }
 
 function repeatsSent(text: string, sent: string): boolean {
-  const clean = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^\p{L}\p{N}]+/gu, ' ')
-      .trim();
-  const next = clean(text);
-  const prev = clean(sent);
+  const compact = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  const next = compact(text);
+  const prev = compact(sent);
   if (!next || !prev) {
     return false;
   }
-  if (next === prev || prev.includes(next)) {
+  if (next === prev) {
     return true;
   }
-  return next.startsWith(prev) && next.length <= prev.length + 8;
-}
-
-function continuesSpeech(text: string, spoken: string): boolean {
-  const clean = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
-  const next = clean(text);
-  const prev = clean(spoken);
-  return Boolean(prev && next && (next.startsWith(prev) || prev.startsWith(next)));
+  const longer = Math.max(next.length, prev.length);
+  const shorter = Math.min(next.length, prev.length);
+  if (longer - shorter > 8) {
+    return false;
+  }
+  let same = 0;
+  for (let index = 0; index < shorter; index += 1) {
+    if (next[index] === prev[index]) {
+      same += 1;
+    }
+  }
+  return same / longer >= 0.84;
 }
 
 function upsertLive(current: Line[], role: Line['role'], text: string, source: Line['source']): Line[] {

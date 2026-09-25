@@ -28,13 +28,13 @@ _load_repo_env()
 _DEFAULT_MODEL = REPO_ROOT / "models" / "llm" / "Qwen3-4B-Q4_K_M.gguf"
 
 LLM_MODE = _env("LLM_MODE", "local")
-LLM_PROVIDER = _env("LLM_PROVIDER", "local")
-LLM_RUNTIME = _env("LLM_RUNTIME", "llama_cpp")
-LLM_MODEL_NAME = _env("LLM_MODEL_NAME", "Qwen3-4B")
+LLM_PROVIDER = _env("LLM_PROVIDER", "huggingface")
+LLM_RUNTIME = _env("LLM_RUNTIME", "openai")
+LLM_MODEL_NAME = _env("LLM_MODEL_NAME", "Qwen/Qwen3.5-9B")
 LLM_MODEL_PATH = Path(_env("LLM_MODEL_PATH", str(_DEFAULT_MODEL)))
 if not LLM_MODEL_PATH.is_absolute():
     LLM_MODEL_PATH = (Path.cwd() / LLM_MODEL_PATH).resolve()
-LLM_BASE_URL = _env("LLM_BASE_URL", "http://127.0.0.1:8080").rstrip("/")
+LLM_BASE_URL = _env("LLM_BASE_URL", "https://router.huggingface.co").rstrip("/")
 LLM_HOST = _env("LLM_HOST", "0.0.0.0")
 LLM_PORT = int(_env("LLM_PORT", "8091"))
 LLM_LLAMA_PORT = int(_env("LLM_LLAMA_PORT", "8080"))

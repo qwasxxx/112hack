@@ -15,7 +15,7 @@ export TTS_PORT=8092
 export TTS_LANGUAGE=ru
 export TTS_THREADS=4
 export TTS_DEVICE="${TTS_DEVICE:-cpu}"
-export TTS_BACKEND="${TTS_BACKEND:-silero}"
+export TTS_BACKEND="${TTS_BACKEND:-fish}"
 export TTS_QWEN_MODEL="${TTS_QWEN_MODEL:-Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice}"
 
 if echo "$TTS_BACKEND" | grep -qi qwen; then

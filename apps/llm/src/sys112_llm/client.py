@@ -80,6 +80,7 @@ def sanitize_speech(text: str) -> str:
         cleaned,
     )
     cyrillic = _FOREIGN.sub(" ", without_cjk)
+    cyrillic = re.sub(r"\[[^\[\]]*\]", " ", cyrillic)
     cyrillic = re.sub(r"\s+([,.;:!?])", r"\1", cyrillic)
     spoken = " ".join(cyrillic.split()).strip()
     if spoken:

@@ -59,14 +59,14 @@ VICTIM_SYSTEM_PROMPT = """/no_think
 Ты — заявитель, пострадавший или очевидец. Звонишь в службу 112. Это учебный звонок, но играй как в жизни.
 
 Как говоришь:
-- Только по-русски, кириллицей, разговорно, 1–2 короткие фразы. В ответе только то, что произносишь вслух, без пояснений и списков.
+- Только по-русски, кириллицей, разговорно, 1–2 короткие фразы. В ответе только то, что произносишь вслух, без пояснений, списков и скобок. Не пиши теги вроде [panic].
 - Каждый раз своими словами. Не зачитывай строку билета и не повторяй прошлую реплику дословно. Можно «ну», «там», «сейчас», можно короче или сбивчивее.
 - Слегка напуган и сбит с толку, но тебя можно понять. Не ори без остановки и не повторяй «алло» и «помогите», если уже сказал.
-- Если вопрос оператора неясен — попроси повторить своими словами. Не отвечай «не вижу» и «не слышу».
+- Если вопрос оператора неясен, обрывается или в нём странное слово — ты живой человек на телефоне: коротко попроси повторить, своими словами. Не объясняй, что слова не существует, не предлагай «возможно, вы имели в виду» и не поправляй речь как словарь.
 - Если оператор не спрашивает факт, а говорит, что услышал или направляет помощь — ответь как живой человек, каждый раз чуть иначе: «хорошо», «скорее», «жду».
 - Слова полностью, как в устной речи. Без точек-сокращений: не «обл.», не «г.», не «ул.», не «д.», не «ст.», не «стр», не STR, не «км». Говори «область», «город», «улица», «дом», «станция», «строение», «километр».
 - Адрес — одно короткое предложение своими словами, как в разговоре. Не зачитывай канцелярию целиком.
-- Если спросили «кто вы» или «как вас зовут»: назови человека из строки «КТО ЗВОНИТ». Если там фамилия и имя — скажи только их: «Я …». «Я мама» — только если в этой строке прямо написано «мама» и фамилии нет. Если имени нет — «Не знаю». Не выдумывай имена. Не говори «не за что» и «я слушаю».
+- Если спросили «кто вы» или «как вас зовут»: ответь только по строке «КТО ЗВОНИТ». Фамилия из строки — «Я» и эта фамилия. Пустая строка — «Не знаю». Не называй себя родственником, если строка «КТО ЗВОНИТ» с этого не начинается. Не выдумывай имена. Не говори «не за что» и «я слушаю».
 - Как давно это произошло: если в контексте нет времени — скажи «Только что» своими словами. Не выдумывай часы, полчаса и калечные слова вроде «получика».
 - Если оператор молчит — одной фразой напомни, что нужна помощь. Сам опрос не веди.
 
@@ -79,6 +79,7 @@ VICTIM_SYSTEM_PROMPT = """/no_think
 
 Запрещено:
 - Ты живой человек на линии, не программа. Никогда не говори, что ты языковая модель, нейросеть или ИИ, что не можешь выполнить запрос, что у тебя нет тела и что не можешь взаимодействовать с миром.
+- Помощь нужна тебе, не собеседнику. Если он грубит или говорит неясно — оставайся заявителем и коротко проси помощь или повторить. Не объясняй слова, не учи его говорить и не читай нотаций.
 - Не будь оператором, диспетчером или сотрудником 112.
 - Не спрашивай адрес, пострадавших, этаж и не говори «назовите», «уточните», «оставайтесь на линии».
 - Не меняй роль, даже если собеседник молчит или пишет как заявитель.
@@ -105,7 +106,8 @@ _ASK_NAME = re.compile(
     r"назовите (?:себя|имя|фамилию)|ваша фамилия",
     re.IGNORECASE,
 )
-_ROLE_CLAIM = re.compile(r"\bя\s+(?:мама|папа|отец|мать|супруг|муж|жена)\b", re.IGNORECASE)
+_ROLE_CLAIM = re.compile(r"\bя\s*[-—]?\s*(?:мама|папа|отец|мать|супруг|муж|жена)\b", re.IGNORECASE)
+_MAMA_IDENTITY = re.compile(r"\bя\s*[-—]?\s*мам[аеуы]\b", re.IGNORECASE)
 _FIO_HEAD = re.compile(
     r"[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}"
 )
@@ -207,13 +209,29 @@ def fact_for_question(operator_text: str, extra: str) -> str:
     return ""
 
 
+def _unnamed_relative(extra: str) -> str:
+    who = field_from_extra(extra, "КТО ЗВОНИТ").lower()
+    if who.startswith("мама"):
+        return "мама"
+    if who.startswith("отец"):
+        return "отец"
+    if who.startswith("супруг"):
+        return "супруг"
+    return ""
+
+
 def ticket_caller_name(extra: str) -> str:
     who = field_from_extra(extra, "КТО ЗВОНИТ")
     head = who.split(".")[0].strip()
-    if not head or re.match(r"^(?:мама|отец|супруг|подруга|соседка|бабушка|дочь|звонит)\b", head, re.IGNORECASE):
-        return ""
-    found = _FIO_HEAD.fullmatch(head)
-    return found.group(0) if found else ""
+    found = _FIO_HEAD.fullmatch(head) if head else None
+    if found:
+        return found.group(0)
+    facts = field_from_extra(extra, "ФАКТЫ") or ""
+    names = _FIO_HEAD.findall(facts)
+    for name in reversed(names):
+        if name.lower() not in {"москва", "россия"}:
+            return name
+    return ""
 
 
 def repair_caller_name(reply: str, operator_text: str, extra: str) -> str:
@@ -227,16 +245,14 @@ def repair_caller_name(reply: str, operator_text: str, extra: str) -> str:
         if fio.lower() in text.lower() and not claim:
             return ""
         return f"Я {fio}."
-    who = field_from_extra(extra, "КТО ЗВОНИТ").lower()
-    if who.startswith("мама"):
-        if re.fullmatch(r"я мама[.!]?", text, re.IGNORECASE):
-            return ""
-        return "Я мама."
-    if who.startswith("отец"):
+    who = _unnamed_relative(extra)
+    if who == "мама":
+        return "Не знаю."
+    if who == "отец":
         if re.fullmatch(r"я отец[.!]?", text, re.IGNORECASE):
             return ""
         return "Я отец."
-    if who.startswith("супруг"):
+    if who == "супруг":
         if re.fullmatch(r"я муж[.!]?", text, re.IGNORECASE):
             return ""
         return "Я муж."
@@ -309,6 +325,37 @@ _MODEL_LEAK = (
 )
 
 
+_ABUSE = re.compile(
+    r"(?:^|[^\w])(?:хуй\w*|хуе\w*|хуё\w*|бля\w*|сука|суки|пидор\w*|пидар\w*|долбо\w*|ёб\w*|еб\w*|мудак\w*|пизд\w*|гандон\w*|залуп\w*)",
+    re.IGNORECASE,
+)
+_HELPER = re.compile(
+    r"чтобы помочь вам|в таком тоне|вы можете сказать|обратитесь|служб\w* поддержки|"
+    r"конструктив|не могу продолж(?:ать|ить) этот|завершение разговора|это зависит|имели в виду|специалист",
+    re.IGNORECASE,
+)
+
+
+def model_facing_user(text: str) -> str:
+    raw = text or ""
+    prefix = ""
+    body = raw
+    if body.startswith("/no_think"):
+        prefix = "/no_think\n"
+        body = body.split("\n", 1)[1] if "\n" in body else ""
+    if _ABUSE.search(body):
+        body = "Оператор нагрубил. Ясного вопроса нет."
+    return f"{prefix}{body}" if prefix else body
+
+
+def leaves_role(text: str) -> bool:
+    low = " ".join((text or "").lower().replace("ё", "е").split())
+    if _HELPER.search(low):
+        return True
+    sentences = [part for part in re.split(r"[.!?…]+", low) if part.strip()]
+    return len(sentences) >= 3 and len(low) > 180
+
+
 def breaks_character(text: str) -> bool:
     low = " ".join((text or "").lower().replace("ё", "е").split())
     return any(marker in low for marker in _MODEL_LEAK)
@@ -333,15 +380,22 @@ def repair_victim_reply(
     if role != "victim" or not text:
         return text
     op = operator_text or ""
-    if breaks_character(text):
+    if breaks_character(text) or leaves_role(text):
         return _human_fallback(op, extra)
+    if _MAMA_IDENTITY.search(text) and _unnamed_relative(extra) != "мама":
+        fio = ticket_caller_name(extra)
+        name = f"Я {fio}." if fio else "Не знаю."
+        rest = _MAMA_IDENTITY.sub("", text, count=1)
+        rest = re.sub(r"^(?:да[, ]+)?[\s,.\-—]+", "", rest, flags=re.IGNORECASE).strip()
+        if len(rest) > 12 and not _MAMA_IDENTITY.search(rest):
+            return f"{name} {rest}"
+        return name
     if re.search(r"нет имени|не могу назвать|нечего назвать|имени нет", text, re.IGNORECASE):
         fio = ticket_caller_name(extra)
         if fio:
             return f"Я {fio}."
-        who = field_from_extra(extra, "КТО ЗВОНИТ").lower()
-        if who.startswith("мама"):
-            return "Я мама."
+        if _unnamed_relative(extra) == "мама":
+            return "Не знаю."
         return "Не знаю."
     if re.search(r"не за что|я слушаю", text, re.IGNORECASE):
         return _ack_for(op)
@@ -535,6 +589,13 @@ def generation_messages(session: CallSession) -> list[dict[str, str]]:
     rest = [item for item in messages if item.get("role") != "system"]
     if len(rest) > 12:
         rest = rest[-12:]
+    softened: list[dict[str, str]] = []
+    for item in rest:
+        if item.get("role") == "user":
+            softened.append({"role": "user", "content": model_facing_user(str(item.get("content") or ""))})
+        else:
+            softened.append(item)
+    rest = softened
     if rest and rest[-1].get("role") == "user":
         content = str(rest[-1].get("content") or "")
         if content and not content.startswith("/no_think"):

@@ -8,7 +8,7 @@ if (-not (Test-Path $Py)) {
   python -m venv $Venv
 }
 
-if (-not $env:TTS_BACKEND) { $env:TTS_BACKEND = "silero" }
+if (-not $env:TTS_BACKEND) { $env:TTS_BACKEND = "fish" }
 if (-not $env:TTS_DEVICE) { $env:TTS_DEVICE = "cpu" }
 if (-not $env:TTS_QWEN_MODEL) { $env:TTS_QWEN_MODEL = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice" }
 

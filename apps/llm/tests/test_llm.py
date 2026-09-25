@@ -327,6 +327,20 @@ def test_repair_victim_does_not_play_blind_on_dispatch():
     assert "языков" not in leaked.lower()
     assert "запрос" not in leaked.lower()
     assert "контейнер" in leaked.lower()
+    lecture = repair_victim_reply(
+        "Извините, я не могу продолжать этот разговор в таком тоне. Я здесь, чтобы помочь вам конструктивно.",
+        "алло",
+        "victim",
+    )
+    assert "конструктив" not in lecture.lower()
+    assert "таком тоне" not in lecture.lower()
+    explained = repair_victim_reply(
+        "Прощание — это не прощание с кем-то, а завершение разговора или действия. Вы можете сказать «пока».",
+        "алло",
+        "victim",
+    )
+    assert "завершение разговора" not in explained.lower()
+    assert "вы можете сказать" not in explained.lower()
     trapped = repair_victim_reply("Я не могу двигаться, нога зажата.", "что с вами?", "victim")
     assert trapped.startswith("Я не могу двигаться")
     assert repair_victim_reply("Не знаю.", "Какой этаж?", "victim") == "Не знаю."
@@ -341,7 +355,7 @@ def test_repair_victim_does_not_play_blind_on_dispatch():
             "victim",
             "КТО ЗВОНИТ: мама. Имени заявителя нет — не выдумывай",
         )
-        == "Я мама."
+        == "Не знаю."
     )
     assert (
         repair_victim_reply(
@@ -350,7 +364,17 @@ def test_repair_victim_does_not_play_blind_on_dispatch():
             "victim",
             "КТО ЗВОНИТ: мама. Имени заявителя нет — не выдумывай",
         )
-        == "Я мама."
+        == "Не знаю."
+    )
+    assert (
+        repair_victim_reply(
+            "Я мама.",
+            "Как я могу к вам обращаться?",
+            "victim",
+            "ФАКТЫ БИЛЕТА ЦЕЛИКОМ: Ребенок 11 лет, Смирнов Илья упал с велосипеда, вызывает мама\n"
+            "КТО ЗВОНИТ: мама. Имени заявителя нет — не выдумывай",
+        )
+        == "Я Смирнов Илья."
     )
     assert (
         repair_victim_reply(

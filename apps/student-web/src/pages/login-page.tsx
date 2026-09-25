@@ -272,6 +272,11 @@ export function LoginPage(props: Props) {
                         key={account.id}
                         login={account.login}
                         role={ROLE_LABEL[account.role]}
+                        onPick={() => {
+                          setLogin(account.login);
+                          setPassword(DEMO_PASSWORD);
+                          props.onClearError?.();
+                        }}
                       />
                     ))}
                   </ul>
@@ -1129,18 +1134,23 @@ function LoginHighlightRow(props: { label: string; note: string }) {
   );
 }
 
-function LoginDemoCard(props: { login: string; role: string }) {
-  const tilt = useLoginSurfaceTilt<HTMLLIElement>('card', { x: 8.4, y: 9 });
+function LoginDemoCard(props: { login: string; role: string; onPick: () => void }) {
+  const tilt = useLoginSurfaceTilt<HTMLButtonElement>('card', { x: 8.4, y: 9 });
 
   return (
-    <li
-      ref={tilt.ref}
-      onPointerMove={tilt.onPointerMove}
-      onPointerLeave={tilt.onPointerLeave}
-      onPointerCancel={tilt.onPointerLeave}
-    >
-      <span className="login-mono">{props.login}</span>
-      <span>{props.role}</span>
+    <li>
+      <button
+        ref={tilt.ref}
+        type="button"
+        className="login-demo-pick"
+        onClick={props.onPick}
+        onPointerMove={tilt.onPointerMove}
+        onPointerLeave={tilt.onPointerLeave}
+        onPointerCancel={tilt.onPointerLeave}
+      >
+        <span className="login-mono">{props.login}</span>
+        <span>{props.role}</span>
+      </button>
     </li>
   );
 }

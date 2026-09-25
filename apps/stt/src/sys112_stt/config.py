@@ -27,7 +27,7 @@ def _load_repo_env() -> None:
 _load_repo_env()
 _DEFAULT_MODEL = REPO_ROOT / "models" / "sherpa-onnx-streaming-t-one-russian-2025-09-08"
 
-STT_MODE = _env("STT_MODE", "local")
+STT_MODE = _env("STT_MODE", "huggingface")
 STT_MODEL_DIR = Path(_env("STT_MODEL_PATH", str(_DEFAULT_MODEL)))
 if not STT_MODEL_DIR.is_absolute():
     STT_MODEL_DIR = (Path.cwd() / STT_MODEL_DIR).resolve()

@@ -94,6 +94,7 @@ class FishTTSEngine:
                 cleaned,
                 role=role_key,
                 emotion=emotion,
+                gender=gender,
                 speed=rate,
                 reference_id=reference_id,
             ):
@@ -120,6 +121,7 @@ class FishTTSEngine:
         *,
         role: str = "victim",
         emotion: str | None = None,
+        gender: str | None = None,
         speed: float | None = None,
         reference_id: str | None = None,
     ) -> AsyncIterator[bytes]:
@@ -133,6 +135,7 @@ class FishTTSEngine:
             chunks,
             role=str(profile["role"]),
             emotion=emotion,
+            gender=gender,
             speed=float(profile["speed"]),
             reference_id=reference_id,
         ):

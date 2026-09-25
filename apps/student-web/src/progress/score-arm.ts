@@ -88,7 +88,7 @@ export function scoreArmTraining(
           : 'Адрес слабо совпал с билетом',
       severity: 'error',
     });
-  } else if (expectedAddress && addr.ratio < 0.85) {
+  } else if (expectedAddress && addr.ratio < 0.75) {
     addressPoints = 11;
     findings.push({
       code: 'address-partial',

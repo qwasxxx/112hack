@@ -1323,6 +1323,10 @@
 }
 
 .login-demo-list li {
+  display: flex;
+}
+
+.login-demo-list .login-demo-pick {
   --login-card-x: 0deg;
   --login-card-y: 0deg;
   --login-card-i: 0;
@@ -1334,7 +1338,14 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
+  width: 100%;
+  margin: 0;
   padding: 10px 12px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  appearance: none;
   border: 1px solid color-mix(in srgb, #d5dce3 calc(100% - var(--login-card-i) * 38%), #8d9aaa);
   border-radius: 8px;
   background: color-mix(in srgb, #fff calc(100% - var(--login-card-i) * 6%), #eef3f8);
@@ -1351,7 +1362,7 @@
   z-index: calc(1 + var(--login-card-i) * 3);
 }
 
-.login-demo-list li::after {
+.login-demo-list .login-demo-pick::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1393,7 +1404,7 @@
   .login-demo-toggle,
   .login-env,
   .login-highlights li,
-  .login-demo-list li,
+  .login-demo-list .login-demo-pick,
   .login-auth-tab,
   .login-avatar-option,
   .login-avatar-upload {
@@ -1405,7 +1416,7 @@
   .login-demo-toggle::after,
   .login-env::after,
   .login-highlights li::after,
-  .login-demo-list li::after,
+  .login-demo-list .login-demo-pick::after,
   .login-auth-tab::after,
   .login-avatar-option::after,
   .login-avatar-upload::after {
@@ -1422,7 +1433,7 @@
   .login-highlights li,
   .login-highlight-mark,
   .login-highlights strong,
-  .login-demo-list li,
+  .login-demo-list .login-demo-pick,
   .login-demo-list .login-mono,
   .login-auth-tab,
   .login-auth-tab-pill,
@@ -1445,7 +1456,7 @@
   .login-demo-toggle::after,
   .login-env::after,
   .login-highlights li::after,
-  .login-demo-list li::after,
+  .login-demo-list .login-demo-pick::after,
   .login-auth-tab::after,
   .login-avatar-option::after,
   .login-avatar-upload::after {

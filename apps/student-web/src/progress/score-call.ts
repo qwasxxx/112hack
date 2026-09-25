@@ -23,8 +23,8 @@ export type CallFacts = {
 const ASK = {
   address: /адрес|где это|где вы|улиц|какой дом|квартир|ориентир/,
   what: /что случилось|что произошло|что там|что горит|что случ/,
-  injured: /пострадав|ранен|жив\b|кто пострадал|есть ли люди/,
-  phone: /телефон|номер|как перезвон|оставайтесь на/,
+  injured: /пострада|ранен|травм|погиб|жив|цел[ыаой]|есть ли кто|кто-нибудь|кто нибудь/,
+  phone: /телефон|номер|как перезвон|оставайтесь на|сотов|мобильн|для связи|перезвон/,
 };
 
 const WHAT_VOLUNTEERED =
@@ -73,11 +73,12 @@ export function scoreCallRules(turns: TranscriptTurn[], facts: CallFacts = {}): 
     callerCovers(callerNorm, facts.opening) ||
     callerCovers(callerNorm, facts.situation);
   const addressKnown = callerCovers(callerNorm, facts.address) || /\bдом\s*\d+/u.test(callerNorm);
+  const injuredKnown = /пострада|ранен|травм|погиб/.test(callerNorm);
 
   const asked = {
     address: ASK.address.test(operatorText) || addressKnown,
     what: ASK.what.test(operatorText) || whatKnown,
-    injured: ASK.injured.test(operatorText),
+    injured: ASK.injured.test(operatorText) || injuredKnown,
     phone: ASK.phone.test(operatorText),
   };
   const askedCount = Object.values(asked).filter(Boolean).length;

@@ -34,6 +34,7 @@ from sys112_llm.conversation import (
     TEACHER_NUDGE_TEXT,
     last_user_text,
     breaks_character,
+    leaves_role,
     repair_victim_reply,
     session_scenario_extra,
     should_speak_intervention,
@@ -200,10 +201,10 @@ async def score_call(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         raw = await client.complete_chat(
             messages,
-            max_tokens=max(LLM_ANALYSIS_MAX_TOKENS, 1600),
+            max_tokens=240,
             temperature=0.2,
-            think=True,
-            timeout_sec=50,
+            think=False,
+            timeout_sec=8,
         )
     except Exception:
         logger.exception("[LLM] Call score failed")
@@ -214,7 +215,7 @@ async def score_call(payload: dict[str, Any]) -> dict[str, Any]:
             "source": "rules",
         }
     parsed = parse_score_json(raw)
-    parsed["source"] = f"{LLM_PROVIDER}:{LLM_MODEL_NAME}:think"
+    parsed["source"] = f"{LLM_PROVIDER}:{LLM_MODEL_NAME}"
     return parsed
 
 
@@ -434,6 +435,19 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
         logger.info("[LLM] Generating response")
         try:
             full = await _generate(generation_messages(session), ws, session=session, gen_id=gen_id)
+            if session.conversation_role == "victim" and full and leaves_role(full):
+                nudged = generation_messages(session)
+                nudged.insert(
+                    1,
+                    {
+                        "role": "system",
+                        "content": (
+                            "Предыдущая попытка была не голосом заявителя. "
+                            "Скажи одну короткую фразу человека, который сам звонит за помощью."
+                        ),
+                    },
+                )
+                full = await _generate(nudged, ws, session=session, gen_id=gen_id)
         except WebSocketDisconnect:
             session.busy = False
             logger.info("[LLM] Client left during generation")
@@ -531,6 +545,8 @@ async def _generate(
         visible += chunk
         spoken = sanitize_speech(visible)
         if not spoken or spoken == last_sent or breaks_character(spoken):
+            continue
+        if live is not None and live.conversation_role == "victim" and leaves_role(spoken):
             continue
         if len(spoken) < 48 and not re.search(r"[.!?…]$", spoken):
             continue

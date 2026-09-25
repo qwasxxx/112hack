@@ -10,7 +10,7 @@ def _env(name: str, default: str) -> str:
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
-def _load_fish_env() -> None:
+def _load_repo_env() -> None:
     path = REPO_ROOT / ".env"
     if not path.is_file():
         return
@@ -20,11 +20,11 @@ def _load_fish_env() -> None:
             continue
         key, value = line.split("=", 1)
         key = key.strip()
-        if key.startswith("FISH_") and key not in os.environ:
+        if key and key not in os.environ:
             os.environ[key] = value.strip().strip('"').strip("'")
 
 
-_load_fish_env()
+_load_repo_env()
 
 TTS_HOST = _env("TTS_HOST", "0.0.0.0")
 TTS_PORT = int(_env("TTS_PORT", "8092"))
@@ -32,7 +32,7 @@ TTS_LANGUAGE = _env("TTS_LANGUAGE", "ru")
 TTS_SAMPLE_RATE = int(_env("TTS_SAMPLE_RATE", "48000"))
 TTS_THREADS = int(_env("TTS_THREADS", "2"))
 TTS_MODEL_ID = _env("TTS_MODEL_ID", "v5_5_ru")
-TTS_BACKEND = _env("TTS_BACKEND", "silero")
+TTS_BACKEND = _env("TTS_BACKEND", "fish")
 TTS_DEVICE = _env("TTS_DEVICE", "cpu")
 TTS_QWEN_MODEL = _env("TTS_QWEN_MODEL", "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice")
 TTS_QWEN_OPERATOR_SPEAKER = _env("TTS_QWEN_OPERATOR_SPEAKER", "Aiden")
@@ -67,6 +67,8 @@ FISH_REFERENCE_AUDIO = _env("FISH_REFERENCE_AUDIO", "")
 FISH_REFERENCE_TEXT = _env("FISH_REFERENCE_TEXT", "")
 FISH_OPERATOR_REFERENCE_ID = _env("FISH_OPERATOR_REFERENCE_ID", "")
 FISH_VICTIM_REFERENCE_ID = _env("FISH_VICTIM_REFERENCE_ID", "")
+FISH_VICTIM_FEMALE_REFERENCE_ID = _env("FISH_VICTIM_FEMALE_REFERENCE_ID", "a7b8d6d0a7b84fe093822d5d2877b002")
+FISH_VICTIM_MALE_REFERENCE_ID = _env("FISH_VICTIM_MALE_REFERENCE_ID", "cfb009bc5b96444fae8d0711b9be734a")
 FISH_OPERATOR_REFERENCE_AUDIO = _env("FISH_OPERATOR_REFERENCE_AUDIO", "")
 FISH_VICTIM_REFERENCE_AUDIO = _env("FISH_VICTIM_REFERENCE_AUDIO", "")
 FISH_OPERATOR_REFERENCE_TEXT = _env("FISH_OPERATOR_REFERENCE_TEXT", "")

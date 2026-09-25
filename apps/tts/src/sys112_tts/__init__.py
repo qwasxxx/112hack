@@ -1,1 +1,1 @@
-"""Local TTS: Silero v5_5_ru by default, Qwen3-TTS via TTS_BACKEND=qwen3, Fish Audio via TTS_BACKEND=fish."""
+"""TTS: Fish Audio by default. Silero and Qwen3-TTS only if TTS_BACKEND names them."""

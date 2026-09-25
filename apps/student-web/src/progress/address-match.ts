@@ -59,13 +59,32 @@ export function cardAddressLine(address: IncidentAddress): string {
     .join(' ');
 }
 
+function stem(token: string): string {
+  const cut = token.replace(
+    /(иями|ами|ями|ого|ему|ому|его|ыми|ими|ах|ях|ов|ев|ам|ям|ом|ем|ой|ый|ий|ая|ое|ые|ие|ую|юю|а|я|ы|и|е|о|у|ю)$/u,
+    '',
+  );
+  return cut.length >= 3 ? cut : token;
+}
+
+function samePlace(left: string, right: string): boolean {
+  const a = stem(left);
+  const b = stem(right);
+  if (a === b) {
+    return true;
+  }
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  return shorter.length >= 4 && longer.startsWith(shorter);
+}
+
 export function addressOverlap(expected: string, got: string): { ratio: number; missing: string[] } {
   const need = placeTokens(expected);
   if (need.length === 0) {
     return { ratio: 1, missing: [] };
   }
-  const have = new Set(placeTokens(got));
-  const missing = need.filter((token) => !have.has(token));
+  const have = placeTokens(got);
+  const missing = need.filter((token) => !have.some((item) => samePlace(token, item)));
   const hit = need.length - missing.length;
   return { ratio: hit / need.length, missing };
 }

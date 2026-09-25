@@ -69,7 +69,10 @@ services:
       dockerfile: apps/stt/Dockerfile
     container_name: sys112-stt
     environment:
-      STT_MODE: local
+      STT_MODE: ${STT_MODE:-huggingface}
+      HF_TOKEN: ${HF_TOKEN:-}
+      STT_HF_MODEL: ${STT_HF_MODEL:-openai/whisper-large-v3-turbo}
+      STT_HF_LANGUAGE: russian
       STT_MODEL_PATH: /models/sherpa-onnx-streaming-t-one-russian-2025-09-08
       STT_SAMPLE_RATE: "8000"
       STT_NUM_THREADS: "2"
@@ -138,11 +141,11 @@ services:
     container_name: sys112-llm
     environment:
       LLM_MODE: local
-      LLM_PROVIDER: local
-      LLM_RUNTIME: llama_cpp
-      LLM_MODEL_NAME: Qwen3-4B
-      LLM_MODEL_PATH: /models/llm/Qwen3-4B-Q4_K_M.gguf
-      LLM_BASE_URL: http://llama:8080
+      LLM_PROVIDER: ${LLM_PROVIDER:-huggingface}
+      LLM_RUNTIME: openai
+      LLM_MODEL_NAME: ${LLM_MODEL_NAME:-Qwen/Qwen3.5-9B}
+      HF_TOKEN: ${HF_TOKEN:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://router.huggingface.co}
       LLM_HOST: 0.0.0.0
       LLM_PORT: "8091"
       LLM_TEMPERATURE: "0.3"
@@ -153,9 +156,6 @@ services:
       - ../../models:/models
     ports:
       - "8091:8091"
-    depends_on:
-      llama:
-        condition: service_started
     healthcheck:
       test:
         [
@@ -178,7 +178,7 @@ services:
       TTS_PORT: "8092"
       TTS_LANGUAGE: ru
       TTS_THREADS: "4"
-      TTS_BACKEND: ${TTS_BACKEND:-silero}
+      TTS_BACKEND: ${TTS_BACKEND:-fish}
       TTS_DEVICE: cpu
       FISH_API_KEY: ${FISH_API_KEY:-}
       FISH_MODEL: ${FISH_MODEL:-s2.1-pro}
