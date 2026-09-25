@@ -52,6 +52,7 @@ export type LessonReviewField = {
 export type LessonReviewLine = {
   role: 'operator' | 'caller';
   text: string;
+  speaker?: string;
 }
 
 export const PASS_SCORE = 70;

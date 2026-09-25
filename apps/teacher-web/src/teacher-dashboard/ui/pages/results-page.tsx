@@ -269,7 +269,7 @@ function ResultDetail({
 
       <section className="td-play">
         <header>
-          <h4>Запись разговора</h4>
+          <h4>{result.category === 'ДДС' ? 'Звонки смены' : 'Запись разговора'}</h4>
           {playable ? (
             <a href={localUrl || `${recording}?download=1`} download={localUrl ? 'zvonok.wav' : undefined}>
               Скачать WAV
@@ -287,7 +287,7 @@ function ResultDetail({
           <ol className="td-talk">
             {lines.map((line, index) => (
               <li key={`${line.role}-${index}`} className={line.role === 'operator' ? 'is-operator' : 'is-caller'}>
-                <span>{line.role === 'operator' ? 'Оператор' : 'Заявитель'}</span>
+                <span>{line.speaker || (line.role === 'operator' ? 'Оператор' : 'Заявитель')}</span>
                 {line.text}
               </li>
             ))}

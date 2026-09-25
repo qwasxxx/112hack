@@ -156,7 +156,7 @@ async def warmup_prompt(payload: dict[str, Any]) -> dict[str, str]:
     if llm_status != "ready":
         return {"status": llm_status}
     role = payload.get("conversation_role") or "victim"
-    if role not in {"victim", "operator"}:
+    if role not in {"victim", "operator", "service"}:
         role = "victim"
     extra = payload.get("system_prompt")
     opening = payload.get("opening")
@@ -255,7 +255,7 @@ async def llm_socket(ws: WebSocket) -> None:
             if kind == "start":
                 call_id = str(payload.get("call_id") or uuid.uuid4())
                 role = payload.get("conversation_role") or "victim"
-                if role not in {"victim", "operator"}:
+                if role not in {"victim", "operator", "service"}:
                     role = "victim"
                 if llm_status == "loading":
                     await ws.send_json(
@@ -357,7 +357,7 @@ async def llm_socket(ws: WebSocket) -> None:
                         "detail": detail,
                     }
                 )
-                if current.conversation_role == "victim" and should_speak_intervention(command):
+                if current.conversation_role in {"victim", "service"} and should_speak_intervention(command):
                     nudge_id = f"nudge-{uuid.uuid4()}"
                     if current.busy:
                         current.pending = [(nudge_id, TEACHER_NUDGE_TEXT)]
@@ -483,7 +483,9 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
                 return
             continue
         if full:
-            if breaks_character(full) and session.conversation_role != "victim":
+            if session.conversation_role == "service" and breaks_character(full):
+                full = "Повторите адрес и суть."
+            elif breaks_character(full) and session.conversation_role != "victim":
                 full = "Назовите адрес, где это происходит."
             elif session.conversation_role == "victim":
                 full = repair_victim_reply(

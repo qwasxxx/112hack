@@ -1,5 +1,5 @@
 import { SERVICE_LABEL, type ServiceKind, type TrainingScenario } from '../../data/scenarios';
-import { namesFromTicket } from '../../progress/ticket-facts';
+import { namesFromTicket, phonesMatch } from '../../progress/ticket-facts';
 
 export type TicketFacts = {
   callerName: string;
@@ -147,12 +147,10 @@ export function scoreDds(draft: DdsDraft, facts: TicketFacts): {
   const expected = uniqueServices(facts.services);
   const extra = selected.filter((item) => !expected.includes(item));
   const missing = expected.filter((item) => !selected.includes(item));
-  const phoneExpected = phoneDigits(facts.callerPhone);
-  const phoneGot = phoneDigits(draft.callerPhone);
   return {
     servicesOk: extra.length === 0 && missing.length === 0,
     injuredOk: draft.injured.trim() === facts.injured,
-    phoneOk: !phoneExpected || phoneGot === phoneExpected,
+    phoneOk: phonesMatch(facts.callerPhone, draft.callerPhone),
     extra,
     missing,
   };

@@ -7,7 +7,7 @@ import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
 import { beginCallRecording, enqueueTtsAudio, stopTtsAudio, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
 import type { TranscriptTurn } from '../progress';
-import { patchLive, refreshCuesFromApi, subscribeCues, takePendingLlmCues } from '../progress';
+import { patchLive, readLiveSessions, refreshCuesFromApi, subscribeCues, takePendingLlmCues } from '../progress';
 
 type Line = {
   id: string;
@@ -32,6 +32,8 @@ type Props = {
   panelTitle?: string;
   onCallEnded?: (payload: { lines: TranscriptTurn[]; seconds: number; audio?: Promise<Blob | null> }) => void;
   operatorLogin?: string;
+  aiRole?: 'service';
+  transcriptScope?: string;
 };
 
 function voiceForTeacherCue(type: string, note: string): { emotion: string; pitch: string; speed: number } | undefined {
@@ -66,9 +68,9 @@ function voiceForTeacherCue(type: string, note: string): { emotion: string; pitc
 
 export function CallPage(props: Props) {
   const embedded = props.variant === 'panel';
-  const conversationRole = SECTION_AI_ROLE[props.section];
-  const userRole: Line['role'] = conversationRole === 'victim' ? 'operator' : 'caller';
-  const aiRole: Line['role'] = conversationRole === 'victim' ? 'caller' : 'operator';
+  const conversationRole = props.aiRole ?? SECTION_AI_ROLE[props.section];
+  const userRole: Line['role'] = conversationRole === 'operator' ? 'caller' : 'operator';
+  const aiRole: Line['role'] = conversationRole === 'operator' ? 'operator' : 'caller';
   const [seconds, setSeconds] = useState(0);
   const [lines, setLines] = useState<Line[]>([]);
   const [card, setCard] = useState<Record<string, string>>({});
@@ -100,10 +102,12 @@ export function CallPage(props: Props) {
   const recorderRef = useRef<{ stop: () => Promise<Blob | null> } | undefined>(undefined);
   const mutedRef = useRef(false);
   const voiceRef = useRef(props.scenario.ttsVoice);
+  const teacherToneRef = useRef<{ emotion: string; pitch: string; speed: number } | undefined>(undefined);
   const aiVoiceId = conversationRole;
   const showCard = !embedded && props.section !== 'theory';
   const sectionLabel = props.section === 'theory' ? 'Теория' : props.section === 'exam' ? 'Экзамен' : 'Тренировка';
-  const youAre = conversationRole === 'victim' ? 'Вы — оператор' : 'Вы — заявитель';
+  const youAre =
+    conversationRole === 'service' ? 'Вы — диспетчер ДДС' : conversationRole === 'victim' ? 'Вы — оператор' : 'Вы — заявитель';
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -122,17 +126,29 @@ export function CallPage(props: Props) {
     if (!login) {
       return;
     }
-    patchLive(login, {
-      transcript: lines
-        .filter((line) => line.text.trim())
-        .slice(-12)
-        .map((line) => ({
-          role: line.role === 'operator' ? 'student' : 'caller',
-          text: line.text,
-          at: typeof line.at === 'number' ? new Date(line.at).toISOString() : new Date().toISOString(),
-        })),
-    });
-  }, [lines, props.operatorLogin]);
+    const scope = props.transcriptScope || 'call';
+    const spoken = lines
+      .filter((line) => line.text.trim())
+      .slice(-12)
+      .map((line) => ({
+        role: (line.role === 'operator' ? 'student' : 'caller') as 'student' | 'caller',
+        speaker:
+          conversationRole === 'service'
+            ? line.role === 'operator'
+              ? 'Диспетчер'
+              : 'Служба'
+            : line.role === 'operator'
+              ? 'Оператор'
+              : 'Заявитель',
+        text: line.text,
+        at: new Date(line.at).toISOString(),
+        scope,
+      }));
+    const prior = (readLiveSessions().find((item) => item.login === login)?.transcript ?? []).filter(
+      (line) => line.scope !== scope,
+    );
+    patchLive(login, { transcript: [...prior, ...spoken].slice(-48) });
+  }, [conversationRole, lines, props.operatorLogin, props.transcriptScope]);
 
   useEffect(() => {
     const login = props.operatorLogin;
@@ -147,6 +163,7 @@ export function CallPage(props: Props) {
       for (const cue of pending) {
         const tone = voiceForTeacherCue(cue.type, cue.note || '');
         if (tone) {
+          teacherToneRef.current = tone;
           const base = voiceRef.current ?? props.scenario.ttsVoice;
           voiceRef.current = {
             speaker: base?.speaker ?? 'xenia',
@@ -238,7 +255,7 @@ export function CallPage(props: Props) {
       spokenTtsRef.current = opening;
       holdMicForTts();
       void Promise.race([
-        enqueueTtsAudio(opening, aiVoiceId, callerVoice()),
+        enqueueTtsAudio(opening, conversationRole === 'service' ? 'service' : aiVoiceId, callerVoice()),
         new Promise((resolve) => window.setTimeout(resolve, 12000)),
       ]).finally(() => {
         if (leavingRef.current || awaitingReplyRef.current) {
@@ -455,6 +472,12 @@ export function CallPage(props: Props) {
   }
 
   function callerVoice() {
+    if (conversationRole === 'service') {
+      const tone = teacherToneRef.current;
+      return tone
+        ? { emotion: tone.emotion, pitch: tone.pitch, speed: tone.speed, gender: 'male' as const, speaker: 'aidar' as const }
+        : { emotion: 'dispatch', pitch: 'medium' as const, speed: 1.08, gender: 'male' as const, speaker: 'aidar' as const };
+    }
     return conversationRole === 'victim' ? voiceRef.current ?? props.scenario.ttsVoice : undefined;
   }
 
@@ -478,7 +501,7 @@ export function CallPage(props: Props) {
     const fresh = text.trim();
     if (fresh) {
       spokenTtsRef.current = fresh;
-      void enqueueTtsAudio(fresh, aiVoiceId, callerVoice());
+      void enqueueTtsAudio(fresh, conversationRole === 'service' ? 'service' : aiVoiceId, callerVoice());
     }
     try {
       await Promise.race([
@@ -697,7 +720,15 @@ export function CallPage(props: Props) {
             ) : null}
             {lines.map((line) => (
               <article key={line.id} className={`line line-${line.role}${line.live ? ' line-partial' : ''}`}>
-                <span>{line.role === 'caller' ? 'Заявитель' : 'Оператор'}</span>
+                <span>
+                  {line.role === 'caller'
+                    ? conversationRole === 'service'
+                      ? 'Служба'
+                      : 'Заявитель'
+                    : conversationRole === 'service'
+                      ? 'Диспетчер'
+                      : 'Оператор'}
+                </span>
                 <p>{line.text}</p>
               </article>
             ))}

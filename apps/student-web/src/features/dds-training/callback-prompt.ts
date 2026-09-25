@@ -1,6 +1,28 @@
 import type { TrainingScenario } from '../../data/scenarios';
 import type { TicketFacts } from './incoming-card';
 
+export function buildDdsServicePrompt(
+  label: string,
+  phone: string,
+  cardNumber: string,
+  facts: TicketFacts,
+): string {
+  return [
+    `Служба: ${label}, номер ${phone}.`,
+    `Карточка ${cardNumber}.`,
+    facts.address ? `АДРЕС В КАРТОЧКЕ: ${facts.address}` : '',
+    facts.description ? `СУТЬ: ${facts.description}` : '',
+    `Пострадавшие в карточке: ${facts.injured}`,
+    'Диспетчер ДДС должен сам назвать адрес, суть и попросить наряд. Если не назвал — спроси. Если назвал — подтверди выезд.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+export function ddsServiceOpening(label: string): string {
+  return `${label}, слушаю.`;
+}
+
 export function ddsCallbackOpening(): string {
   return 'Алло.';
 }

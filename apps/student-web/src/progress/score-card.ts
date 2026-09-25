@@ -5,6 +5,7 @@ import {
   cardPhones,
   filledAddress,
   last10,
+  phonesMatch,
   serviceLabels,
   ticketFactsFrom,
   type TicketFacts,
@@ -329,7 +330,7 @@ function scorePhone(expected: string, got: string[], findings: LessonFinding[], 
     return max;
   }
   const want = last10(expected);
-  const hit = got.some((item) => item === want);
+  const hit = got.some((item) => phonesMatch(want, item));
   const points = hit ? max : 0;
   if (!hit) {
     note(findings, 'phone-miss', 'Телефон', `Эталон ${want}, в карточке ${shown}`, 'error');

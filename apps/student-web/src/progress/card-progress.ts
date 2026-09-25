@@ -23,6 +23,14 @@ export type DdsHint = {
   done: number;
   total: number;
   services: number;
+  card?: string;
+  status?: string;
+  naryad?: string;
+  address?: string;
+  injured?: string;
+  caller?: string;
+  contacts?: string;
+  history?: string;
   savedAt: string;
 };
 
@@ -102,22 +110,23 @@ export function liveCardSnapshot(
     const done = hint?.done ?? 0;
     const total = hint?.total ?? 0;
     const rows: LiveCardRow[] = [
+      { key: 'card', label: 'Карточка', value: hint?.card ?? '', filled: Boolean(hint?.card) },
+      { key: 'status', label: 'Статус', value: hint?.status ?? '', filled: Boolean(hint?.status && hint.status !== 'Добавлена') },
+      { key: 'naryad', label: 'Наряд', value: hint?.naryad ?? '', filled: Boolean(hint?.naryad) },
+      { key: 'address', label: 'Адрес', value: hint?.address ?? '', filled: Boolean(hint?.address) },
+      { key: 'injured', label: 'Пострадавшие', value: hint?.injured ?? '', filled: Boolean(hint?.injured) },
+      { key: 'caller', label: 'ФИО', value: hint?.caller ?? '', filled: Boolean(hint?.caller) },
+      { key: 'contacts', label: 'Связался', value: hint?.contacts ?? '', filled: Boolean(hint?.contacts) },
+      { key: 'history', label: 'Ход статусов', value: hint?.history ?? '', filled: Boolean(hint?.history) },
       {
         key: 'processed',
         label: 'Обработано',
         value: total ? `${done} из ${total}` : '',
         filled: total > 0,
       },
-      {
-        key: 'services',
-        label: 'Службы',
-        value: hint ? String(hint.services) : '',
-        filled: Boolean(hint && hint.services > 0),
-      },
-      { key: 'phase', label: 'Фаза АРМ', value: 'смена ДДС', filled: true },
     ];
     const percent = total > 0 ? Math.max(12, Math.round((done / total) * 100)) : 8;
-    return pack(rows, percent, 'смена');
+    return pack(rows, percent, '');
   }
 
   const draft = readArmDraft(login, scenarioId);

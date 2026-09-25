@@ -16,7 +16,7 @@ function llmSocketUrl(): string {
 
 export function createLlmStream(options: {
   callId: string;
-  conversationRole: 'victim' | 'operator';
+  conversationRole: 'victim' | 'operator' | 'service';
   systemPrompt?: string;
   opening?: string;
   lessonId?: string;
@@ -208,7 +208,7 @@ export function createLlmStream(options: {
 }
 
 export function warmupLesson(options: {
-  conversationRole: 'victim' | 'operator';
+  conversationRole: 'victim' | 'operator' | 'service';
   systemPrompt?: string;
   opening?: string;
 }): void {

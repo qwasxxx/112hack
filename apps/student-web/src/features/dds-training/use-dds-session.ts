@@ -61,6 +61,7 @@ export type DdsQueueCard = {
   naryad: string;
   history: DdsStatusEvent[];
   callbackDone: boolean;
+  contacts: { service: string; said: string }[];
   editingStatus: boolean;
   statusForm: DdsStatusForm;
   chs: boolean;
@@ -146,6 +147,7 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
           },
         ],
         callbackDone: false,
+        contacts: [],
         editingStatus: false,
         statusForm: emptyForm('Добавлена', ''),
         chs: false,
@@ -332,6 +334,21 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     log('status_change', key);
   }
 
+  function recordContact(service: string, said: string) {
+    if (!activeId) {
+      return;
+    }
+    const text = said.trim();
+    if (!text) {
+      return;
+    }
+    patchQueue(activeId, (item) => ({
+      ...item,
+      contacts: [...item.contacts, { service, said: text }],
+    }));
+    log('service_call', `${service}: ${text.slice(0, 180)}`);
+  }
+
   function markCallback() {
     if (!activeId) {
       return;
@@ -474,6 +491,7 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     patchStatusForm,
     applyStatus,
     markCallback,
+    recordContact,
     toggleMark,
     dispatchCard: () => finishCard('dispatch'),
     transferCard: () => finishCard('transfer'),

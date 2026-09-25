@@ -276,20 +276,22 @@ async function fetchTtsResponse(
   voice?: TtsVoiceHint,
 ): Promise<Response | undefined> {
   const operator = voiceId === 'operator';
+  const service = voiceId === 'service' || voice?.emotion === 'dispatch';
+  const brisk = service && (!voice?.emotion || voice.emotion === 'dispatch');
   try {
     const response = await fetch(ttsUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text,
-        role: operator ? 'operator' : 'victim',
-        emotion: operator ? 'calm' : voice?.emotion || 'scared',
-        conversation_role: operator ? 'operator' : 'victim',
+        role: service ? 'victim' : operator ? 'operator' : 'victim',
+        emotion: brisk ? 'dispatch' : service ? voice?.emotion || 'dispatch' : operator ? 'calm' : voice?.emotion || 'scared',
+        conversation_role: service ? 'operator' : operator ? 'operator' : 'victim',
         voice_id: operator ? 'operator_calm' : voice?.speaker || 'victim_panic',
-        speaker: operator ? 'aidar' : voice?.speaker,
-        gender: operator ? 'male' : voice?.gender,
-        pitch: operator ? 'medium' : voice?.pitch,
-        speed: operator ? 1 : voice?.speed,
+        speaker: service ? 'aidar' : operator ? 'aidar' : voice?.speaker,
+        gender: service ? 'male' : operator ? 'male' : voice?.gender,
+        pitch: service ? 'medium' : operator ? 'medium' : voice?.pitch,
+        speed: brisk ? 1.08 : service ? voice?.speed ?? 1.08 : operator ? 1 : voice?.speed,
       }),
       signal: abort.signal,
     });

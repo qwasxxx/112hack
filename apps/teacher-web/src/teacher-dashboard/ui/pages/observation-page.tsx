@@ -4,6 +4,32 @@ import type { ActiveSession } from '../../domain/entities';
 import { difficultyLabels, formatDuration } from '../../domain/value-objects';
 import { StatusBadge } from '../components/common';
 
+const DDS_MODES: Array<{
+  type: InterventionType;
+  label: string;
+  lead: string;
+  placeholder: string;
+}> = [
+  {
+    type: 'add_circumstance',
+    label: 'Новое обстоятельство',
+    lead: 'Собеседник на линии сразу скажет это. Если звонка нет — скажет в следующем.',
+    placeholder: 'Бригада задерживается, выезд через десять минут',
+  },
+  {
+    type: 'adjust_difficulty',
+    label: 'Усложнить',
+    lead: 'Собеседник начинает путаться или переспрашивать так, как вы написали.',
+    placeholder: 'Не расслышал номер дома и просит повторить адрес',
+  },
+  {
+    type: 'set_emotional_state',
+    label: 'Сменить тон',
+    lead: 'Тон собеседника на линии станет таким. Факты карточки не меняются.',
+    placeholder: 'Раздражён, отвечает коротко и торопит',
+  },
+];
+
 const MODES: Array<{
   type: InterventionType;
   label: string;
@@ -55,11 +81,32 @@ export function ObservationPage({
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cardPick, setCardPick] = useState(0);
   const filled = session.requiredActions.filter((item) => item.completed).length;
   const total = session.requiredActions.length;
-  const fields = Object.entries(session.incidentCard);
+  const ddsCards = session.ddsCards ?? [];
+  const cardIndex = ddsCards.length
+    ? Math.min(cardPick, ddsCards.length - 1)
+    : 0;
+  const picked = ddsCards[cardIndex];
+  const fields = picked
+    ? [
+        ['Карточка', picked.number],
+        ['Ситуация', picked.title],
+        ['Статус', picked.status],
+        ['Наряд', picked.naryad],
+        ['Адрес', picked.address],
+        ['Пострадавшие', picked.injured],
+        ['ФИО', picked.caller],
+        ['Телефон', picked.phone],
+        ['Связался', picked.contacts],
+        ['Ход статусов', picked.history],
+      ]
+    : Object.entries(session.incidentCard);
   const live = session.status === 'live';
-  const selected = MODES.find((item) => item.type === mode) ?? MODES[0];
+  const dds = session.category === 'ДДС';
+  const modes = dds ? DDS_MODES : MODES;
+  const selected = modes.find((item) => item.type === mode) ?? modes[0];
   const text = note.trim();
   const canSend = live && text.length > 0 && !busy;
 
@@ -88,14 +135,16 @@ export function ObservationPage({
           <button className="td-back" onClick={onBack}>
             ← Активные занятия
           </button>
-          <p className="td-kicker">Наблюдение за вызовом</p>
+          <p className="td-kicker">{dds ? 'Наблюдение за сменой ДДС' : 'Наблюдение за вызовом'}</p>
           <h2>{session.student.name}</h2>
           <p>
             {session.scenarioTitle} · {difficultyLabels[session.difficulty]}
           </p>
         </div>
         <div className={`td-session-clock ${live ? 'is-live' : ''}`}>
-          <span>{live ? 'Идёт вызов' : session.status === 'paused' ? 'Подготовка' : 'Завершение'}</span>
+          <span>
+            {dds ? 'Смена ДДС' : live ? 'Идёт вызов' : session.status === 'paused' ? 'Подготовка' : 'Завершение'}
+          </span>
           <strong>{formatDuration(session.durationSec)}</strong>
         </div>
       </header>
@@ -119,7 +168,7 @@ export function ObservationPage({
       <div className="td-observe-grid">
         <section className="td-panel td-transcript">
           <div className="td-section-title">
-            <h3>Разговор</h3>
+            <h3>{dds ? 'Ход смены' : 'Разговор'}</h3>
             {live ? <span className="td-live">● LIVE</span> : <span className="td-help">ожидание</span>}
           </div>
           {session.transcript.length ? (
@@ -127,11 +176,16 @@ export function ObservationPage({
               <article className={`td-message td-message--${line.role}`} key={line.id}>
                 <div>
                   <strong>
-                    {line.role === 'student'
-                      ? 'Оператор'
-                      : line.role === 'caller'
-                        ? 'Заявитель'
-                        : 'Система'}
+                    {line.speaker ||
+                      (line.role === 'student'
+                        ? dds
+                          ? 'Диспетчер'
+                          : 'Оператор'
+                        : line.role === 'caller'
+                          ? dds
+                            ? 'Служба'
+                            : 'Заявитель'
+                          : 'Карточка')}
                   </strong>
                   <time>{formatLineTime(line.at)}</time>
                 </div>
@@ -139,17 +193,36 @@ export function ObservationPage({
               </article>
             ))
           ) : (
-            <p className="td-observe-empty">Реплики появятся, когда ученик начнёт разговор.</p>
+            <p className="td-observe-empty">
+              {dds
+                ? 'Здесь появятся статусы карточки и каждый звонок: в службу и заявителю.'
+                : 'Реплики появятся, когда ученик начнёт разговор.'}
+            </p>
           )}
         </section>
 
         <aside className="td-panel td-observe-card">
           <div className="td-section-title">
-            <h3>Карточка происшествия</h3>
+            <h3>{dds ? 'Карточка ДДС' : 'Карточка происшествия'}</h3>
             <span className="td-help">
               {filled}/{total || 0} заполнено
             </span>
           </div>
+          {ddsCards.length > 1 ? (
+            <div className="td-dds-switch" role="tablist" aria-label="Карточки смены">
+              {ddsCards.map((card, index) => (
+                <button
+                  key={card.id}
+                  type="button"
+                  className={index === cardIndex ? 'is-on' : ''}
+                  onClick={() => setCardPick(index)}
+                >
+                  {card.number}
+                  {card.active ? ' · сейчас' : ''}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <dl className="td-card-fields">
             {fields.length ? (
               fields.map(([key, value]) => {
@@ -165,7 +238,7 @@ export function ObservationPage({
               <p className="td-observe-empty">Карточка ещё не открыта.</p>
             )}
           </dl>
-          {session.requiredActions.length > 0 && (
+          {!picked && session.requiredActions.length > 0 && (
             <>
               <h4>Обязательные поля</h4>
               <ul className="td-checklist">
@@ -183,8 +256,12 @@ export function ObservationPage({
         <section className="td-panel td-observe-intervene">
           <div className="td-section-title">
             <div>
-              <h3>Ход звонка</h3>
-              <span className="td-help">Сначала текст, потом одно действие. Пока не отправите — в звонке ничего не меняется.</span>
+              <h3>{dds ? 'Вмешательство' : 'Ход звонка'}</h3>
+              <span className="td-help">
+                {dds
+                  ? 'Текст уходит в текущий звонок: службе или заявителю. Если линии нет, сработает в следующем звонке.'
+                  : 'Сначала текст, потом одно действие. Пока не отправите — в звонке ничего не меняется.'}
+              </span>
             </div>
           </div>
           {sent && (
@@ -194,7 +271,7 @@ export function ObservationPage({
           )}
           {error && <p className="td-observe-error">{error}</p>}
           <div className="td-cue-modes" role="radiogroup" aria-label="Что сделать">
-            {MODES.map((item) => (
+            {modes.map((item) => (
               <button
                 key={item.type}
                 type="button"
@@ -221,7 +298,7 @@ export function ObservationPage({
             />
           </label>
           <button type="button" className="td-btn td-btn--primary td-cue-send" disabled={!canSend} onClick={() => void send()}>
-            {busy ? 'Отправка…' : live ? 'Отправить в звонок' : 'Нет живого звонка'}
+            {busy ? 'Отправка…' : live ? (dds ? 'Отправить в смену' : 'Отправить в звонок') : 'Нет живого занятия'}
           </button>
         </section>
       </div>

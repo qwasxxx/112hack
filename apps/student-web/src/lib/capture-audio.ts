@@ -134,6 +134,33 @@ export async function blobToWav(blob: Blob): Promise<Blob> {
   }
 }
 
+export async function concatWavs(blobs: Blob[]): Promise<Blob> {
+  if (blobs.length <= 1) {
+    return blobs[0] ?? new Blob();
+  }
+  const ctx = new AudioContext();
+  try {
+    const buffers = await Promise.all(blobs.map(async (blob) => ctx.decodeAudioData(await blob.arrayBuffer())));
+    const rate = buffers[0]?.sampleRate ?? 16000;
+    const gap = Math.floor(rate * 0.35);
+    const length = buffers.reduce((sum, buffer) => sum + buffer.length, 0) + gap * Math.max(0, buffers.length - 1);
+    const offline = new OfflineAudioContext(1, Math.max(1, length), rate);
+    let offset = 0;
+    for (const buffer of buffers) {
+      const source = offline.createBufferSource();
+      source.buffer = buffer;
+      source.connect(offline.destination);
+      source.start(offset / rate);
+      offset += buffer.length + gap;
+    }
+    return encodeWav(await offline.startRendering());
+  } catch {
+    return blobs[blobs.length - 1] ?? new Blob();
+  } finally {
+    void ctx.close();
+  }
+}
+
 export function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

@@ -5,6 +5,23 @@ export type LiveTranscriptLine = {
   role: 'student' | 'caller' | 'system';
   text: string;
   at: string;
+  scope?: string;
+  speaker?: string;
+};
+
+export type LiveDdsCard = {
+  id: string;
+  number: string;
+  title: string;
+  status: string;
+  naryad: string;
+  address: string;
+  injured: string;
+  caller: string;
+  phone: string;
+  contacts: string;
+  history: string;
+  active: boolean;
 };
 
 export type LivePresence = {
@@ -20,6 +37,7 @@ export type LivePresence = {
   phase?: string;
   cardRows?: LiveCardRow[];
   transcript?: LiveTranscriptLine[];
+  ddsCards?: LiveDdsCard[];
   updatedAt: string;
 };
 
@@ -73,6 +91,7 @@ export function upsertLive(entry: LivePresence): void {
     ...previous,
     ...entry,
     transcript: entry.transcript ?? previous?.transcript,
+    ddsCards: entry.ddsCards ?? previous?.ddsCards,
     updatedAt: entry.updatedAt || new Date().toISOString(),
   };
   writeMap(map);
@@ -125,6 +144,7 @@ export function mergeRemoteLive(entries: LivePresence[]): void {
       ...remote,
       transcript: remote.transcript?.length ? remote.transcript : local.transcript,
       cardRows: remote.cardRows?.length ? remote.cardRows : local.cardRows,
+      ddsCards: remote.ddsCards?.length ? remote.ddsCards : local.ddsCards,
     };
     changed = true;
   }

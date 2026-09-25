@@ -14,6 +14,8 @@ export type DdsShiftCardInput = {
   naryad?: string;
   workplaceStatus?: string;
   callback?: boolean;
+  contacts?: { service: string; said: string }[];
+  history?: { status: string; naryad?: string; comment?: string }[];
 };
 
 type ScoredCard = {
@@ -90,6 +92,42 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       severity: 'error',
     });
   }
+  const contacts = input.contacts ?? [];
+  if (contacts.length === 0) {
+    processPoints -= 12;
+    findings.push({
+      code: 'dds-service-call',
+      field: 'Связь со службой',
+      message: 'Не связались со службой, чтобы направить наряд на адрес',
+      severity: 'error',
+    });
+  } else {
+    const said = contacts.map((item) => item.said.toLowerCase().replace(/ё/g, 'е')).join(' ');
+    const place = input.facts.address
+      .toLowerCase()
+      .replace(/ё/g, 'е')
+      .split(/[^а-я0-9]+/u)
+      .filter((word) => word.length >= 5 && !['москва', 'область', 'напротив', 'большой', 'большого'].includes(word));
+    const namedPlace = place.filter((word) => said.includes(word.slice(0, 5))).length;
+    if (place.length > 0 && namedPlace < Math.min(2, place.length)) {
+      processPoints -= 8;
+      findings.push({
+        code: 'dds-service-address',
+        field: 'Связь со службой',
+        message: `В разговоре с ${contacts.map((item) => item.service).join(', ')} не назвали адрес`,
+        severity: 'warning',
+      });
+    }
+    if (!/наряд|бригад|выез|направ|отправ/.test(said)) {
+      processPoints -= 8;
+      findings.push({
+        code: 'dds-service-crew',
+        field: 'Связь со службой',
+        message: 'Службе не сказали направить наряд или бригаду',
+        severity: 'warning',
+      });
+    }
+  }
   if (!(input.naryad ?? '').trim()) {
     processPoints -= 15;
     findings.push({
@@ -154,6 +192,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
   }
 
   findings.push(...inspectOperatorText('Описание', input.draft.description, { minChars: 8 }));
+  findings.push(...inspectOperatorText('ФИО заявителя', input.draft.callerName, { minChars: 5 }));
   const decisionOk = input.decision === 'dispatch';
   const points = decisionOk
     ? Math.max(0, Math.min(100, Math.round(processPoints + injuredPoints + phonePoints + timerPoints)))
@@ -218,6 +257,9 @@ export function scoreDdsLesson(input: {
   if (scored.some((item) => item.role === 'own' && !item.phoneOk)) {
     recs.push('Телефон для связи обязателен. Если 112 его стёр — перезвоните заявителю.');
   }
+  if (scored.some((item) => item.findings.some((finding) => finding.code === 'dds-service-call'))) {
+    recs.push('По своей карточке нужно связаться со службой и попросить наряд на адрес из карточки.');
+  }
   if (findings.some((item) => item.code === 'dds-accept' || item.code === 'dds-close')) {
     recs.push('Сначала «Принята», затем наряд и статусы реагирования, в конце «Работы завершены».');
   }
@@ -246,6 +288,20 @@ export function scoreDdsLesson(input: {
     findings,
     recommendations: recs.slice(0, 4),
     summary: `${score} · ${scored.filter((item) => item.ok).length}/${scored.length} карточек · ${elapsedSeconds} с`,
+    transcript: cards.flatMap((item) => {
+      const head = item.scenario.code;
+      const steps = (item.history ?? []).map((event) => ({
+        role: 'operator' as const,
+        speaker: 'Статус',
+        text: `${head}: ${event.status}${event.naryad ? `, наряд ${event.naryad}` : ''}${event.comment ? `. ${event.comment}` : ''}`,
+      }));
+      const talks = (item.contacts ?? []).map((contact) => ({
+        role: 'caller' as const,
+        speaker: contact.service,
+        text: contact.said,
+      }));
+      return [...steps, ...talks];
+    }),
     reviewFields: cards.flatMap((item, index) => {
       const who = item.role === 'foreign' ? 'Чужая' : 'Своя';
       const prefix = `${index + 1}. ${who}`;

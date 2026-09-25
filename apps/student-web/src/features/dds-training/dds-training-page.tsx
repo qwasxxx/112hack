@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { TrainingScenario } from '../../data/scenarios';
 import { ddsWorkplaceName, readDdsLane } from '../../dds-lanes';
-import { writeDdsHint } from '../../progress';
+import { patchLive, readLiveSessions, writeDdsHint } from '../../progress';
+import { phonesMatch } from '../../progress/ticket-facts';
 import { CallPage } from '../../pages/call-page';
 import type { DdsFinish } from '../../pages/debrief-page';
 import { unlockTtsAudio } from '../../lib/tts-player';
-import { buildDdsCallbackPrompt, ddsCallbackOpening } from './callback-prompt';
+import { buildDdsCallbackPrompt, buildDdsServicePrompt, ddsCallbackOpening, ddsServiceOpening } from './callback-prompt';
 import { DdsCard } from './dds-card';
 import { DdsJournal } from './dds-journal';
 import { useDdsSession, type DdsCheckResult } from './use-dds-session';
@@ -40,11 +41,19 @@ export function DdsTrainingPage(props: Props) {
   const session = useDdsSession(props.scenario, lane);
   const [query, setQuery] = useState('');
   const [now, setNow] = useState(() => new Date());
-  const [callTarget, setCallTarget] = useState<{ title: string; prompt?: string; opening?: string } | null>(
+  const [callTarget, setCallTarget] = useState<{
+    title: string;
+    scope: string;
+    prompt?: string;
+    opening?: string;
+    aiRole?: 'service';
+    service?: string;
+  } | null>(
     null,
   );
   const closing = useRef(false);
-  const callAudio = useRef<{ audio: Promise<Blob | null>; seconds: number } | undefined>(undefined);
+  const callAudio = useRef<{ title: string; audio: Promise<Blob | null>; seconds: number }[]>([]);
+  const statusMarks = useRef(new Set<string>());
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -62,7 +71,52 @@ export function DdsTrainingPage(props: Props) {
       scenarioId: props.scenario.id,
       done,
       total: session.queue.length,
-      services: active?.draft.services.length ?? 0,
+      services: active?.contacts.length ?? active?.draft.services.length ?? 0,
+      card: active?.number,
+      status: active?.workplaceStatus,
+      naryad: active?.naryad,
+      address: active?.draft.address,
+      injured: active?.draft.injured,
+      caller: active?.draft.callerName,
+      contacts: active?.contacts.map((item) => item.service).join(', '),
+      history: active?.history.map((item) => item.status).join(' → '),
+    });
+    patchLive(props.operatorLogin, {
+      ddsCards: session.queue.map((item) => ({
+        id: item.id,
+        number: item.number,
+        title: item.scenario.title,
+        status: item.workplaceStatus,
+        naryad: item.naryad,
+        address: item.draft.address,
+        injured: item.draft.injured,
+        caller: item.draft.callerName,
+        phone: item.draft.callerPhone,
+        contacts: item.contacts.map((contact) => contact.service).join(', '),
+        history: item.history.map((event) => event.status).join(' → '),
+        active: item.id === session.activeId,
+      })),
+    });
+    if (!active) {
+      return;
+    }
+    const mark = `${active.id}|${active.workplaceStatus}|${active.naryad}|${active.history.length}`;
+    if (statusMarks.current.has(mark)) {
+      return;
+    }
+    statusMarks.current.add(mark);
+    const prior = readLiveSessions().find((item) => item.login === props.operatorLogin)?.transcript ?? [];
+    patchLive(props.operatorLogin, {
+      transcript: [
+        ...prior,
+        {
+          role: 'system',
+          speaker: 'Карточка',
+          scope: `status-${mark}`,
+          text: `${active.number}: ${active.workplaceStatus}${active.naryad ? `, наряд ${active.naryad}` : ''}`,
+          at: new Date().toISOString(),
+        },
+      ].slice(-48),
     });
   }, [props.operatorLogin, props.scenario.id, session.activeId, session.queue]);
 
@@ -89,18 +143,17 @@ export function DdsTrainingPage(props: Props) {
         naryad: item.naryad,
         workplaceStatus: item.workplaceStatus,
         callback: item.callbackDone,
+        contacts: item.contacts,
+        history: item.history,
       })),
-      audio: callAudio.current?.audio,
-      callSeconds: callAudio.current?.seconds,
+      clips: callAudio.current,
     };
     const own = finish.cards.filter((item) => item.role === 'own');
     const check: DdsCheckResult = {
       servicesOk: true,
       injuredOk: own.every((item) => item.draft.injured === item.facts.injured),
       phoneOk: own.every((item) => {
-        const need = item.facts.callerPhone.replace(/\D/g, '');
-        const got = item.draft.callerPhone.replace(/\D/g, '');
-        return !need || need === got;
+        return phonesMatch(item.facts.callerPhone, item.draft.callerPhone);
       }),
       extra: [],
       missing: [],
@@ -175,16 +228,23 @@ export function DdsTrainingPage(props: Props) {
               unlockTtsAudio();
               setCallTarget({
                 title: 'Звонок заявителю',
+                scope: `call-${Date.now()}`,
                 prompt: buildDdsCallbackPrompt(active.scenario, active.facts),
                 opening: ddsCallbackOpening(),
               });
             }}
             onContactService={(label, phone) => {
+              if (!active) {
+                return;
+              }
               unlockTtsAudio();
               setCallTarget({
                 title: `Связь · ${label}`,
-                prompt: `Вы диспетчер ДДС. Связываетесь со службой ${label} (${phone}) по карточке ${session.card.number}. Коротко передайте адрес, суть, пострадавших. Если это не ваша зона — согласуйте взаимодействие.`,
-                opening: `${label}, диспетчер на линии.`,
+                scope: `call-${Date.now()}`,
+                service: label,
+                aiRole: 'service',
+                prompt: buildDdsServicePrompt(label, phone, active.number, active.facts),
+                opening: ddsServiceOpening(label),
               });
             }}
             onClose={session.closeCard}
@@ -202,6 +262,8 @@ export function DdsTrainingPage(props: Props) {
               opening={callTarget.opening ?? ddsCallbackOpening()}
               hint="IP-телефон. Говорите как диспетчер ДДС."
               panelTitle={callTarget.title}
+              aiRole={callTarget.aiRole}
+              transcriptScope={callTarget.scope}
               onLeave={() => {
                 if (callTarget.title === 'Звонок заявителю') {
                   session.markCallback();
@@ -210,10 +272,20 @@ export function DdsTrainingPage(props: Props) {
               }}
               onCallEnded={(payload) => {
                 if (payload.audio) {
-                  callAudio.current = { audio: payload.audio, seconds: payload.seconds };
+                  callAudio.current = [
+                    ...callAudio.current,
+                    { title: callTarget.title, audio: payload.audio, seconds: payload.seconds },
+                  ];
                 }
                 if (callTarget.title === 'Звонок заявителю') {
                   session.markCallback();
+                }
+                if (callTarget.service) {
+                  const said = payload.lines
+                    .filter((line) => line.role === 'operator')
+                    .map((line) => line.text)
+                    .join(' ');
+                  session.recordContact(callTarget.service, said);
                 }
                 setCallTarget(null);
               }}

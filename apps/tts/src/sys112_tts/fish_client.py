@@ -43,6 +43,7 @@ _MOODS = {
     "crying": ("[crying]",),
     "startled": ("[startled]",),
     "whisper": ("[whispering]",),
+    "dispatch": ("[confident]", "[clear speech]"),
 }
 _TAG = re.compile(r"\[[^\[\]]{0,80}\]")
 _SPACES = re.compile(r"\s+")
@@ -53,9 +54,11 @@ _SEVERE = re.compile(
 
 
 def _mood(role: str, emotion: str | None) -> str:
+    emo = (emotion or "").strip().lower()
+    if emo == "dispatch" or role == "service":
+        return "dispatch"
     if role != "victim":
         return "calm"
-    emo = (emotion or "").strip().lower()
     if emo in _ANGRY:
         return "angry"
     if emo in _CRYING:
@@ -83,7 +86,9 @@ def apply_fish_prosody(
     body = _SPACES.sub(" ", body).strip(" ,")
     if not body:
         return ""
-    if role != "victim":
+    if _mood(role, emotion) == "dispatch":
+        tags = list(_MOODS["dispatch"])
+    elif role != "victim":
         tags = ["[serious]", "[professional broadcast tone]", "[clear speech]"]
     else:
         tags = list(_MOODS[_mood(role, emotion)])
@@ -210,9 +215,8 @@ class FishTTSClient:
         return None, [ReferenceAudio(audio=payload, text=text)]
 
     def _config(self, reference_id: str | None, references: list[Any] | None, speed: float | None) -> Any:
-        from fishaudio.types import TTSConfig
+        from fishaudio.types import Prosody, TTSConfig
 
-        del speed
         fields: dict[str, Any] = {
             "latency": self.latency or "balanced",
             "format": self.audio_format,
@@ -228,6 +232,8 @@ class FishTTSClient:
             fields["reference_id"] = reference_id
         if references:
             fields["references"] = references
+        if speed is not None and 1.02 <= speed <= 1.15:
+            fields["prosody"] = Prosody(speed=speed)
         return TTSConfig(**fields)
 
     async def _audio_frames(self, raw_chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
@@ -273,7 +279,8 @@ class FishTTSClient:
             reference_audio=reference_audio,
             reference_text=reference_text,
         )
-        config = self._config(ref_id, refs, speed)
+        pace = speed if (emotion or "").strip().lower() == "dispatch" else None
+        config = self._config(ref_id, refs, pace)
         client = self._client()
         stream = client.tts.stream(
             text=tagged,

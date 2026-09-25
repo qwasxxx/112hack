@@ -34,6 +34,7 @@ export interface TranscriptLine {
   role: 'student' | 'caller' | 'system';
   text: string;
   at: string;
+  speaker?: string;
 }
 
 export interface RequiredAction {
@@ -76,6 +77,20 @@ export interface ActiveSession {
   protocolViolations: string[];
   timeline: TimelineEvent[];
   currentScore: number;
+  ddsCards?: Array<{
+    id: string;
+    number: string;
+    title: string;
+    status: string;
+    naryad: string;
+    address: string;
+    injured: string;
+    caller: string;
+    phone: string;
+    contacts: string;
+    history: string;
+    active: boolean;
+  }>;
 }
 
 export interface TimelineEvent {
@@ -163,7 +178,7 @@ export interface CompletedResult {
     points: number;
     max: number;
   }>;
-  transcript?: Array<{ role: 'operator' | 'caller'; text: string }>;
+  transcript?: Array<{ role: 'operator' | 'caller'; text: string; speaker?: string }>;
 }
 
 export interface AuditRecord {

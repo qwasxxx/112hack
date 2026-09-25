@@ -63,21 +63,22 @@ export function createSttStream(handlers: {
     if (!navigator.mediaDevices?.getUserMedia || !window.AudioContext) {
       throw new Error('Браузер не поддерживает запись звука.');
     }
+    const requested = navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        sampleRate: TARGET_RATE,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: false,
+      },
+    });
     try {
-      media = await Promise.race([
-        navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            sampleRate: TARGET_RATE,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: false,
-          },
-        }),
-        new Promise<MediaStream>((_, reject) => {
-          window.setTimeout(() => reject(new Error('Микрофон не ответил.')), 2500);
-        }),
-      ]);
+      media = await requested;
+      if (stopped) {
+        media.getTracks().forEach((track) => track.stop());
+        media = undefined;
+        throw new Error('stopped');
+      }
       media.getAudioTracks().forEach((track) => {
         track.enabled = captureEnabled;
       });
@@ -170,6 +171,11 @@ export function createSttStream(handlers: {
         };
       });
     } catch (error) {
+      void requested.then((stream) => {
+        if (media !== stream) {
+          stream.getTracks().forEach((track) => track.stop());
+        }
+      }).catch(() => undefined);
       await abortStart();
       throw error;
     }
@@ -232,6 +238,9 @@ export function createSttStream(handlers: {
 
   function setCaptureEnabled(enabled: boolean) {
     captureEnabled = enabled;
+    media?.getAudioTracks().forEach((track) => {
+      track.enabled = enabled;
+    });
     if (!enabled) {
       pending = new Int16Array(0);
     }

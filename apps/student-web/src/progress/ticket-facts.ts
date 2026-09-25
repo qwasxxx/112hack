@@ -35,6 +35,30 @@ export function last10(value: string): string {
   return digits.length >= 10 ? digits.slice(-10) : digits;
 }
 
+export function phonesMatch(expected: string, got: string): boolean {
+  const want = last10(expected);
+  const have = last10(got);
+  if (!want) {
+    return true;
+  }
+  if (!have) {
+    return false;
+  }
+  if (want === have) {
+    return true;
+  }
+  if (want.length < 10 || have.length < 10 || want.length !== have.length) {
+    return false;
+  }
+  let slipped = 0;
+  for (let i = 0; i < want.length; i += 1) {
+    if (want[i] !== have[i]) {
+      slipped += 1;
+    }
+  }
+  return slipped <= 1;
+}
+
 export function ticketFactsFrom(scenario: TrainingScenario): TicketFacts {
   const situation = (scenario.situation ?? scenario.summary ?? '').replace(/\u00a0/g, ' ');
   const address = scenario.address ?? '';

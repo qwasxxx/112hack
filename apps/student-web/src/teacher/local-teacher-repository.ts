@@ -347,6 +347,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
           role: line.role,
           text: line.text,
           at: line.at,
+          speaker: line.speaker,
         })),
         incidentCard: Object.fromEntries(rows.map((row) => [row.label, row.value])),
         requiredActions: rows
@@ -378,6 +379,7 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
             : []),
         ],
         currentScore: progress,
+        ddsCards: item.ddsCards,
       };
     });
   }

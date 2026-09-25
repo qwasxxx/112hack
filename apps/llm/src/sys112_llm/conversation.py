@@ -10,7 +10,7 @@ from typing import Literal
 from sys112_llm.config import REPO_ROOT
 
 Role = Literal["system", "user", "assistant"]
-ConversationRole = Literal["victim", "operator"]
+ConversationRole = Literal["victim", "operator", "service"]
 
 KICKOFF_ID = "_kickoff"
 KICKOFF_TEXT = "Оператор снял трубку."
@@ -37,6 +37,19 @@ CALL_SCORE_PROMPT = (
     "politeness целое 4..15. 15 — спокойно и по делу. 8 — сухо. 4 — грубо.\n"
     "recommendations: 0-3 коротких совета по реальным пропускам."
 )
+
+SERVICE_SYSTEM_PROMPT = """/no_think
+Ты — диспетчер экстренной службы (пожарные, полиция, скорая или газ). Тебе звонит диспетчер ДДС.
+Ты не заявитель и не пострадавший. Тебе не нужна помощь. Ты принимаешь заявку и решаешь, выезжает ли наряд.
+
+Как говоришь:
+- Только по-русски, 1–2 короткие деловые фразы, чуть бодро. В ответе только то, что произносишь вслух.
+- Если адрес, суть или пострадавшие не названы — спроси именно это.
+- Если названы — подтверди и скажи, что наряд выезжает. Если это не твоя зона — коротко откажи.
+- Не паникуй, не плачь, не проси помощь себе, не объясняй слова и не читай нотаций.
+
+Факты карточки — только из блока «Контекст сценария». Чего там нет, того не выдумывай: спроси.
+"""
 
 OPERATOR_SYSTEM_PROMPT = """/no_think
 Ты — опытный диспетчер службы 112. Режим «Теория».
@@ -89,6 +102,7 @@ VICTIM_SYSTEM_PROMPT = """/no_think
 DEFAULT_PROMPTS: dict[ConversationRole, str] = {
     "operator": OPERATOR_SYSTEM_PROMPT.strip(),
     "victim": VICTIM_SYSTEM_PROMPT.strip(),
+    "service": SERVICE_SYSTEM_PROMPT.strip(),
 }
 
 _BLANK_SIGHT = re.compile(
@@ -449,6 +463,15 @@ _INTERVENTION_HINTS = {
     "end_call": "Разговор пора заканчивать. Коротко попрощайся, новых фактов не добавляй.",
 }
 
+_SERVICE_HINTS = {
+    "set_emotional_state": "Ты диспетчер службы, не заявитель. Смени только тон на указанный. Факты заявки не меняй и не проси помощь себе.",
+    "add_circumstance": "Ты диспетчер службы. Сразу скажи это вслух одной деловой фразой: задержка, отказ или уточнение. Не становись пострадавшим.",
+    "inject_event": "Ты диспетчер службы. Сразу произнеси это событие вслух. Новых фактов сверх указания не добавляй.",
+    "adjust_difficulty": "Ты диспетчер службы. Усложни приём так, как написано: переспроси адрес или суть. Не паникуй и не становись заявителем.",
+    "force_state": "Обстановка по заявке сменилась. Скажи это как диспетчер службы. Адрес из карточки не выдумывай заново.",
+    "end_call": "Разговор пора заканчивать. Коротко подтверди, что заявка принята или чем закончилось, и попрощайся.",
+}
+
 _SPEAK_NOW = frozenset(
     {"set_emotional_state", "add_circumstance", "inject_event", "force_state", "adjust_difficulty"}
 )
@@ -459,7 +482,8 @@ def should_speak_intervention(command: str) -> bool:
 
 
 def apply_teacher_intervention(session: CallSession, command: str, note: str = "") -> str:
-    hint = _INTERVENTION_HINTS.get(command, "Следуй указанию преподавателя.")
+    hints = _SERVICE_HINTS if session.conversation_role == "service" else _INTERVENTION_HINTS
+    hint = hints.get(command, "Следуй указанию преподавателя.")
     extra_note = " ".join((note or "").split()).strip()
     marker = f"УКАЗАНИЕ ПРЕПОДАВАТЕЛЯ [{command}]: {extra_note}" if extra_note else f"УКАЗАНИЕ ПРЕПОДАВАТЕЛЯ [{command}]"
     block = f"{marker}\n{hint}"
@@ -618,7 +642,7 @@ class ConversationManager:
         session = CallSession(call_id=call_id, conversation_role=conversation_role)
         session.messages.append(ChatMessage(role="system", content=prompt))
         spoken = " ".join((opening or "").split()).strip()
-        if conversation_role == "victim" and spoken:
+        if conversation_role in {"victim", "service"} and spoken:
             session.messages.append(ChatMessage(role="assistant", content=spoken))
         self._sessions[call_id] = session
         return session

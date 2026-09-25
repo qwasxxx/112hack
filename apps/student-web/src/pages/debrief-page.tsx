@@ -17,14 +17,14 @@ import {
   type LessonRecord,
   type TranscriptTurn,
 } from '../progress';
-import { cardView, ticketFactsFrom } from '../progress/ticket-facts';
+import { cardView, phonesMatch, ticketFactsFrom } from '../progress/ticket-facts';
 import { recordingUrl, uploadRecording } from '../progress/remote';
 import {
   loadLocalRecording,
   saveLocalRecording,
 } from '../../../teacher-web/src/teacher-dashboard/infrastructure/local-recording';
 import { useTeacherReviews } from '../progress/use-teacher-review';
-import { blobToBase64, blobToWav } from '../lib/capture-audio';
+import { blobToBase64, blobToWav, concatWavs } from '../lib/capture-audio';
 import type { LearnerTrack } from '../learner-track';
 import { StudentShell } from '../student-shell/student-shell';
 import './sessions-page.css';
@@ -43,6 +43,8 @@ export type DdsFinishCard = {
   naryad?: string;
   workplaceStatus?: string;
   callback?: boolean;
+  contacts?: { service: string; said: string }[];
+  history?: { status: string; naryad?: string; comment?: string }[];
 };
 
 export type DdsFinish = {
@@ -52,6 +54,7 @@ export type DdsFinish = {
   cards: DdsFinishCard[];
   audio?: Promise<Blob | null>;
   callSeconds?: number;
+  clips?: { title: string; audio: Promise<Blob | null>; seconds: number }[];
 };
 
 export type TrainingFinish = {
@@ -575,6 +578,7 @@ const DDS_JUDGE_STEPS = [
   'Проверяю подтверждение приёма',
   'Сверяю пострадавших и телефон',
   'Смотрю наряд и статусы реагирования',
+  'Слушаю, как связались со службой',
   'Проверяю закрытие карточки в 112',
   'Считаю норматив обработки',
 ];
@@ -631,6 +635,8 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
         naryad: item.naryad,
         workplaceStatus: item.workplaceStatus,
         callback: item.callback,
+        contacts: item.contacts,
+        history: item.history,
       })),
     });
   }, [finish, props.operatorLogin]);
@@ -650,15 +656,21 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
     const saved = appendLesson(props.operatorLogin, base);
     savedId.current = saved.id;
     setRecord(saved);
-    const audio = finish.audio;
-    if (!audio) {
+    const clips = finish.clips?.length
+      ? finish.clips
+      : finish.audio
+        ? [{ title: 'Звонок', audio: finish.audio, seconds: finish.callSeconds ?? 1 }]
+        : [];
+    if (!clips.length) {
       return;
     }
-    void audio.then(async (blob) => {
-      if (!blob?.size) {
+    void Promise.all(clips.map((clip) => clip.audio)).then(async (blobs) => {
+      const ready = blobs.filter((blob): blob is Blob => Boolean(blob?.size));
+      if (!ready.length) {
         return;
       }
-      const wav = blob.type.includes('wav') ? blob : await blobToWav(blob);
+      const wavs = await Promise.all(ready.map((blob) => (blob.type.includes('wav') ? blob : blobToWav(blob))));
+      const wav = wavs.length === 1 ? wavs[0] : await concatWavs(wavs);
       await saveLocalRecording(saved.id, wav).catch(() => undefined);
       setRecord((current) => ({ ...current, id: saved.id }));
       const data = await blobToBase64(wav);
@@ -667,7 +679,7 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
         login: props.operatorLogin,
         scenarioId: finish.scenario.id,
         mime: 'audio/wav',
-        durationSec: finish.callSeconds ?? 1,
+        durationSec: clips.reduce((sum, clip) => sum + clip.seconds, 0) || 1,
         data,
       });
       if (uploaded?.id) {
@@ -675,7 +687,7 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
         setRecord((current) => ({ ...current, id: saved.id, recordingId: uploaded.id }));
       }
     }).catch(() => undefined);
-  }, [base, finish.audio, finish.scenario.id, props.operatorLogin]);
+  }, [base, finish.audio, finish.clips, finish.scenario.id, props.operatorLogin]);
 
   useEffect(() => {
     if (reduced) {
@@ -688,9 +700,51 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
   }, [reduced]);
 
   useEffect(() => {
-    const wait = window.setTimeout(() => setRevealed(true), reduced ? 0 : 1100);
-    return () => window.clearTimeout(wait);
-  }, [reduced]);
+    let cancelled = false;
+    const transcript = finish.cards
+      .flatMap((card) =>
+        (card.contacts ?? []).map(
+          (contact) => `Карточка ${card.scenario.code}, служба ${contact.service}. Диспетчер ДДС сказал: ${contact.said}`,
+        ),
+      )
+      .join('\n');
+    const facts = finish.cards
+      .map((card) => `${card.scenario.code}: ${card.facts.address}. ${card.facts.description}. Пострадавшие: ${card.facts.injured}`)
+      .join('\n');
+    void Promise.all([
+      requestCallAiScore({
+        transcript: transcript || 'Со службами не связывались.',
+        facts,
+        card: finish.cards
+          .map((card) => `${card.scenario.code}: статус ${card.workplaceStatus || 'нет'}, наряд ${card.naryad || 'нет'}`)
+          .join('\n'),
+        rules:
+          'Это диспетчер ДДС, не оператор 112 и не заявитель. Оцени только, связался ли он со службой, назвал ли адрес и попросил ли направить наряд. Не ставь замечание, если разговора не было — это уже учтено правилами.',
+      }),
+      new Promise((resolve) => window.setTimeout(resolve, reduced ? 0 : 800)),
+    ]).then(([ai]) => {
+      if (cancelled) {
+        return;
+      }
+      if (ai?.comment) {
+        const id = savedId.current;
+        const next = {
+          comment: ai.comment,
+          recommendations: [...base.recommendations, ...ai.recommendations].slice(0, 4),
+        };
+        if (id) {
+          const patched = patchLesson(props.operatorLogin, id, next);
+          if (patched) {
+            setRecord(patched);
+          }
+        }
+      }
+      setRevealed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [base.recommendations, finish.cards, props.operatorLogin, reduced]);
 
   const findings = record.findings.filter((item) => item.code !== 'ai-note');
   return (
@@ -714,7 +768,7 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
               reduced={reduced}
               mark="ДДС"
               title="Проверяю обработку смены"
-              lead="Карточки сверяются с эталоном: приём, наряд, статусы, пострадавшие, телефон и закрытие в 112."
+              lead="Карточки сверяются с эталоном: приём, наряд, статусы и как вы передали адрес службе."
               steps={DDS_JUDGE_STEPS}
             />
           </>
@@ -868,9 +922,7 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
   const injured = avg(own.map((item) => (item.draft.injured === item.facts.injured ? 10 : 0)));
   const phone = avg(
     own.map((item) => {
-      const need = item.facts.callerPhone.replace(/\D/g, '');
-      const got = item.draft.callerPhone.replace(/\D/g, '');
-      return !need || need === got ? 10 : 0;
+      return phonesMatch(item.facts.callerPhone, item.draft.callerPhone) ? 10 : 0;
     }),
   );
   const timer = avg(own.map((item) => (item.elapsedMs / 1000 > 30 ? (item.elapsedMs / 1000 > 60 ? 0 : 4) : 10)));
@@ -890,9 +942,7 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
   return cards.flatMap((card) => {
     const own = card.role === 'own';
     const injuredOk = card.draft.injured === card.facts.injured;
-    const need = card.facts.callerPhone.replace(/\D/g, '');
-    const got = card.draft.callerPhone.replace(/\D/g, '');
-    const phoneOk = !need || need === got;
+    const phoneOk = phonesMatch(card.facts.callerPhone, card.draft.callerPhone);
     const profileOk = own ? card.decision === 'dispatch' : card.decision === 'transfer';
     return [
       {
