@@ -1,9 +1,12 @@
 FROM node:20-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-venv python3-pip nginx ca-certificates \
+    python3 python3-venv python3-pip nginx ca-certificates curl \
     libgomp1 libsndfile1 libportaudio2 \
   && rm -rf /var/lib/apt/lists/* \
+  && curl -fsSL -o /usr/local/bin/cloudflared \
+    https://github.com/cloudflare/cloudflared/releases/download/2025.8.1/cloudflared-linux-amd64 \
+  && chmod +x /usr/local/bin/cloudflared \
   && python3 -m venv /opt/venv
 
 ENV PATH="/opt/venv/bin:${PATH}"
