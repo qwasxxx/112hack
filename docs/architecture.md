@@ -4,7 +4,9 @@
 
 ## Архитектура одним изображением
 
-![Архитектура sys112-trainer](assets/system-architecture.png)
+![Актуальная архитектура sys112-trainer](assets/architecture-current.svg)
+
+Редактируемый исходник схемы: [`assets/architecture-current.excalidraw`](assets/architecture-current.excalidraw).
 
 Изображение для отдельного прикрепления к материалам хакатона: [`assets/system-architecture.png`](assets/system-architecture.png). Редактируемый векторный оригинал: [`assets/system-architecture.svg`](assets/system-architecture.svg).
 

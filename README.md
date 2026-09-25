@@ -96,7 +96,9 @@ docker compose down
 
 ## Архитектура
 
-![Схема архитектуры sys112-trainer](docs/assets/system-architecture.png)
+![Актуальная схема архитектуры sys112-trainer](docs/assets/architecture-current.svg)
+
+Исходник схемы Excalidraw: [architecture-current.excalidraw](docs/assets/architecture-current.excalidraw).
 
 Браузер обращается к одному локальному адресу, а Nginx маршрутизирует REST- и WebSocket-запросы к API и голосовым сервисам. PostgreSQL хранит учебные данные. Компоненты, потоки данных, границы доверия и развёртывание описаны в [архитектурной документации](docs/architecture.md).
 
