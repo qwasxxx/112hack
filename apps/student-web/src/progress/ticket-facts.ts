@@ -204,10 +204,12 @@ export function namesFromTicket(situation: string): { callerFio: string; callerR
   let callerRole = '';
   if (/вызывает мама|звонит мама/i.test(situation)) {
     callerRole = 'мама';
-  } else if (/вызывает отец|звонит отец/i.test(situation)) {
-    callerRole = 'отец';
-  } else if (/вызывает супруг/i.test(situation)) {
-    callerRole = 'супруг';
+  } else if (/вызывает отец|звонит отец|вызывает папа|звонит папа/i.test(situation)) {
+    callerRole = 'папа';
+  } else if (/вызывает супруг|вызывает муж\b/i.test(situation)) {
+    callerRole = 'муж';
+  } else if (/вызывает брат/i.test(situation)) {
+    callerRole = 'брат';
   } else if (/подруга/i.test(situation)) {
     callerRole = 'подруга';
   } else if (/соседк|сосед/i.test(situation)) {
@@ -223,10 +225,16 @@ export function namesFromTicket(situation: string): { callerFio: string; callerR
     /вызывает(?:\s+себе)?[,\s]+([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2})/,
   );
   const calledName = afterCall?.[1]?.trim() ?? '';
-  const roleWords = new Set(['мама', 'папа', 'отец', 'мать', 'супруг', 'супруга', 'сосед', 'соседка', 'подруга', 'бабушка']);
+  const roleWords = new Set(['мама', 'папа', 'отец', 'мать', 'супруг', 'супруга', 'сосед', 'соседка', 'подруга', 'бабушка', 'брат', 'муж']);
   let callerFio = '';
-  if (/вызывает себе|звонит сама/.test(situation.toLowerCase()) && names.length) {
-    callerFio = names[0]?.trim() ?? '';
+  const ownAfterRole = situation.match(
+    /(?:вызывает|звонит)\s+(?:себе|сама|мама|папа|отец|муж|супруга?|брат|подруга|соседка|сосед|бабушка|кассир(?:\s+[а-яё]+)*|прохожий|администратор)?[\s,]*([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2})/i,
+  );
+  const ownName = ownAfterRole?.[1]?.trim() ?? '';
+  if (ownName && !roleWords.has(ownName.toLowerCase()) && ownName !== injuredName) {
+    callerFio = ownName;
+  } else if (/вызывает себе|звонит сама/.test(situation.toLowerCase()) && names.length) {
+    callerFio = names.find((item) => item !== injuredName)?.trim() || names[0]?.trim() || '';
   } else if (calledName && !roleWords.has(calledName.toLowerCase()) && calledName !== injuredName) {
     callerFio = calledName;
   } else if (!callerRole) {

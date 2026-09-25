@@ -416,52 +416,78 @@ function extractPhone(text: string): string | undefined {
 }
 
 function nameCoach(caller: string | undefined): string {
-  if (caller?.startsWith('мама')) {
-    return 'Если спросили как зовут — не говори «Я мама». Назови имя из фактов билета, если оно есть, иначе коротко «Не знаю».';
+  const head = caller?.split('.')[0]?.trim() ?? '';
+  if (head.startsWith('мама')) {
+    return 'Если спросили как к вам обращаться — «Я мама». Не называй себя именем ребёнка или пострадавшего. Если спросили как зовут ребёнка — назови его имя из строки ПОСТРАДАВШИЙ.';
   }
-  if (caller?.startsWith('отец') || caller?.startsWith('супруг')) {
-    return 'Если спросили как зовут — коротко «Я отец» или «Я муж». Не объясняй, что имени нет.';
+  if (head.startsWith('папа') || head.startsWith('отец')) {
+    return 'Если спросили кто вы — «Я папа». Не называй себя именем ребёнка.';
   }
-  if (caller && /[А-ЯЁ][а-яё]+/.test(caller)) {
-    return `Если спросили кто вы или как зовут — только «Я ${caller}».`;
+  if (head.startsWith('супруг') || head.startsWith('муж')) {
+    return 'Если спросили кто вы — «Я муж». Не называй себя именем пострадавшего.';
+  }
+  if (head.startsWith('брат')) {
+    return 'Если спросили кто вы — «Я брат». Не называй себя именем ребёнка.';
+  }
+  if (caller && OPENING_FIO.test(head)) {
+    return `Если спросили кто вы или как зовут — только «Я ${head}».`;
   }
   return 'Если спросили как зовут и имени в билете нет — коротко «Не знаю». Не объясняй, почему имени нет.';
 }
 
+function fioIn(text: string): string | undefined {
+  const names = text.match(/[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}/g) ?? [];
+  return names.filter((item) => !/^Москва$|^Россия$/.test(item)).at(-1)?.trim();
+}
+
 function extractCallerHint(situation: string): string | undefined {
-  const names = situation.match(/[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}/g);
-  const fio = names?.filter((item) => !/^Москва$|^Россия$/.test(item)).at(-1)?.trim();
-  if (fio) {
-    return fio;
+  const call = situation.match(/(?:вызывает|звонит)\s+([^.]{0,90})/i);
+  if (call) {
+    const raw = call[1].replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim();
+    const self = /^(себе|сама)\b/i.test(raw);
+    const tail = raw.replace(/^(себе|сама)\b/i, '').replace(/^[\s,]+/, '');
+    const role = tail.match(/^(мама|папа|отец|муж|супруг|супруга|брат|подруга|соседка|сосед|бабушка)\b/i);
+    if (role) {
+      const own = fioIn(tail.slice(role[0].length));
+      if (own) {
+        return own;
+      }
+      const word = role[1].toLowerCase();
+      if (word === 'мама') {
+        return 'мама. Имени заявителя в билете нет. Ты женщина. Если спросили как обращаться: «Я мама». Имя ребёнка — не твоё.';
+      }
+      if (word === 'папа' || word === 'отец') {
+        return 'папа. Имени заявителя нет. Ты мужчина. Если спросили кто вы: «Я папа». Имя ребёнка — не твоё.';
+      }
+      if (word === 'супруг' || word === 'муж') {
+        return 'супруг. Имени в билете нет. Ты мужчина. Если спросили кто вы: «Я муж».';
+      }
+      if (word === 'брат') {
+        return 'брат. Ты мужчина. Если спросили кто вы: «Я брат». Имя ребёнка — не твоё.';
+      }
+      if (word === 'сосед') {
+        return 'сосед. Ты мужчина. Если спросили кто вы: «Я сосед».';
+      }
+      return `${word}. Ты женщина. Если спросили кто вы: «Я ${word}».`;
+    }
+    if (self) {
+      return fioIn(situation.slice(0, call.index)) ?? fioIn(situation);
+    }
+    const named = fioIn(tail) ?? fioIn(situation.slice(0, call.index));
+    if (named) {
+      return named;
+    }
   }
-  if (/вызывает мама|звонит мама/i.test(situation)) {
-    return 'мама. Имени заявителя в билете нет — не выдумывай Свету, Марию и любые другие имена. Если спросили как зовут: «не знаю»';
-  }
-  if (/вызывает супруг/i.test(situation)) {
-    return 'супруг. Имени в билете нет, не выдумывай';
-  }
-  if (/вызывает отец/i.test(situation)) {
-    return 'отец. Имени в билете нет, не выдумывай';
-  }
-  if (/вызывает себе/i.test(situation)) {
-    return 'звонит о себе';
-  }
-  if (/звонит сама/i.test(situation)) {
-    return 'звонит сама';
-  }
-  if (/подруга/i.test(situation)) {
-    return 'подруга';
-  }
-  if (/соседка/i.test(situation)) {
-    return 'соседка';
+  const paren = situation.match(
+    /([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2})\s*\((соседка|сосед|подруга|бабушка)\)/i,
+  );
+  if (paren) {
+    return paren[1];
   }
   if (/бабушка/i.test(situation)) {
-    return 'бабушка';
+    return fioIn(situation.split(/бабушка/i)[0] ?? '') ?? 'бабушка. Ты женщина. Если спросили кто вы: «Я бабушка».';
   }
-  if (/, дочь|дочь,/i.test(situation)) {
-    return 'дочь';
-  }
-  return undefined;
+  return fioIn(situation);
 }
 
 export function situationWhat(situation: string): string {
@@ -587,27 +613,22 @@ function genderFromFio(full: string): CallerTtsVoice['gender'] | undefined {
 
 function inferCallerGender(situation: string, ticket: number, n: number): CallerTtsVoice['gender'] {
   const hint = extractCallerHint(situation) ?? '';
-  if (/^(мама|подруга|соседка|бабушка|дочь)/i.test(hint)) {
+  const head = hint.split('.')[0]?.trim() ?? '';
+  if (/^(мама|подруга|соседка|бабушка|супруга|дочь)/i.test(head) || /ты женщина/i.test(hint)) {
     return 'female';
   }
-  if (/^(отец|супруг)/i.test(hint)) {
+  if (/^(папа|отец|супруг|муж|брат|сосед)/i.test(head) || /ты мужчина/i.test(hint)) {
     return 'male';
   }
-  if (/вызывает мама|звонит мама|подруга|соседка|бабушка|, дочь|дочь,|звонит сама/i.test(situation)) {
+  const named = genderFromFio(head);
+  if (named) {
+    return named;
+  }
+  if (/(прохожий|очевидец|работник|посетитель|вызывает брат|вызывает папа|вызывает отец|вызывает супруг|вызывает муж)/i.test(situation)) {
+    return 'male';
+  }
+  if (/(вызывает мама|звонит мама|подруга|соседка|бабушка|звонит сама)/i.test(situation)) {
     return 'female';
-  }
-  if (/рожает жена|вызывает супруг|вызывает отец/i.test(situation)) {
-    return 'male';
-  }
-  const names = situation.match(/[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?\s+[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+/g) || [];
-  for (let i = names.length - 1; i >= 0; i -= 1) {
-    const gender = genderFromFio(names[i]);
-    if (gender) {
-      return gender;
-    }
-  }
-  if (/(прохожий|очевидец|работник|посетитель)/i.test(situation)) {
-    return 'male';
   }
   return (ticket * 3 + n) % 2 === 0 ? 'female' : 'male';
 }

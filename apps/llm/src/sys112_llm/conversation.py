@@ -79,7 +79,7 @@ VICTIM_SYSTEM_PROMPT = """/no_think
 - Если оператор не спрашивает факт, а говорит, что услышал или направляет помощь — ответь как живой человек, каждый раз чуть иначе: «хорошо», «скорее», «жду».
 - Слова полностью, как в устной речи. Без точек-сокращений: не «обл.», не «г.», не «ул.», не «д.», не «ст.», не «стр», не STR, не «км». Говори «область», «город», «улица», «дом», «станция», «строение», «километр».
 - Адрес — одно короткое предложение своими словами, как в разговоре. Не зачитывай канцелярию целиком.
-- Если спросили «кто вы» или «как вас зовут»: ответь только по строке «КТО ЗВОНИТ». Фамилия из строки — «Я» и эта фамилия. Пустая строка — «Не знаю». Не называй себя родственником, если строка «КТО ЗВОНИТ» с этого не начинается. Не выдумывай имена. Не говори «не за что» и «я слушаю».
+- Если спросили «кто вы» или «как к вам обращаться»: ответь только по строке «КТО ЗВОНИТ». Если строка начинается с «мама», «папа», «муж» или «брат» и своей фамилии там нет — скажи «Я мама», «Я папа», «Я муж» или «Я брат». Не бери фамилию ребёнка или пострадавшего. Если в строке есть фамилия — «Я» и эта фамилия. Пустая строка — «Не знаю». Не выдумывай имена. Не говори «не за что» и «я слушаю».
 - Как давно это произошло: если в контексте нет времени — скажи «Только что» своими словами. Не выдумывай часы, полчаса и калечные слова вроде «получика».
 - Если оператор молчит — одной фразой напомни, что нужна помощь. Сам опрос не веди.
 
@@ -116,8 +116,12 @@ _OPERATOR_ASKS = re.compile(
     re.IGNORECASE,
 )
 _ASK_NAME = re.compile(
-    r"как вас зовут|ваше имя|как зовут|представьтесь|кто вы\b|вы кто\b|кто звонит|"
+    r"как вас зовут|к вам обращ|ваше имя|представьтесь|кто вы\b|вы кто\b|кто звонит|"
     r"назовите (?:себя|имя|фамилию)|ваша фамилия",
+    re.IGNORECASE,
+)
+_RELATIVE_CALLER = re.compile(
+    r"^(мама|папа|отец|супруг|муж|брат|подруга|соседка|сосед|бабушка)\b",
     re.IGNORECASE,
 )
 _ROLE_CLAIM = re.compile(r"\bя\s*[-—]?\s*(?:мама|папа|отец|мать|супруг|муж|жена)\b", re.IGNORECASE)
@@ -227,25 +231,25 @@ def _unnamed_relative(extra: str) -> str:
     who = field_from_extra(extra, "КТО ЗВОНИТ").lower()
     if who.startswith("мама"):
         return "мама"
-    if who.startswith("отец"):
-        return "отец"
-    if who.startswith("супруг"):
-        return "супруг"
+    if who.startswith("папа") or who.startswith("отец"):
+        return "папа"
+    if who.startswith("супруг") or who.startswith("муж"):
+        return "муж"
+    if who.startswith("брат"):
+        return "брат"
     return ""
 
 
 def ticket_caller_name(extra: str) -> str:
     who = field_from_extra(extra, "КТО ЗВОНИТ")
     head = who.split(".")[0].strip()
-    found = _FIO_HEAD.fullmatch(head) if head else None
-    if found:
-        return found.group(0)
-    facts = field_from_extra(extra, "ФАКТЫ") or ""
-    names = _FIO_HEAD.findall(facts)
-    for name in reversed(names):
-        if name.lower() not in {"москва", "россия"}:
-            return name
-    return ""
+    if not head:
+        return ""
+    if _RELATIVE_CALLER.match(head):
+        names = _FIO_HEAD.findall(head)
+        return names[-1] if names else ""
+    found = _FIO_HEAD.fullmatch(head)
+    return found.group(0) if found else ""
 
 
 def repair_caller_name(reply: str, operator_text: str, extra: str) -> str:
@@ -260,16 +264,16 @@ def repair_caller_name(reply: str, operator_text: str, extra: str) -> str:
             return ""
         return f"Я {fio}."
     who = _unnamed_relative(extra)
-    if who == "мама":
-        return "Не знаю."
-    if who == "отец":
-        if re.fullmatch(r"я отец[.!]?", text, re.IGNORECASE):
+    spoken = {
+        "мама": "Я мама.",
+        "папа": "Я папа.",
+        "муж": "Я муж.",
+        "брат": "Я брат.",
+    }.get(who, "")
+    if spoken:
+        if re.fullmatch(spoken.replace(".", r"[.!]?"), text, re.IGNORECASE):
             return ""
-        return "Я отец."
-    if who == "супруг":
-        if re.fullmatch(r"я муж[.!]?", text, re.IGNORECASE):
-            return ""
-        return "Я муж."
+        return spoken
     return ""
 
 
@@ -408,8 +412,15 @@ def repair_victim_reply(
         fio = ticket_caller_name(extra)
         if fio:
             return f"Я {fio}."
-        if _unnamed_relative(extra) == "мама":
-            return "Не знаю."
+        who = _unnamed_relative(extra)
+        if who == "мама":
+            return "Я мама."
+        if who == "папа":
+            return "Я папа."
+        if who == "муж":
+            return "Я муж."
+        if who == "брат":
+            return "Я брат."
         return "Не знаю."
     if re.search(r"не за что|я слушаю", text, re.IGNORECASE):
         return _ack_for(op)
