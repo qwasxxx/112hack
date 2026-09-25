@@ -1,6 +1,6 @@
 from sys112_stt.audio import pcm_s16le_to_float32
-from sys112_stt.engine import SttSession, model_files_present
-from sys112_stt.config import STT_MODEL_DIR
+from sys112_stt.config import STT_HF_MODEL
+from sys112_stt.engine import SttSession
 from sys112_stt.transcript_postprocessor import normalize_transcript
 
 
@@ -8,11 +8,6 @@ def test_pcm_conversion():
     samples = pcm_s16le_to_float32((32767).to_bytes(2, "little", signed=True))
     assert len(samples) == 1
     assert samples[0] > 0.9
-
-
-def test_model_loading_check():
-    present = model_files_present(STT_MODEL_DIR)
-    assert isinstance(present, bool)
 
 
 def test_mock_session_complete():
@@ -87,8 +82,8 @@ def test_health_payload_keys():
         response = client.get("/health")
         body = response.json()
         assert response.status_code == 200
-        assert body["model"] == "t-one"
-        assert body["local"] is True
+        assert body["model"] == STT_HF_MODEL
+        assert body["local"] is False
         assert "stt" in body
         assert body["status"] in ("ok", "degraded")
 

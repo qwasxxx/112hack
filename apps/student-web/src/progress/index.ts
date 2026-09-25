@@ -10,8 +10,8 @@ export { activeCues, pushTeacherCue, takePendingLlmCues, subscribeCues, refreshC
 export { scoreTrainingLesson } from './score-training';
 export { scoreCard50 } from './score-card';
 export type { FieldCheck } from './score-card';
-export { scoreDdsLesson } from './score-dds';
-export { requestCallAiScore } from './score-call-ai';
+export { scoreDdsCard, scoreDdsLesson } from './score-dds';
+export { readableScoreText, requestCallAiScore } from './score-call-ai';
 export type { AiScore } from './score-call-ai';
 export { historyRecommendations, progressStats } from './recommend';
 export { printLessonCertificate } from './certificate';

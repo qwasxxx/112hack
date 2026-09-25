@@ -1,15 +1,13 @@
-# Realtime STT (T-one)
+# Распознавание речи
 
-Локальное потоковое распознавание русской речи для учебного звонка 112.
-
-Аудио не уходит во внешние облачные STT API.
+Потоковое распознавание русской речи для учебного звонка.
 
 ## Цепочка
 
 1. Student UI (`apps/student-web`) запрашивает микрофон.
 2. Браузер даёт PCM, фронтенд даунсемплит в **PCM s16le mono 8000 Hz**.
 3. Чанки ~300 мс уходят по WebSocket `ws://<host>/ws/stt` (Vite проксирует на `127.0.0.1:8090`).
-4. Python-сервис `apps/stt` держит одну модель T-one в памяти и отдельный recognizer stream на каждый сокет.
+4. Python-сервис `apps/stt` отправляет фразу на модель из `STT_HF_MODEL`.
 5. Partial/final текст возвращается в UI.
 
 ## Запуск локально (Windows)
@@ -43,11 +41,9 @@ pnpm dev:student
 curl http://127.0.0.1:8090/health
 ```
 
-Ожидается `"stt": "ready"`, `"model": "t-one"`, `"local": true`.
+Ожидается `"stt": "ready"` и модель из `STT_HF_MODEL`.
 
 ## Docker
-
-Первый запуск скачивает модель в `./models/` (~100+ МБ, нужен интернет один раз).
 
 ```bash
 docker compose up --build stt
@@ -65,18 +61,12 @@ CPU достаточно. GPU не требуется.
 
 | Переменная | По умолчанию | Смысл |
 | --- | --- | --- |
-| `STT_MODE` | `local` | `local` — T-one; `mock` — явный mock для UI |
-| `STT_MODEL_PATH` | `./models/sherpa-onnx-streaming-t-one-russian-2025-09-08` | каталог модели |
-| `STT_SAMPLE_RATE` | `8000` | вход ASR |
-| `STT_NUM_THREADS` | `4` | CPU threads |
-| `STT_DECODING_METHOD` | `greedy_search` | без KenLM |
-| `STT_ONNX_PROVIDER` | `cpu` | `cpu` или `cuda` |
-| `STT_HOST` / `STT_PORT` | `0.0.0.0` / `8090` | bind |
-| `STT_ENDPOINT_RULE1` | `1.2` | тишина до endpoint, если речь ещё не распознана, сек |
-| `STT_ENDPOINT_RULE2` | `0.7` | тишина после распознанной речи, сек |
-| `STT_ENDPOINT_CONFIRM` | `0.12` | доп. подтверждение после endpoint, сек |
+| `STT_MODE` | `huggingface` | режим распознавания |
+| `STT_HF_MODEL` | `openai/whisper-large-v3-turbo` | модель |
+| `STT_HF_LANGUAGE` | `russian` | язык |
+| `STT_HOST` / `STT_PORT` | `0.0.0.0` / `8090` | адрес сервиса |
 
-`STT_PROVIDER=mock` в корневом `.env` относится к NestJS-адаптеру API, не к этому сервису.
+Речь принимает сервис на порту 8090. Отдельного переключателя провайдера в API нет.
 
 ## Протокол WebSocket
 
@@ -114,6 +104,4 @@ pnpm --filter @sys112/student-web typecheck
 
 ## Offline
 
-После `pnpm install`, `pip install -r apps/stt/requirements.txt` и однократной загрузки модели интернет не нужен. Модель читается с диска.
-
-На Windows без Docker используйте скрипт выше. Docker/WSL — основной portable-путь, KenLM не требуется.
+Распознавание ходит во внешний сервис, поэтому для речи нужен интернет и `HF_TOKEN`.

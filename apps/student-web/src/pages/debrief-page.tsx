@@ -7,8 +7,10 @@ import {
   clearArmDraft,
   patchLesson,
   printLessonCertificate,
+  readableScoreText,
   requestCallAiScore,
   scoreCard50,
+  scoreDdsCard,
   scoreDdsLesson,
   scoreTrainingLesson,
   PASS_SCORE,
@@ -411,7 +413,9 @@ function ResultScreen(props: {
       </section>
 
       <TeacherNote text={teacherComment} />
-      {record.comment ? <p className="debrief-comment">{record.comment}</p> : null}
+      {readableScoreText(record.comment ?? '') ? (
+        <p className="debrief-comment">{readableScoreText(record.comment ?? '')}</p>
+      ) : null}
 
       <div className="debrief-notes-grid">
         <section className="debrief-notes">
@@ -431,11 +435,13 @@ function ResultScreen(props: {
         </section>
         <section className="debrief-notes">
           <h2>Что улучшить</h2>
-          {record.recommendations.length ? (
+          {record.recommendations.some((item) => readableScoreText(item) && !item.trim().startsWith('{')) ? (
             <ul>
-              {record.recommendations.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
+              {record.recommendations
+                .filter((item) => !item.trim().startsWith('{'))
+                .map((item) => (
+                  <li key={item}>{readableScoreText(item)}</li>
+                ))}
             </ul>
           ) : (
             <p>Держите тот же разбор на следующем билете.</p>
@@ -834,11 +840,13 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
               </section>
               <section className="debrief-notes">
                 <h2>Что улучшить</h2>
-                {record.recommendations.length ? (
+                {record.recommendations.some((item) => !item.trim().startsWith('{')) ? (
                   <ul>
-                    {record.recommendations.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
+                    {record.recommendations
+                      .filter((item) => !item.trim().startsWith('{'))
+                      .map((item) => (
+                        <li key={item}>{readableScoreText(item)}</li>
+                      ))}
                   </ul>
                 ) : (
                   <p>Держите тот же разбор на следующей смене.</p>
@@ -902,40 +910,32 @@ function ddsVerdictLead(record: LessonRecord): string {
 function ddsScoreRows(cards: DdsFinishCard[]) {
   const own = cards.filter((item) => item.role === 'own');
   const foreign = cards.filter((item) => item.role === 'foreign');
+  const scored = own.map((item) =>
+    scoreDdsCard({
+      scenario: item.scenario,
+      draft: item.draft,
+      facts: item.facts,
+      role: item.role,
+      decision: item.decision,
+      elapsedMs: item.elapsedMs,
+      naryad: item.naryad,
+      workplaceStatus: item.workplaceStatus,
+      callback: item.callback,
+      contacts: item.contacts,
+      history: item.history,
+    }),
+  );
   const avg = (values: number[]) => (values.length ? Math.round(values.reduce((sum, item) => sum + item, 0) / values.length) : 0);
-  const process = avg(
-    own.map((item) => {
-      const status = item.workplaceStatus ?? '';
-      let value = 70;
-      if (!['Принята', 'Начало реагирования', 'Прибытие', 'Проведение работ', 'Работы завершены'].includes(status)) {
-        value -= 30;
-      }
-      if (!(item.naryad ?? '').trim()) {
-        value -= 15;
-      }
-      if (status !== 'Работы завершены') {
-        value -= 25;
-      }
-      return Math.max(0, value);
-    }),
-  );
-  const injured = avg(own.map((item) => (item.draft.injured === item.facts.injured ? 10 : 0)));
-  const phone = avg(
-    own.map((item) => {
-      return phonesMatch(item.facts.callerPhone, item.draft.callerPhone) ? 10 : 0;
-    }),
-  );
-  const timer = avg(own.map((item) => (item.elapsedMs / 1000 > 30 ? (item.elapsedMs / 1000 > 60 ? 0 : 4) : 10)));
   const transfer = foreign.length
-    ? Math.round((foreign.filter((item) => item.decision === 'transfer').length / foreign.length) * 10)
-    : 10;
+    ? Math.round((foreign.filter((item) => item.decision === 'transfer' || item.workplaceStatus === 'Не принято').length / foreign.length) * 100)
+    : 100;
   return [
-    { label: 'Реагирование', value: process, max: 70, hint: 'Принята → наряд → работы завершены' },
-    { label: 'Пострадавшие', value: injured, max: 10, hint: 'По тексту карточки, не по отметке 112' },
-    { label: 'Телефон', value: phone, max: 10, hint: 'Номер для связи, при необходимости обратный звонок' },
-    { label: 'Норматив', value: timer, max: 10, hint: '30 секунд на карточку' },
-    { label: 'Профиль ленты', value: transfer, max: 10, hint: 'Свои принять, чужие — «Не принято»' },
-  ];
+    { label: 'Связь со службой', value: avg(scored.map((item) => item.parts.call)), max: 44, hint: 'Нужная служба, адрес и просьба направить наряд' },
+    { label: 'Карточка', value: avg(scored.map((item) => item.parts.card)), max: 34, hint: 'Приём, ФИО, номер наряда, закрытие' },
+    { label: 'Факты', value: avg(scored.map((item) => item.parts.facts)), max: 16, hint: 'Пострадавшие и телефон' },
+    { label: 'Норматив', value: avg(scored.map((item) => item.parts.timer)), max: 6, hint: '30 секунд на карточку' },
+    { label: 'Чужие карточки', value: transfer, max: 100, hint: 'Чужой профиль — «Не принято», без своей бригады' },
+  ].filter((row) => row.label !== 'Чужие карточки' || foreign.length > 0);
 }
 
 function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
@@ -976,14 +976,24 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
             } satisfies FieldCheck,
             {
               id: `${card.id}-flow`,
-              label: `${card.scenario.code} · реагирование`,
-              expected: 'Принята → наряд → Работы завершены',
-              got: `${card.workplaceStatus ?? 'нет статуса'}${card.naryad ? ` · наряд ${card.naryad}` : ''}`,
+              label: `${card.scenario.code} · карточка`,
+              expected: 'ФИО, наряд, Принята и Работы завершены',
+              got: `${card.draft.callerName || 'ФИО пусто'} · ${card.workplaceStatus ?? 'нет статуса'}${card.naryad ? ` · наряд ${card.naryad}` : ' · наряд пусто'}`,
               state:
-                card.workplaceStatus === 'Работы завершены' && Boolean(card.naryad)
+                card.workplaceStatus === 'Работы завершены' && Boolean(card.naryad) && card.draft.callerName.trim().length >= 5
                   ? 'match'
                   : 'miss',
-              points: card.workplaceStatus === 'Работы завершены' && card.naryad ? 1 : 0,
+              points:
+                card.workplaceStatus === 'Работы завершены' && card.naryad && card.draft.callerName.trim().length >= 5 ? 1 : 0,
+              max: 1,
+            } satisfies FieldCheck,
+            {
+              id: `${card.id}-call`,
+              label: `${card.scenario.code} · связь`,
+              expected: 'Звонок в нужную службу: адрес и просьба направить наряд',
+              got: (card.contacts ?? []).map((item) => `${item.service}: ${item.said}`).join(' · ') || 'не звонили',
+              state: (card.contacts ?? []).some((item) => /наряд|бригад|выез|направ|отправ/i.test(item.said)) ? 'match' : 'miss',
+              points: (card.contacts ?? []).some((item) => /наряд|бригад|выез|направ|отправ/i.test(item.said)) ? 1 : 0,
               max: 1,
             } satisfies FieldCheck,
           ]

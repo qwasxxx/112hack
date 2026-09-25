@@ -7,7 +7,6 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
-from urllib.parse import urlparse
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,8 +38,7 @@ from sys112_llm.conversation import (
     session_scenario_extra,
     should_speak_intervention,
 )
-from sys112_llm.openai_score import openai_score, parse_score_json
-from sys112_llm.runtime import model_present
+from sys112_llm.score_json import parse_score_json
 from sys112_llm.think import ThinkFilter
 from sys112_llm.ticket_gen import draft_from_payload, generate_ticket, normalize_services
 
@@ -49,14 +47,13 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 manager = ConversationManager()
 client = LlamaClient()
-llama_process = None
 boot_task: asyncio.Task[None] | None = None
 llm_status = "not_ready"
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    global llama_process, llm_status, boot_task
+    global llm_status, boot_task
     if LLM_MODE == "mock":
         llm_status = "mock"
         logger.info("[LLM] Mock mode")
@@ -64,14 +61,12 @@ async def lifespan(_app: FastAPI):
         return
 
     llm_status = "loading"
-    logger.info("[LLM] Loading model...")
+    logger.info("[LLM] Connecting %s", LLM_BASE_URL)
 
     async def boot() -> None:
-        global llama_process, llm_status
+        global llm_status
         try:
-            host = (urlparse(LLM_BASE_URL).hostname or "").lower()
-            external = host not in {"127.0.0.1", "localhost", ""}
-            deadline = asyncio.get_running_loop().time() + (300 if external else 0)
+            deadline = asyncio.get_running_loop().time() + 300
             while True:
                 if await client.ready():
                     llm_status = "ready"
@@ -80,12 +75,7 @@ async def lifespan(_app: FastAPI):
                 if asyncio.get_running_loop().time() >= deadline:
                     break
                 await asyncio.sleep(2)
-            if external:
-                raise RuntimeError(f"external LLM provider not ready at {LLM_BASE_URL}")
-            from sys112_llm.runtime import start_llama_process
-
-            llama_process = await asyncio.to_thread(start_llama_process)
-            llm_status = "ready"
+            raise RuntimeError(f"LLM provider not ready at {LLM_BASE_URL}")
         except Exception:
             logger.exception("[LLM] Model loading failed")
             llm_status = "not_ready"
@@ -98,13 +88,6 @@ async def lifespan(_app: FastAPI):
             await boot_task
         except (asyncio.CancelledError, Exception):
             pass
-    if llama_process is not None:
-        llama_process.terminate()
-        try:
-            llama_process.wait(timeout=8)
-        except Exception:
-            llama_process.kill()
-        llama_process = None
 
 
 app = FastAPI(title="sys112-llm", lifespan=lifespan)
@@ -124,8 +107,7 @@ def health_payload() -> dict[str, Any]:
         "model": LLM_MODEL_NAME,
         "runtime": LLM_RUNTIME,
         "mode": LLM_MODE,
-        "local": LLM_PROVIDER == "local",
-        "model_present": model_present() if LLM_PROVIDER == "local" else None,
+        "local": False,
     }
 
 
@@ -138,12 +120,6 @@ def health() -> dict[str, Any]:
 @app.post("/control/stop")
 @app.post("/api/llm/control/stop")
 async def control_stop() -> dict[str, bool]:
-    proc = llama_process
-    if proc is not None:
-        try:
-            proc.terminate()
-        except Exception:
-            pass
     asyncio.get_event_loop().call_later(0.2, lambda: os._exit(0))
     return {"ok": True}
 
@@ -183,12 +159,6 @@ async def score_call(payload: dict[str, Any]) -> dict[str, Any]:
     card = str(payload.get("card") or "")
     rules = str(payload.get("rules") or "")
     messages = call_score_messages(transcript, facts, card, rules)
-    try:
-        judged = await openai_score(messages)
-        if judged:
-            return judged
-    except Exception:
-        logger.exception("[LLM] OpenAI judge failed")
     if LLM_MODE == "mock" or llm_status == "mock":
         return {"politeness": 12, "comment": "Разбор в учебном режиме без модели.", "recommendations": [], "source": "mock"}
     if llm_status != "ready":
@@ -201,7 +171,7 @@ async def score_call(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         raw = await client.complete_chat(
             messages,
-            max_tokens=240,
+            max_tokens=420,
             temperature=0.2,
             think=False,
             timeout_sec=8,
@@ -550,7 +520,7 @@ async def _generate(
             continue
         if live is not None and live.conversation_role == "victim" and leaves_role(spoken):
             continue
-        if len(spoken) < 48 and not re.search(r"[.!?…]$", spoken):
+        if not re.search(r"[.!?…]$", spoken) and len(spoken) < 36:
             continue
         if live is not None and partial_type == "assistant_partial" and live.conversation_role == "victim":
             operator_line = last_user_text(live)

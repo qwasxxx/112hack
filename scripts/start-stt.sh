@@ -3,7 +3,6 @@ set -e
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 STT="$ROOT/apps/stt"
 VENV="$STT/.venv"
-MODEL="$ROOT/models/sherpa-onnx-streaming-t-one-russian-2025-09-08"
 
 if [ ! -x "$VENV/bin/python" ]; then
   python3 -m venv "$VENV"
@@ -22,9 +21,5 @@ if [ -f "$ROOT/.env" ]; then
 fi
 if [ -z "${STT_MODE:-}" ]; then
   export STT_MODE=huggingface
-fi
-if [ "$STT_MODE" = "local" ]; then
-  export STT_MODEL_PATH="$MODEL"
-  "$VENV/bin/python" "$STT/scripts/download_model.py"
 fi
 exec "$VENV/bin/python" -m uvicorn sys112_stt.app:app --host 127.0.0.1 --port 8090

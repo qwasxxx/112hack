@@ -24,7 +24,7 @@ logger = logging.getLogger("sys112_stt")
 Transcribe = Callable[[bytes], Awaitable[str]]
 
 _PREROLL_SEC = 0.45
-_SILENCE_SEC = 0.34
+_SILENCE_SEC = 0.28
 _MIN_SPEECH_SEC = 0.28
 _PARTIAL_SEC = 0.9
 _PARTIAL_INTERVAL_SEC = 0.75

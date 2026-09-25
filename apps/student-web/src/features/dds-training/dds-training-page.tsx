@@ -285,7 +285,7 @@ export function DdsTrainingPage(props: Props) {
                     .filter((line) => line.role === 'operator')
                     .map((line) => line.text)
                     .join(' ');
-                  session.recordContact(callTarget.service, said);
+                  session.recordContact(callTarget.service, said || 'разговор не распознан');
                 }
                 setCallTarget(null);
               }}

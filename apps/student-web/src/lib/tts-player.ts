@@ -13,7 +13,10 @@ let recordMix: GainNode | undefined;
 let recordTap: ScriptProcessorNode | undefined;
 let recordSink: GainNode | undefined;
 let micTap: MediaStreamAudioSourceNode | undefined;
-let recordChunks: Float32Array[] = [];
+let recordPcm = new Float32Array(0);
+let recordFilled = 0;
+let recordOrigin = 0;
+let recordingOn = false;
 let recordCarry = 0;
 
 function ttsUrl(): string {
@@ -74,21 +77,58 @@ function wavFromPcm(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([out], { type: 'audio/wav' });
 }
 
+function mixAt(start: number, samples: Float32Array) {
+  if (!recordingOn || !samples.length) {
+    return;
+  }
+  const end = start + samples.length;
+  if (end <= 0) {
+    return;
+  }
+  if (end > recordPcm.length) {
+    const next = new Float32Array(Math.max(end + 16000, recordPcm.length * 2 || 16000));
+    next.set(recordPcm.subarray(0, Math.max(0, recordFilled)));
+    recordPcm = next;
+  }
+  for (let i = 0; i < samples.length; i += 1) {
+    const idx = start + i;
+    if (idx < 0) {
+      continue;
+    }
+    recordPcm[idx] = Math.max(-1, Math.min(1, (recordPcm[idx] ?? 0) + (samples[i] ?? 0)));
+  }
+  recordFilled = Math.max(recordFilled, Math.ceil(end));
+}
+
+function resampleMono(samples: Float32Array, sampleRate: number): Float32Array {
+  if (sampleRate === 16000) {
+    return samples;
+  }
+  const outLen = Math.max(1, Math.round((samples.length * 16000) / sampleRate));
+  const out = new Float32Array(outLen);
+  for (let i = 0; i < outLen; i += 1) {
+    const pos = (i * sampleRate) / 16000;
+    const left = Math.floor(pos);
+    const right = Math.min(samples.length - 1, left + 1);
+    const frac = pos - left;
+    out[i] = (samples[left] ?? 0) * (1 - frac) + (samples[right] ?? 0) * frac;
+  }
+  return out;
+}
+
 function takeRecording(): Blob | null {
-  const chunks = recordChunks;
-  recordChunks = [];
+  recordingOn = false;
   recordCarry = 0;
   releaseRecordingGraph();
-  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const total = Math.max(0, recordFilled);
   if (!total) {
+    recordPcm = new Float32Array(0);
+    recordFilled = 0;
     return null;
   }
-  const merged = new Float32Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.length;
-  }
+  const merged = recordPcm.slice(0, total);
+  recordPcm = new Float32Array(0);
+  recordFilled = 0;
   return wavFromPcm(merged, 16000);
 }
 
@@ -96,7 +136,10 @@ export function beginCallRecording(mic: MediaStream): { stop: () => Promise<Blob
   const ctx = getAudioContext();
   void ctx.resume();
   releaseRecordingGraph();
-  recordChunks = [];
+  recordingOn = true;
+  recordOrigin = ctx.currentTime;
+  recordPcm = new Float32Array(16000);
+  recordFilled = 0;
   recordCarry = 0;
   recordMix = ctx.createGain();
   micTap = ctx.createMediaStreamSource(mic);
@@ -116,7 +159,8 @@ export function beginCallRecording(mic: MediaStream): { stop: () => Promise<Blob
     }
     recordCarry = pos - input.length;
     if (out.length) {
-      recordChunks.push(Float32Array.from(out));
+      const start = Math.round((ctx.currentTime - event.inputBuffer.duration - recordOrigin) * 16000);
+      mixAt(start, Float32Array.from(out));
     }
   };
   recordMix.connect(recordTap);
@@ -398,12 +442,20 @@ async function playBuffer(buffer: AudioBuffer, token: number, gap = 0): Promise<
     };
     source.buffer = buffer;
     source.connect(ctx.destination);
-    if (recordMix) {
-      source.connect(recordMix);
-    }
     currentSource = source;
     playbackDone = finish;
     const when = Math.max(ctx.currentTime, nextStart);
+    if (recordingOn) {
+      const channels = buffer.numberOfChannels;
+      const mono = new Float32Array(buffer.length);
+      for (let channel = 0; channel < channels; channel += 1) {
+        const data = buffer.getChannelData(channel);
+        for (let i = 0; i < mono.length; i += 1) {
+          mono[i] += (data[i] ?? 0) / channels;
+        }
+      }
+      mixAt(Math.round((when - recordOrigin) * 16000), resampleMono(mono, buffer.sampleRate));
+    }
     source.onended = finish;
     currentSources.push(source);
     source.start(when);

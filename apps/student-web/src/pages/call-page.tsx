@@ -5,7 +5,7 @@ import { buildLessonSystemPrompt } from '../data/ags-tickets';
 import { createLlmStream } from '../lib/llm-stream';
 import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
-import { beginCallRecording, enqueueTtsAudio, stopTtsAudio, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
+import { beginCallRecording, enqueueTtsAudio, stopTtsAudio, takeSpeechChunks, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
 import type { TranscriptTurn } from '../progress';
 import { patchLive, readLiveSessions, refreshCuesFromApi, subscribeCues, takePendingLlmCues } from '../progress';
 
@@ -252,20 +252,7 @@ export function CallPage(props: Props) {
           at: Date.now(),
         },
       ]);
-      spokenTtsRef.current = opening;
       holdMicForTts();
-      void Promise.race([
-        enqueueTtsAudio(opening, conversationRole === 'service' ? 'service' : aiVoiceId, callerVoice()),
-        new Promise((resolve) => window.setTimeout(resolve, 12000)),
-      ]).finally(() => {
-        if (leavingRef.current || awaitingReplyRef.current) {
-          return;
-        }
-        ttsHoldRef.current = false;
-        if (!mutedRef.current) {
-          streamRef.current?.setCaptureEnabled(true);
-        }
-      });
     }
     const callId = crypto.randomUUID();
     const llm = createLlmStream({
@@ -302,6 +289,7 @@ export function CallPage(props: Props) {
             holdMicForTts();
           }
           setLines((current) => upsertLive(current, aiRole, event.text, 'llm'));
+          queueCallerSpeech(event.text);
         }
         if (event.type === 'assistant_final') {
           awaitingReplyRef.current = false;
@@ -453,6 +441,21 @@ export function CallPage(props: Props) {
           recorderRef.current = undefined;
         }
       }
+      if (opening) {
+        queueCallerSpeech(opening);
+        void Promise.race([
+          waitTtsQueue(),
+          new Promise((resolve) => window.setTimeout(resolve, 12000)),
+        ]).finally(() => {
+          if (leavingRef.current || awaitingReplyRef.current) {
+            return;
+          }
+          ttsHoldRef.current = false;
+          if (!mutedRef.current) {
+            streamRef.current?.setCaptureEnabled(true);
+          }
+        });
+      }
       if (ttsHoldRef.current) {
         stream.setCaptureEnabled(false);
       } else if (mutedRef.current) {
@@ -496,13 +499,36 @@ export function CallPage(props: Props) {
     streamRef.current?.setCaptureEnabled(false);
   }
 
+  function queueCallerSpeech(full: string) {
+    const fresh = full.trim();
+    if (!fresh) {
+      return;
+    }
+    const already = spokenTtsRef.current;
+    if (already && !fresh.startsWith(already)) {
+      const aligned = takeSpeechChunks(fresh, already).spoken;
+      if (!aligned) {
+        return;
+      }
+    }
+    const { chunks, spoken } = takeSpeechChunks(fresh, already);
+    if (!chunks.length) {
+      if (spoken) {
+        spokenTtsRef.current = spoken;
+      }
+      return;
+    }
+    spokenTtsRef.current = spoken;
+    const role = conversationRole === 'service' ? 'service' : aiVoiceId;
+    const voice = callerVoice();
+    for (const chunk of chunks) {
+      void enqueueTtsAudio(chunk, role, voice);
+    }
+  }
+
   async function speakAi(text: string) {
     holdMicForTts();
-    const fresh = text.trim();
-    if (fresh) {
-      spokenTtsRef.current = fresh;
-      void enqueueTtsAudio(fresh, conversationRole === 'service' ? 'service' : aiVoiceId, callerVoice());
-    }
+    queueCallerSpeech(text);
     try {
       await Promise.race([
         waitTtsQueue(),

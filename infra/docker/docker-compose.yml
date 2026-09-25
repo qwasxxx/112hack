@@ -1,16 +1,4 @@
 services:
-  models:
-    build:
-      context: ../..
-      dockerfile: infra/docker/Dockerfile.models
-    container_name: sys112-models
-    environment:
-      STT_MODEL_PATH: /models/sherpa-onnx-streaming-t-one-russian-2025-09-08
-      LLM_MODEL_PATH: /models/llm/Qwen3-4B-Q4_K_M.gguf
-    volumes:
-      - ../../models:/models
-    restart: "no"
-
   postgres:
     image: postgres:16-alpine
     container_name: sys112-postgres
@@ -73,23 +61,10 @@ services:
       HF_TOKEN: ${HF_TOKEN:-}
       STT_HF_MODEL: ${STT_HF_MODEL:-openai/whisper-large-v3-turbo}
       STT_HF_LANGUAGE: russian
-      STT_MODEL_PATH: /models/sherpa-onnx-streaming-t-one-russian-2025-09-08
-      STT_SAMPLE_RATE: "8000"
-      STT_NUM_THREADS: "2"
-      STT_DECODING_METHOD: greedy_search
-      STT_ONNX_PROVIDER: cpu
-      STT_ENDPOINT_RULE1: "1.2"
-      STT_ENDPOINT_RULE2: "0.7"
-      STT_ENDPOINT_CONFIRM: "0.12"
       STT_HOST: 0.0.0.0
       STT_PORT: "8090"
-    volumes:
-      - ../../models:/models
     ports:
       - "8090:8090"
-    depends_on:
-      models:
-        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -102,47 +77,14 @@ services:
       start_period: 40s
     restart: unless-stopped
 
-  llama:
-    image: ghcr.io/ggml-org/llama.cpp:server
-    container_name: sys112-llama
-    command:
-      - -m
-      - /models/Qwen3-4B-Q4_K_M.gguf
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8080"
-      - -c
-      - "2048"
-      - --jinja
-      - --chat-template-kwargs
-      - '{"enable_thinking": false}'
-      - -ngl
-      - "0"
-    volumes:
-      - ../../models/llm:/models
-    ports:
-      - "8080:8080"
-    depends_on:
-      models:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8080'"]
-      interval: 10s
-      timeout: 3s
-      retries: 36
-      start_period: 40s
-    restart: unless-stopped
-
   llm:
     build:
       context: ../..
       dockerfile: apps/llm/Dockerfile
     container_name: sys112-llm
     environment:
-      LLM_MODE: local
       LLM_PROVIDER: ${LLM_PROVIDER:-huggingface}
-      LLM_RUNTIME: openai
+      LLM_RUNTIME: chat
       LLM_MODEL_NAME: ${LLM_MODEL_NAME:-Qwen/Qwen3.5-9B}
       HF_TOKEN: ${HF_TOKEN:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://router.huggingface.co}
@@ -151,9 +93,6 @@ services:
       LLM_TEMPERATURE: "0.3"
       LLM_TOP_P: "0.8"
       LLM_MAX_TOKENS: "48"
-      LLM_CONTEXT_SIZE: "2048"
-    volumes:
-      - ../../models:/models
     ports:
       - "8091:8091"
     healthcheck:
@@ -177,12 +116,10 @@ services:
       TTS_HOST: 0.0.0.0
       TTS_PORT: "8092"
       TTS_LANGUAGE: ru
-      TTS_THREADS: "4"
       TTS_BACKEND: ${TTS_BACKEND:-fish}
-      TTS_DEVICE: cpu
       FISH_API_KEY: ${FISH_API_KEY:-}
       FISH_MODEL: ${FISH_MODEL:-s2.1-pro}
-      FISH_LATENCY: ${FISH_LATENCY:-balanced}
+      FISH_LATENCY: ${FISH_LATENCY:-normal}
       FISH_REFERENCE_ID: ${FISH_REFERENCE_ID:-}
       FISH_REFERENCE_AUDIO: ${FISH_REFERENCE_AUDIO:-}
       FISH_REFERENCE_TEXT: ${FISH_REFERENCE_TEXT:-}

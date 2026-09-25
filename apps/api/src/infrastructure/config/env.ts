@@ -17,11 +17,6 @@ const envSchema = z.object({
     .string()
     .default('http://localhost:5173,http://localhost:5174')
     .transform((value) => value.split(',').map((item) => item.trim()).filter(Boolean)),
-  AI_PROVIDER: z.string().default('mock'),
-  STT_PROVIDER: z.string().default('mock'),
-  TTS_PROVIDER: z.string().default('mock'),
-  EMBEDDINGS_PROVIDER: z.string().default('mock'),
-  EVALUATION_PROVIDER: z.string().default('mock'),
   STT_HEALTH_URL: z.string().default('http://127.0.0.1:8090/health'),
   LLM_HEALTH_URL: z.string().default('http://127.0.0.1:8091/health'),
   TTS_HEALTH_URL: z.string().default('http://127.0.0.1:8092/health'),

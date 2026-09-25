@@ -76,6 +76,12 @@ export function classifierNumberFor(services: ServiceKind[], text: string, addre
   if (isStreetLighting(t)) {
     return '14030203';
   }
+  if (/труп/.test(t)) {
+    return /квартир/.test(loc) ? '19010000' : '19020100';
+  }
+  if (/скончал/.test(t)) {
+    return '19010101';
+  }
   if (/дтп/.test(t) && /драк/.test(t)) {
     return /пострадав|кров/.test(t) && !/б\/п|без пострадав/.test(t) ? '2020800' : '2010600';
   }
@@ -160,11 +166,8 @@ export function classifierNumberFor(services: ServiceKind[], text: string, addre
   if (isActualFire(t) && /квартир/.test(t)) {
     return '1050101';
   }
-  if (isActualFire(t) && !/что горит не знает/.test(t)) {
-    return '1061601';
-  }
   if (isActualFire(t)) {
-    return '1010101';
+    return '1061601';
   }
   if (/дерут/.test(t)) {
     if (/10-15|палками|прутами/.test(t)) {
@@ -187,11 +190,14 @@ export function classifierNumberFor(services: ServiceKind[], text: string, addre
   if (/потерял.*ребен|потерялся ребенок/.test(t)) {
     return '18070000';
   }
+  if (/потер\w*\s+памят|не вернулся|ушел.*не вернул/.test(t)) {
+    return '17020202';
+  }
   if (/ребенок 4 года один в а\/м|двери заблокировались/.test(t)) {
     return '18080000';
   }
   if (/угон|завладен/.test(t)) {
-    return '15210101';
+    return /вчера|последний раз|свыше 30/.test(t) ? '15210102' : '15210101';
   }
   if (/затащили жену|похищ/.test(t)) {
     return '17030100';
@@ -211,8 +217,14 @@ export function classifierNumberFor(services: ServiceKind[], text: string, addre
   if (/открыть дверь в квартиру/.test(t)) {
     return '20010200';
   }
-  if (/громко играет музыка|мегафон/.test(t)) {
+  if (/продавц|поругал/.test(t)) {
+    return '15110700';
+  }
+  if (/громко играет музыка/.test(t)) {
     return '15100100';
+  }
+  if (/скандал/.test(t) && /травм|кров|скор/.test(t)) {
+    return '17010300';
   }
   if (/ссора во дворе|скандал/.test(t)) {
     return '15190000';
@@ -220,7 +232,10 @@ export function classifierNumberFor(services: ServiceKind[], text: string, addre
   if (/нетрезв/.test(t)) {
     return '15220000';
   }
-  if (/электричк|поездная/.test(t)) {
+  if (/электричк/.test(t) && !/метро/.test(loc)) {
+    return '17050300';
+  }
+  if (/поездная|метро/.test(t) && /сбил|травм/.test(t)) {
     return '17050100';
   }
   if (/запах газа|свист от газов/.test(t) && /квартир|кухн/.test(t)) {
@@ -233,22 +248,46 @@ export function classifierNumberFor(services: ServiceKind[], text: string, addre
     return '6060100';
   }
   if (/крепления на табло|угроза падения/.test(t)) {
-    return '14090504';
+    return '14090704';
   }
-  if (/без сознания|потеря сознания|теряет сознание|не может разбудить/.test(t)) {
+  if (/снотворн|не те лекарствен|донормил/.test(t)) {
+    return '22340000';
+  }
+  if (/без сознания|потеря сознания|потерял[аои]\w*\s+сознан|теряет сознание|не может разбудить/.test(t)) {
     return '22020000';
   }
   if (/рожает|отошли воды|беремен/.test(t)) {
     return '22030000';
   }
+  if (/сердц/.test(t)) {
+    return '22370000';
+  }
+  if (/головн/.test(t)) {
+    return '22150000';
+  }
+  if (/задыха/.test(t)) {
+    return '22170000';
+  }
+  if (/укусил/.test(t)) {
+    return '21010200';
+  }
+  if (/крики о помощи|слышны крики|просит о помощи/.test(t)) {
+    return '17010800';
+  }
+  if (/битами|тумбу с афишей|железными палками/.test(t)) {
+    return '15220600';
+  }
+  if (/внешности|не пояснил/.test(t)) {
+    return '15140000';
+  }
   if (/избит|в крови|нож|изнасило|окровавлен/.test(t)) {
     return '17010300';
   }
-  if (
-    /упал|травм|отек|отёк|велосипед|перелом|ушибли|головн|астма|судорог|кровоточ|укусила/.test(t) ||
-    services.includes('ambulance')
-  ) {
+  if (/упал|травм|отек|отёк|велосипед|перелом|ушибли|судорог|кровотеч|рвот/.test(t)) {
     return '22530000';
+  }
+  if (/плохо/.test(t) || services.includes('ambulance')) {
+    return '22360000';
   }
   return '18070000';
 }

@@ -3,7 +3,6 @@ $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Stt = Join-Path $Root "apps\stt"
 $Venv = Join-Path $Stt ".venv"
 $Py = Join-Path $Venv "Scripts\python.exe"
-$Model = Join-Path $Root "models\sherpa-onnx-streaming-t-one-russian-2025-09-08"
 
 if (-not (Test-Path $Py)) {
   python -m venv $Venv
@@ -27,9 +26,5 @@ if (Test-Path $EnvFile) {
 }
 if (-not $env:STT_MODE) {
   $env:STT_MODE = "huggingface"
-}
-if ($env:STT_MODE -eq "local") {
-  $env:STT_MODEL_PATH = $Model
-  & $Py (Join-Path $Stt "scripts\download_model.py")
 }
 & $Py -m uvicorn sys112_stt.app:app --host 127.0.0.1 --port 8090

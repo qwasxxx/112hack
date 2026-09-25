@@ -4,9 +4,6 @@ from typing import Any
 
 from sys112_tts.config import TTS_OPERATOR_SPEAKER, TTS_VICTIM_SPEAKER
 
-SILERO_MODEL_ID = "v5_5_ru"
-SILERO_LANGUAGE = "ru"
-
 CHARACTERS: dict[str, dict[str, Any]] = {
     "operator": {
         "name": "Диспетчер 112",

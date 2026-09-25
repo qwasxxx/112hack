@@ -133,8 +133,10 @@ def test_health_and_websocket_mock():
 
     with TestClient(app) as client:
         body = client.get("/api/llm/health").json()
-        assert body["model"] == "Qwen3-4B"
-        assert body["runtime"] == "llama_cpp"
+        from sys112_llm.config import LLM_MODEL_NAME, LLM_RUNTIME
+
+        assert body["model"] == LLM_MODEL_NAME
+        assert body["runtime"] == LLM_RUNTIME
         assert body["status"] in ("ready", "not_ready", "loading")
         with client.websocket_connect("/ws/llm") as ws:
             ws.send_json(
@@ -289,7 +291,7 @@ def test_not_ready_and_missing_model():
         with TestClient(appmod.app) as client:
             body = client.get("/api/llm/health").json()
             assert body["status"] in ("ready", "not_ready", "loading")
-            assert "model_present" in body
+            assert body["local"] is False
             with client.websocket_connect("/ws/llm") as ws:
                 appmod.llm_status = "not_ready"
                 ws.send_json({"type": "start", "call_id": "down", "conversation_role": "operator"})

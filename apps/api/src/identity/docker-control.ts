@@ -19,8 +19,8 @@ const MAP: Record<
     allowStop: true,
   },
   llm: {
-    names: ['sys112-llama', 'sys112-llm'],
-    compose: ['llama', 'llm'],
+    names: ['sys112-llm'],
+    compose: ['llm'],
     health: process.env.LLM_HEALTH_URL || 'http://127.0.0.1:8091/health',
     stopHttp: 'http://127.0.0.1:8091/control/stop',
     allowStop: true,

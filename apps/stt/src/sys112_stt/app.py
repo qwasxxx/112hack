@@ -12,8 +12,8 @@ from typing import Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from sys112_stt.config import HF_STT_MODES, STT_HF_MODEL, STT_MODE, STT_MODEL_DIR
-from sys112_stt.engine import create_session, load_recognizer, model_files_present
+from sys112_stt.config import HF_STT_MODES, STT_HF_MODEL, STT_MODE
+from sys112_stt.engine import create_session, load_recognizer
 from sys112_stt.engine_hf import access_message
 
 logger = logging.getLogger("sys112_stt")
@@ -26,7 +26,7 @@ stt_status = "not_ready"
 async def lifespan(_app: FastAPI):
     global recognizer, stt_status
     recognizer, stt_status = load_recognizer()
-    logger.info("stt status=%s mode=%s model=%s", stt_status, STT_MODE, STT_MODEL_DIR)
+    logger.info("stt status=%s mode=%s model=%s", stt_status, STT_MODE, STT_HF_MODEL)
     yield
 
 
@@ -42,14 +42,12 @@ app.add_middleware(
 @app.get("/health")
 def health() -> dict[str, Any]:
     ready = stt_status == "ready"
-    remote = STT_MODE in HF_STT_MODES
     return {
         "status": "ok" if ready else "degraded",
         "stt": "ready" if ready else stt_status,
-        "model": STT_HF_MODEL if remote else "t-one",
-        "local": not remote,
+        "model": STT_HF_MODEL,
+        "local": False,
         "mode": STT_MODE,
-        "model_present": True if remote else model_files_present(STT_MODEL_DIR),
     }
 
 
@@ -90,7 +88,7 @@ async def stt_socket(ws: WebSocket) -> None:
                         await ws.send_json(
                             {
                                 "type": "error",
-                                "message": "Локальная модель T-one не загружена. Скачайте модель и перезапустите STT.",
+                                "message": "Распознавание речи не готово.",
                                 "code": "model_not_ready",
                             }
                         )

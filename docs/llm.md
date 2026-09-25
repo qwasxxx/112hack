@@ -1,12 +1,10 @@
-# Local LLM (Qwen3-4B)
+# Ответы на звонке
 
-Conversational engine for the 112 training call. Does not replace T-one.
+Диалог учебного звонка. Модель задаётся `LLM_MODEL_NAME`, адрес — `LLM_BASE_URL`.
 
 ## Flow
 
-microphone → T-one final transcript → Conversation Manager → llama.cpp `/v1/chat/completions` → streaming assistant line in the existing call UI.
-
-Partial T-one text is shown in the UI and is **not** sent to Qwen.
+microphone → распознанный текст → Conversation Manager → чат по `LLM_BASE_URL` → реплика в интерфейсе звонка.
 
 ## Run (Windows)
 
@@ -38,13 +36,6 @@ Exam teacher inject: WS `intervention` updates the live system extra (`УКАЗ�
 
 ## Roles
 
-`conversation_role=operator` — Qwen is the 112 operator, the student is the caller (theory).
+`conversation_role=operator` — модель играет оператора 112, студент звонит (теория).
 
-`conversation_role=victim` — Qwen is the caller, the student is the operator (training/exam).
-
-One model instance serves both. Prompts stay generic; no per-lesson fine-tune.
-
-## Files
-
-- Model: `models/llm/Qwen3-4B-Q4_K_M.gguf`
-- llama.cpp: `tools/llama.cpp/`
+`conversation_role=victim` — модель играет заявителя, студент оператор (тренировка и экзамен).

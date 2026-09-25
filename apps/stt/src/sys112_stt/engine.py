@@ -1,24 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Protocol
 
 from sys112_stt.audio import pcm_s16le_to_float32
-from sys112_stt.config import (
-    HF_STT_MODES,
-    HF_TOKEN,
-    STT_DECODING_METHOD,
-    STT_ENDPOINT_CONFIRM,
-    STT_ENDPOINT_RULE1,
-    STT_ENDPOINT_RULE2,
-    STT_MODE,
-    STT_MODEL_DIR,
-    STT_NUM_THREADS,
-    STT_ONNX_PROVIDER,
-    STT_PARTIAL_DELAY,
-    STT_SAMPLE_RATE,
-)
+from sys112_stt.config import HF_STT_MODES, HF_TOKEN, STT_MODE, STT_SAMPLE_RATE
+
+_ENDPOINT_CONFIRM = 0.12
+_PARTIAL_DELAY = 0.5
 from sys112_stt.transcript_postprocessor import normalize_transcript, stable_prefix
 
 MOCK_PHRASES = [
@@ -38,34 +27,12 @@ class RecognizerLike(Protocol):
     def timestamps(self, stream: Any) -> list[float]: ...
 
 
-def model_files_present(model_dir: Path) -> bool:
-    return (model_dir / "model.onnx").is_file() and (model_dir / "tokens.txt").is_file()
-
-
 def load_recognizer() -> tuple[RecognizerLike | None, str]:
-    if STT_MODE in HF_STT_MODES:
-        return None, "ready" if HF_TOKEN else "not_ready"
     if STT_MODE == "mock":
         return None, "mock"
-    if not model_files_present(STT_MODEL_DIR):
-        return None, "not_ready"
-    import sherpa_onnx
-
-    recognizer = sherpa_onnx.OnlineRecognizer.from_t_one_ctc(
-        tokens=str(STT_MODEL_DIR / "tokens.txt"),
-        model=str(STT_MODEL_DIR / "model.onnx"),
-        num_threads=STT_NUM_THREADS,
-        sample_rate=STT_SAMPLE_RATE,
-        feature_dim=80,
-        decoding_method=STT_DECODING_METHOD,
-        provider=STT_ONNX_PROVIDER,
-        enable_endpoint_detection=True,
-        rule1_min_trailing_silence=STT_ENDPOINT_RULE1,
-        rule2_min_trailing_silence=STT_ENDPOINT_RULE2,
-        rule3_min_utterance_length=20.0,
-        debug=False,
-    )
-    return recognizer, "ready"
+    if STT_MODE in HF_STT_MODES:
+        return None, "ready" if HF_TOKEN else "not_ready"
+    return None, "not_ready"
 
 
 @dataclass
@@ -146,7 +113,7 @@ class SttSession:
             stamps = list(self.recognizer.timestamps(self.stream) or [])
         except Exception:
             stamps = []
-        visible = text if force_final else stable_prefix(text, stamps, self.audio_seconds, STT_PARTIAL_DELAY)
+        visible = text if force_final else stable_prefix(text, stamps, self.audio_seconds, _PARTIAL_DELAY)
         if visible and _is_shorter_partial(self.last_partial, visible):
             visible = self.last_partial
         if visible and visible != self.last_partial:
@@ -163,7 +130,7 @@ class SttSession:
                 self.pending_endpoint = True
                 self.held_seconds = 0.0
             self.held_seconds += chunk_duration
-            if self.held_seconds >= STT_ENDPOINT_CONFIRM:
+            if self.held_seconds >= _ENDPOINT_CONFIRM:
                 events.extend(self._commit_final(text))
         else:
             self.pending_endpoint = False
@@ -212,10 +179,4 @@ def create_session(recognizer: RecognizerLike | None, status: str) -> SttSession
         from sys112_stt.engine_hf import HuggingFaceSttSession
 
         return HuggingFaceSttSession()  # type: ignore[return-value]
-    mock = recognizer is None or status != "ready"
-    if recognizer is None:
-        return SttSession(recognizer=None, stream=None, mock=mock)
-    stream = recognizer.create_stream()
-    pad = [0.0] * int(STT_SAMPLE_RATE * 0.3)
-    stream.accept_waveform(STT_SAMPLE_RATE, pad)
-    return SttSession(recognizer=recognizer, stream=stream, mock=False)
+    return SttSession(recognizer=None, stream=None, mock=recognizer is None or status != "ready")

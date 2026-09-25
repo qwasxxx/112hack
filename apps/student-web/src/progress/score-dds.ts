@@ -18,6 +18,13 @@ export type DdsShiftCardInput = {
   history?: { status: string; naryad?: string; comment?: string }[];
 };
 
+type DdsParts = {
+  call: number;
+  card: number;
+  facts: number;
+  timer: number;
+};
+
 type ScoredCard = {
   id: string;
   role: 'own' | 'foreign';
@@ -31,7 +38,20 @@ type ScoredCard = {
   ok: boolean;
   findings: LessonFinding[];
   points: number;
+  parts: DdsParts;
 };
+
+const SERVICE_MARK: Record<TrainingScenario['services'][number], string[]> = {
+  fire: ['101', 'пожар'],
+  police: ['102', 'полиц'],
+  ambulance: ['103', 'скор'],
+  gas: ['104', 'газ'],
+};
+
+function calledService(label: string, expected: TrainingScenario['services']): boolean {
+  const text = label.toLowerCase().replace(/ё/g, 'е');
+  return expected.some((kind) => SERVICE_MARK[kind].some((mark) => text.includes(mark)));
+}
 
 const ACCEPTED: DdsServiceStatus[] = [
   'Принята',
@@ -70,6 +90,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       ok,
       findings,
       points: ok ? 100 : 20,
+      parts: { call: 0, card: 0, facts: 0, timer: 0 },
     };
   }
 
@@ -82,27 +103,27 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
     });
   }
 
-  let processPoints = 70;
-  if (!acceptedStatus(status)) {
-    processPoints -= 30;
-    findings.push({
-      code: 'dds-accept',
-      field: 'Приём карточки',
-      message: 'Нет статуса «Принята»: карточка не подтверждена как зона ответственности',
-      severity: 'error',
-    });
-  }
   const contacts = input.contacts ?? [];
+  const said = contacts.map((item) => item.said.toLowerCase().replace(/ё/g, 'е')).join(' ');
+  const expected = input.facts.services;
+  const matched = contacts.filter((item) => calledService(item.service, expected));
+  let servicePoints = 0;
   if (contacts.length === 0) {
-    processPoints -= 12;
     findings.push({
       code: 'dds-service-call',
       field: 'Связь со службой',
-      message: 'Не связались со службой, чтобы направить наряд на адрес',
+      message: 'Не позвонили в нужную службу и не попросили направить наряд на адрес',
+      severity: 'error',
+    });
+  } else if (expected.length > 0 && matched.length === 0) {
+    findings.push({
+      code: 'dds-service-call',
+      field: 'Связь со службой',
+      message: `Звонок был не в ту службу. Нужна: ${expected.join(', ')}`,
       severity: 'error',
     });
   } else {
-    const said = contacts.map((item) => item.said.toLowerCase().replace(/ё/g, 'е')).join(' ');
+    servicePoints = 22;
     const place = input.facts.address
       .toLowerCase()
       .replace(/ё/g, 'е')
@@ -110,35 +131,40 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       .filter((word) => word.length >= 5 && !['москва', 'область', 'напротив', 'большой', 'большого'].includes(word));
     const namedPlace = place.filter((word) => said.includes(word.slice(0, 5))).length;
     if (place.length > 0 && namedPlace < Math.min(2, place.length)) {
-      processPoints -= 8;
       findings.push({
         code: 'dds-service-address',
         field: 'Связь со службой',
         message: `В разговоре с ${contacts.map((item) => item.service).join(', ')} не назвали адрес`,
         severity: 'warning',
       });
+    } else {
+      servicePoints += 12;
     }
     if (!/наряд|бригад|выез|направ|отправ/.test(said)) {
-      processPoints -= 8;
       findings.push({
         code: 'dds-service-crew',
         field: 'Связь со службой',
         message: 'Службе не сказали направить наряд или бригаду',
         severity: 'warning',
       });
+    } else {
+      servicePoints += 10;
     }
   }
-  if (!(input.naryad ?? '').trim()) {
-    processPoints -= 15;
+
+  let acceptPoints = 0;
+  if (!acceptedStatus(status)) {
     findings.push({
-      code: 'dds-naryad',
-      field: 'Наряд',
-      message: 'Не указан номер наряда / распоряжение на выезд',
+      code: 'dds-accept',
+      field: 'Приём карточки',
+      message: 'Нет статуса «Принята»: карточка не подтверждена как зона ответственности',
       severity: 'error',
     });
+  } else {
+    acceptPoints = 8;
   }
+  let closePoints = 0;
   if (status !== 'Работы завершены') {
-    processPoints -= 25;
     findings.push({
       code: 'dds-close',
       field: 'Закрытие',
@@ -147,42 +173,68 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
         : 'Нет отметки «Работы завершены» и возврата карточки в 112',
       severity: 'error',
     });
+  } else {
+    closePoints = 8;
   }
-  processPoints = Math.max(0, processPoints);
+  let naryadPoints = 0;
+  if (!(input.naryad ?? '').trim()) {
+    findings.push({
+      code: 'dds-naryad',
+      field: 'Наряд',
+      message: 'Не указан номер наряда',
+      severity: 'error',
+    });
+  } else {
+    naryadPoints = 10;
+  }
+  let fioPoints = 0;
+  const fio = input.draft.callerName.trim();
+  if (fio.length < 5) {
+    findings.push({
+      code: 'dds-fio',
+      field: 'ФИО заявителя',
+      message: 'ФИО заявителя не заполнено',
+      severity: 'error',
+    });
+  } else {
+    fioPoints = 8;
+  }
 
-  let injuredPoints = 10;
+  let injuredPoints = 0;
   if (!check.injuredOk) {
-    injuredPoints = 0;
     findings.push({
       code: 'dds-injured',
       field: 'Пострадавшие',
       message: `Эталон: ${input.facts.injured}. В карточке: ${input.draft.injured || 'пусто'}`,
       severity: 'error',
     });
+  } else {
+    injuredPoints = 8;
   }
 
-  let phonePoints = 10;
+  let phonePoints = 0;
   if (!check.phoneOk) {
-    phonePoints = 0;
     findings.push({
       code: 'dds-phone',
       field: 'Телефон',
-      message: 'Номер для связи не восстановлен',
+      message: 'Номер для связи не заполнен',
       severity: 'error',
     });
     if (!input.callback) {
       findings.push({
         code: 'dds-callback',
         field: 'Обратный звонок',
-        message: 'Телефон стёрт — нужно было перезвонить заявителю и уточнить номер',
+        message: 'Телефон пустой — нужно было перезвонить заявителю и уточнить номер',
         severity: 'warning',
       });
     }
+  } else {
+    phonePoints = 8;
   }
 
-  let timerPoints = 10;
+  let timerPoints = 6;
   if (elapsedSeconds > CARD_TIMER_LIMIT_SEC) {
-    timerPoints = elapsedSeconds > 60 ? 0 : 4;
+    timerPoints = elapsedSeconds > 60 ? 0 : 3;
     findings.push({
       code: 'timer-over',
       field: 'Время обработки',
@@ -192,15 +244,21 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
   }
 
   findings.push(...inspectOperatorText('Описание', input.draft.description, { minChars: 8 }));
-  findings.push(...inspectOperatorText('ФИО заявителя', input.draft.callerName, { minChars: 5 }));
+  const parts: DdsParts = {
+    call: servicePoints,
+    card: acceptPoints + closePoints + naryadPoints + fioPoints,
+    facts: injuredPoints + phonePoints,
+    timer: timerPoints,
+  };
+  const raw = parts.call + parts.card + parts.facts + parts.timer;
   const decisionOk = input.decision === 'dispatch';
-  const points = decisionOk
-    ? Math.max(0, Math.min(100, Math.round(processPoints + injuredPoints + phonePoints + timerPoints)))
-    : Math.min(40, Math.round(processPoints + injuredPoints + phonePoints + timerPoints) / 2);
+  const points = decisionOk ? Math.max(0, Math.min(100, raw)) : Math.min(40, Math.round(raw / 2));
   const ok =
     decisionOk &&
+    servicePoints === 44 &&
     check.injuredOk &&
     check.phoneOk &&
+    fioPoints > 0 &&
     acceptedStatus(status) &&
     Boolean((input.naryad ?? '').trim()) &&
     status === 'Работы завершены';
@@ -214,6 +272,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
     ok,
     findings,
     points,
+    parts,
   };
 }
 
@@ -258,7 +317,10 @@ export function scoreDdsLesson(input: {
     recs.push('Телефон для связи обязателен. Если 112 его стёр — перезвоните заявителю.');
   }
   if (scored.some((item) => item.findings.some((finding) => finding.code === 'dds-service-call'))) {
-    recs.push('По своей карточке нужно связаться со службой и попросить наряд на адрес из карточки.');
+    recs.push('По своей карточке нужно позвонить в нужную службу, назвать адрес и попросить направить наряд.');
+  }
+  if (scored.some((item) => item.findings.some((finding) => finding.code === 'dds-fio' || finding.code === 'dds-naryad'))) {
+    recs.push('ФИО заявителя и номер наряда должны быть в карточке, одних статусов мало.');
   }
   if (findings.some((item) => item.code === 'dds-accept' || item.code === 'dds-close')) {
     recs.push('Сначала «Принята», затем наряд и статусы реагирования, в конце «Работы завершены».');
