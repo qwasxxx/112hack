@@ -4,7 +4,7 @@
 
 ## Архитектура одним изображением
 
-![Актуальная архитектура sys112-trainer](assets/architecture-current.svg)
+![System design sys112-trainer](assets/system-design.png)
 
 Редактируемый исходник схемы: [`assets/architecture-current.excalidraw`](assets/architecture-current.excalidraw).
 
