@@ -1,6 +1,7 @@
 import type { CallerTtsVoice, LessonSection, ServiceKind, TrainingScenario } from './scenarios';
 import tickets from './ags-tickets.json';
 import { coachPromptLine } from '../progress/coach-notes';
+import { callerOpeningFrom, callerTruthFrom, promptCallerIdentity } from './caller-truth';
 
 export type AgsTicket = {
   ticket: number;
@@ -760,7 +761,12 @@ export function ticketToScenario(ticket: AgsTicket): TrainingScenario {
     difficulty,
     theory: algorithmFor(services, blob),
     checklist: checklistFor(services),
-    callerOpening: openingFrom(ticket.situation),
+    callerOpening: callerOpeningFrom({
+      situation: ticket.situation,
+      address: ticket.address,
+      ticketNo: ticket.ticket,
+      situationNo: ticket.n,
+    }),
     ttsVoice: pickCallerVoice(ticket.ticket, ticket.n, ticket.situation),
     cardFields: CARD_FIELDS,
     ticketNo: ticket.ticket,
@@ -799,34 +805,85 @@ function speakablePlace(text: string): string {
     .trim();
 }
 
+function eventForPrompt(situation: string): string {
+  return speakablePlace(situation)
+    .replace(/(?:тел\.?\s*)?(?:\+?7|8)?[\s\-()]*9\d{2}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}/gi, ' ')
+    .replace(/\b\d{10,11}\b/g, ' ')
+    .replace(/(^|[^а-яё])б\/п(?=$|[^а-яё])/gi, '$1без пострадавших')
+    .replace(/(^|[^а-яё])б\/р(?=$|[^а-яё])/gi, '$1без раненых')
+    .replace(/,\s*,+/g, ',')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function statedTime(situation: string): string {
+  const match = situation.match(
+    /вчера[^,.]{0,40}|сегодня[^,.]{0,24}|только что|\d+\s*мин(?:ут\w*)?[^,.]{0,16}|\d+\s*час\w*|утром|вечером|ночью|днём|днем/i,
+  );
+  return match?.[0]?.replace(/\s+/g, ' ').trim() ?? '';
+}
+
+const TONE: Record<string, string> = {
+  calm: 'спокойно и по делу',
+  anxious: 'встревоженно, но понятно',
+  scared: 'испуганно и связно',
+  panic: 'сбивчиво, но так, чтобы тебя поняли',
+};
+
 export function buildLessonSystemPrompt(scenario: TrainingScenario, section: LessonSection): string {
-  const situation = speakablePlace(scenario.situation ?? scenario.summary);
+  const raw = scenario.situation ?? scenario.summary;
+  const situation = eventForPrompt(raw);
   const address = speakablePlace(scenario.address ?? '');
   const ticketLabel =
     scenario.ticketNo && scenario.situationNo
       ? `Билет ${scenario.ticketNo}, ситуация ${scenario.situationNo}`
       : scenario.code;
-  const phone = extractPhone(`${situation} ${address}`);
-  const caller = extractCallerHint(situation);
-  const injured = extractInjuredName(situation);
-  const what = situationWhat(situation);
-  const forbidden = promptForbidden(situation, address, scenario.services);
-  const serviceLine = scenario.services.length
-    ? `СЛУЖБЫ ПО БИЛЕТУ: ${scenario.services.map((item) => ({ fire: 'пожарные', ambulance: 'скорая', police: 'полиция', gas: 'газ' })[item]).join(', ')}`
-    : 'СЛУЖБЫ ПО БИЛЕТУ: не пожарные. Это не вызов МЧС по пожару.';
+  const truth = callerTruthFrom(scenario);
+  const identity = promptCallerIdentity(raw);
+  const phone = truth.callerPhone ?? extractPhone(raw);
+  const time = statedTime(raw);
+  const urgent = [
+    ...new Set(
+      truth.facts.criticalNow
+        .map((item) => item.source.trim())
+        .filter((item) => item.length > 2),
+    ),
+  ];
+  const serviceNames = scenario.services
+    .map((item) => ({ fire: 'пожарные', ambulance: 'скорая', police: 'полиция', gas: 'газ' })[item])
+    .filter(Boolean);
+  const injuredLine =
+    truth.hasInjured === false
+      ? 'ПОСТРАДАВШИЕ: в билете прямо сказано, что пострадавших нет.'
+      : truth.injuredCount != null
+        ? `ПОСТРАДАВШИЕ: ${truth.injuredCount}. Не меняй это число.`
+        : truth.hasInjured === true
+          ? 'ПОСТРАДАВШИЕ: люди пострадали, точное число не указано. Не говори «ноль» и не выдумывай число.'
+          : 'ПОСТРАДАВШИЕ: число не указано. Это не «нет» и не «ноль».';
+  const conditionText = truth.injuredCondition?.trim() ?? '';
+  const condition = conditionText.includes(' ')
+    ? `СОСТОЯНИЕ: ${conditionText}${/сознан/i.test(conditionText) ? '. «Без сознания» не значит «не дышит», пока дыхание отдельно не написано.' : '.'}`
+    : 'СОСТОЯНИЕ: не указано. Не выводи дыхание, диагноз и тяжесть, которых нет в описании.';
   const facts = [
     ticketLabel,
-    `ЧТО СЛУЧИЛОСЬ: ${what}`,
-    `ФАКТЫ БИЛЕТА ЦЕЛИКОМ: ${situation}`,
-    address ? `АДРЕС (назови, только если спросили): ${address}` : '',
-    caller ? `КТО ЗВОНИТ: ${caller}` : '',
-    injured
-      ? `ПОСТРАДАВШИЙ (это не ты; назови только если спросили кто упал / как зовут ребёнка): ${injured}`
-      : '',
-    phone ? `ТЕЛЕФОН (назови, только если спросили): ${phone}` : '',
-    serviceLine,
-    forbidden ? `ЗАПРЕЩЕНО: ${forbidden}` : '',
-    'Чего нет в этих строках — не существует. Не додумывай улицы, этажи, квартиры, пожары, имена, телефоны, службы и цифры.',
+    `ЧТО СЛУЧИЛОСЬ: ${situation}`,
+    address ? `АДРЕС (назови, только если спросили): ${address}` : 'МЕСТО: в билете не названо.',
+    `КТО ЗВОНИТ: ${identity.who}`,
+    identity.victim ? `ПОСТРАДАВШИЙ (это не ты, если выше не сказано обратное): ${identity.victim}` : '',
+    identity.others ? `ДРУГИЕ ИМЕНА (не представляйся ими): ${identity.others}` : '',
+    phone ? `ТЕЛЕФОН (назови, только если спросили): ${phone}` : 'НОМЕР: в билете не назван.',
+    time ? `ВРЕМЯ: ${time}` : 'ВРЕМЯ: в билете не названо.',
+    truth.floor ? `ЭТАЖ: ${truth.floor}` : 'ЭТАЖ: в билете не назван.',
+    truth.vehicle ? `ТРАНСПОРТ: ${truth.vehicle}` : '',
+    injuredLine,
+    condition,
+    urgent.length ? `СЕЙЧАС ВАЖНО: ${urgent.join('; ')}` : '',
+    isStreetLighting(raw)
+      ? 'ЭТО СВЕТ: горят фонари. Это не пожар и не квартира.'
+      : serviceNames.length
+        ? `СЛУЖЕБНАЯ ПОМЕТКА (маршрут, не вместо события): ${serviceNames.join(', ')}. Травма, зажатие и описанная опасность остаются.`
+        : 'СЛУЖЕБНАЯ ПОМЕТКА: отдельная служба в билете не назначена. Это не отменяет описанное событие.',
+    'Строка «не названо» или «не указано» — этого факта нет. Не подставляй ноль, чужое имя и свой момент времени. Прямое «нет» в описании — отдельный факт.',
     coachPromptLine(scenario.id),
   ]
     .filter(Boolean)
@@ -836,14 +893,15 @@ export function buildLessonSystemPrompt(scenario: TrainingScenario, section: Les
     return [
       facts,
       `Алгоритм опроса:\n${scenario.theory.join('\n')}`,
-      'Не выдумывай факты сверх билета. Критерий конца: адрес, суть, пострадавшие/угроза, телефон, какие службы нужны.',
+      'Не выдумывай факты сверх билета. Критерий конца: адрес, суть, пострадавшие или угроза, телефон, какие службы нужны.',
     ].join('\n');
   }
 
+  const tone = TONE[truth.emotion.stress] ?? TONE.anxious;
   return [
     facts,
-    `Уже сказано: «${scenario.callerOpening}». Не повторяй эту фразу.`,
-    `Имена — только из строк выше. ${nameCoach(caller)} Как давно: если времени нет — «Только что». Если оператор не спрашивает факт, а говорит что услышал или направит помощь — «хорошо» или «жду». Не говори «не вижу», «не слышу», «не за что» и «я слушаю». Не коверкай слова. Слова полностью, без сокращений.`,
+    `Уже сказано вслух: «${scenario.callerOpening}». Это та же фраза, что в начале разговора. Не повторяй её дословно. Если спросят, что случилось, объясни событие из строк выше своими словами и не добавляй новых подробностей.`,
+    `Тон: ${tone}. Имя — только из «КТО ЗВОНИТ», естественной фразой. Если оператор ошибся в факте, поправь по этим строкам.`,
   ]
     .filter(Boolean)
     .join('\n');

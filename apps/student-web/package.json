@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node scripts/regression-training-accept.mjs && node scripts/regression-admin-contour.mjs",
+    "test": "node scripts/regression-training-accept.mjs && node scripts/regression-caller-truth.mjs && node scripts/regression-admin-contour.mjs && node --experimental-strip-types --test test/stt-client.test.mjs test/stt-pipeline.test.ts test/speech-pipeline.test.ts test/ambience-profile.test.ts test/operator-handoff.test.ts test/ambience-assets.test.ts test/tts-player.test.ts test/spoken-transcript.test.ts test/realtime-protocol.test.ts test/student-navigation.test.ts && node test/ambience-scenario.mjs && node test/ambience-player.mjs && node test/ambience-mapping.mjs",
     "lint": "echo \"lint: student-web skipped\"",
     "classifier:generate": "python3 scripts/generate-classifier-runtime.py",
     "classifier:verify": "node scripts/verify-classifier-runtime.mjs"

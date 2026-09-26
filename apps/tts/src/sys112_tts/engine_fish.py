@@ -43,7 +43,16 @@ class FishTTSEngine:
                 self.status = "ready"
                 self.error = None
                 self.backend = "fish-audio"
-                logger.info("[TTS] Fish Audio ready model=%s latency=%s sr=%s", self.client.model, self.client.latency, self.sample_rate)
+                try:
+                    self.client._client()
+                except Exception:
+                    logger.exception("[TTS] Fish client init failed")
+                logger.info(
+                    "[TTS] Fish Audio ready model=%s latency=%s sr=%s",
+                    self.client.model,
+                    self.client.latency,
+                    self.sample_rate,
+                )
                 return
             self.status = "not_ready"
             self.error = "FISH_API_KEY is not set"
@@ -51,6 +60,16 @@ class FishTTSEngine:
 
     def ready(self) -> bool:
         return self.client.ready()
+
+    async def aclose(self) -> None:
+        close = getattr(self.client, "aclose", None)
+        if close is not None:
+            await close()
+
+    async def warm(self) -> None:
+        warm = getattr(self.client, "warm", None)
+        if warm is not None:
+            await warm()
 
     def _profile(
         self,

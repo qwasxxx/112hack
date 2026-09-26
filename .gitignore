@@ -18,11 +18,13 @@ postgres-data
 .drizzle
 models/
 apps/stt/.venv
-apps/stt/.pytest_cache
+apps/stt/.bench/
 apps/stt/**/__pycache__
 apps/llm/.venv
 apps/llm/.pytest_cache
 apps/llm/**/__pycache__
+apps/llm/tests/.ags_catalog.json
+apps/llm/tests/.ags_catalog.json
 apps/tts/.venv
 apps/tts/.pytest_cache
 apps/tts/**/__pycache__

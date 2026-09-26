@@ -133,7 +133,7 @@ def test_hf_ignores_short_noise():
 
     async def run():
         session = HuggingFaceSttSession(transcribe=fake, sample_rate=8000)
-        events = await session.accept_pcm(_tone(0.2, amplitude=9000))
+        events = await session.accept_pcm(_tone(0.08, amplitude=9000))
         events.extend(await session.accept_pcm(b"\x00\x00" * int(8000 * 0.7)))
         return events
 

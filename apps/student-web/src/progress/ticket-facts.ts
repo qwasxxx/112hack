@@ -1,6 +1,16 @@
+import { callerTruthFrom } from '../data/caller-truth';
+import type { FactPriorityBundle } from '../data/fact-priority';
 import { SERVICE_LABEL, type TrainingScenario } from '../data/scenarios';
 import type { IncidentCard } from '../features/arm112-simulator/model/arm112-models';
 import { cardAddressLine } from './address-match';
+import {
+  addressParts,
+  callerStatusFrom,
+  extractPhoneDigits,
+  namesFromTicket,
+  parseInjured,
+  situationCore,
+} from './ticket-parse';
 
 export type TicketFacts = {
   address: string;
@@ -21,10 +31,32 @@ export type TicketFacts = {
   entrance: string;
   floor: string;
   services: TrainingScenario['services'];
+  unknownFields?: string[];
+  childInvolved?: boolean;
+  facts?: FactPriorityBundle;
 };
 
-const FIO =
-  /[А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2}/g;
+export { namesFromTicket } from './ticket-parse';
+export {
+  callerEmotionProfile,
+  callerOpeningFrom,
+  callerTruthFrom,
+  classifyIncident,
+  validateCallerTruth,
+} from '../data/caller-truth';
+export type { CallerEmotionProfile, CallerTruth, IncidentClass, VictimFactModel, LocationFactModel, OpeningFactSet } from '../data/caller-truth';
+export type {
+  CallerFact,
+  FactPriorityBundle,
+  FactPriorityLevel,
+  FireFactProfile,
+  TrafficFactProfile,
+  WaterFactProfile,
+  MedicalFactProfile,
+  GasFactProfile,
+  ViolenceFactProfile,
+} from '../data/fact-priority';
+export { hasCriticalTopic, hasImportantTopic } from '../data/fact-priority';
 
 export function digitsPhone(value: string): string {
   return value.replace(/\D/g, '');
@@ -62,12 +94,11 @@ export function phonesMatch(expected: string, got: string): boolean {
 export function ticketFactsFrom(scenario: TrainingScenario): TicketFacts {
   const situation = (scenario.situation ?? scenario.summary ?? '').replace(/\u00a0/g, ' ');
   const address = scenario.address ?? '';
-  const phoneMatch = situation.match(
-    /(?:тел\.?\s*)?(?:\+?7|8)?[\s\-()]*9\d{2}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}|\b9\d{9}\b|\b\d{10,11}\b/,
-  );
-  const phone = phoneMatch ? digitsPhone(phoneMatch[0]) : '';
+  const phone = extractPhoneDigits(situation);
   const people = namesFromTicket(situation);
   const injured = parseInjured(situation);
+  const parts = addressParts(address, situation);
+  const truth = callerTruthFrom(scenario);
   return {
     address,
     situation,
@@ -80,13 +111,16 @@ export function ticketFactsFrom(scenario: TrainingScenario): TicketFacts {
     hasInjured: injured.hasInjured,
     injuredCount: injured.count,
     callerStatus: callerStatusFrom(situation),
-    house: pick(address, /(?:дом\.?|д\.?|№)\s*(\d+[а-яa-z]?)/i),
-    street: pick(address, /(?:ул\.|улица)\s+([^,;(]+)/i),
-    corpus: pick(address, /(?:корп\.?|корпус)\s*(\d+[а-яa-z]?)/i),
-    apartment: pick(address, /(?:кв\.?|квартира)\s*(\d+[а-яa-z]?)/i),
-    entrance: pick(address, /(?:под\.?|подъезд)\s*(\d+)/i),
-    floor: pick(address, /(?:эт\.?|этаж)\s*(\d+)/i) || pick(situation, /(\d+)[-\s]*м этаж/i),
+    house: parts.house,
+    street: parts.street,
+    corpus: parts.corpus,
+    apartment: parts.apartment,
+    entrance: parts.entrance,
+    floor: parts.floor,
     services: scenario.services,
+    unknownFields: truth.unknownFields,
+    childInvolved: truth.childInvolved,
+    facts: truth.facts,
   };
 }
 
@@ -157,115 +191,4 @@ export function smsFromTicket(scenario: TrainingScenario): string {
     lines.push(`Адрес: ${address}`);
   }
   return lines.join('\n');
-}
-
-function situationCore(situation: string, fio: string, phone: string): string {
-  if (/уличн[а-яё]*\s+освещен|горит\s+уличн/i.test(situation)) {
-    return 'Горит уличное освещение на МКАД — фонари светят. Это не пожар и не квартира.';
-  }
-  let text = situation;
-  if (fio) {
-    text = text.replace(fio, ' ');
-  }
-  if (phone) {
-    text = text.replace(/\d[\d\s\-()]{8,}\d/g, ' ');
-  }
-  return text
-    .replace(/\([^)]*\)/g, ' ')
-    .replace(/пострадавших нет|без пострадавших|б\/п|б\/р/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function parseInjured(situation: string): { known: boolean; hasInjured: boolean | null; count: number | null } {
-  const t = situation.toLowerCase();
-  if (/о пострадавших.{0,24}нет|информации нет/.test(t) && !/\d+\s*пострадав/.test(t)) {
-    return { known: false, hasInjured: null, count: null };
-  }
-  const counted = t.match(/(\d+)\s*пострадав/);
-  if (counted) {
-    return { known: true, hasInjured: Number(counted[1]) > 0, count: Number(counted[1]) };
-  }
-  if (/пострадавших нет|без пострадавших|пострадавших людей нет|пострадавших не видят|б\/п/.test(t)) {
-    return { known: true, hasInjured: false, count: 0 };
-  }
-  if (
-    /пострадал|ожог|без сознания|травм|кров|задыха|утоп|нож|упал|отек|отёк|перелом|ушибли|велосипед/.test(
-      t,
-    )
-  ) {
-    return { known: true, hasInjured: true, count: null };
-  }
-  return { known: false, hasInjured: null, count: null };
-}
-
-export function namesFromTicket(situation: string): { callerFio: string; callerRole: string; injuredName: string } {
-  const names = situation.match(FIO) ?? [];
-  let callerRole = '';
-  if (/вызывает мама|звонит мама/i.test(situation)) {
-    callerRole = 'мама';
-  } else if (/вызывает отец|звонит отец|вызывает папа|звонит папа/i.test(situation)) {
-    callerRole = 'папа';
-  } else if (/вызывает супруг|вызывает муж\b/i.test(situation)) {
-    callerRole = 'муж';
-  } else if (/вызывает брат/i.test(situation)) {
-    callerRole = 'брат';
-  } else if (/подруга/i.test(situation)) {
-    callerRole = 'подруга';
-  } else if (/соседк|сосед/i.test(situation)) {
-    callerRole = 'сосед';
-  } else if (/бабушка/i.test(situation)) {
-    callerRole = 'бабушка';
-  }
-  const injuredMatch =
-    situation.match(/ребенок[^.]{0,48}?([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+)+)/i) ||
-    situation.match(/([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+)+)\s+упал/i);
-  const injuredName = injuredMatch?.[1]?.trim() ?? '';
-  const afterCall = situation.match(
-    /вызывает(?:\s+себе)?[,\s]+([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2})/,
-  );
-  const calledName = afterCall?.[1]?.trim() ?? '';
-  const roleWords = new Set(['мама', 'папа', 'отец', 'мать', 'супруг', 'супруга', 'сосед', 'соседка', 'подруга', 'бабушка', 'брат', 'муж']);
-  let callerFio = '';
-  const ownAfterRole = situation.match(
-    /(?:вызывает|звонит)\s+(?:себе|сама|мама|папа|отец|муж|супруга?|брат|подруга|соседка|сосед|бабушка|кассир(?:\s+[а-яё]+)*|прохожий|администратор)?[\s,]*([А-ЯЁ][а-яё]+(?:-[А-ЯЁ][а-яё]+)?(?:\s+[А-ЯЁ][а-яё]+){1,2})/i,
-  );
-  const ownName = ownAfterRole?.[1]?.trim() ?? '';
-  if (ownName && !roleWords.has(ownName.toLowerCase()) && ownName !== injuredName) {
-    callerFio = ownName;
-  } else if (/вызывает себе|звонит сама/.test(situation.toLowerCase()) && names.length) {
-    callerFio = names.find((item) => item !== injuredName)?.trim() || names[0]?.trim() || '';
-  } else if (calledName && !roleWords.has(calledName.toLowerCase()) && calledName !== injuredName) {
-    callerFio = calledName;
-  } else if (!callerRole) {
-    callerFio = names.filter((item) => item !== injuredName).at(-1)?.trim() ?? '';
-  }
-  return { callerFio, callerRole, injuredName };
-}
-
-function callerStatusFrom(situation: string): string {
-  const t = situation.toLowerCase();
-  if (/очевидец|прохожий|работник|посетитель|проезжала мимо/.test(t)) {
-    return 'очевидец';
-  }
-  if (/вызывает мама|вызывает отец|вызывает супруг|дочь,|бабушка/.test(t)) {
-    return 'родственник';
-  }
-  if (/сосед/.test(t)) {
-    return 'знакомый';
-  }
-  if (/подруга/.test(t)) {
-    return 'знакомый';
-  }
-  if (/ребенок 4 года|ребенок \d/.test(t) && /вызывает/.test(t)) {
-    return 'родственник';
-  }
-  if (/вызывает себе|звонит сама/.test(t)) {
-    return 'пострадавший';
-  }
-  return '';
-}
-
-function pick(text: string, pattern: RegExp): string {
-  return text.match(pattern)?.[1]?.trim() ?? '';
 }

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ambience verify</title>
+    <style>
+      body { font-family: sans-serif; padding: 16px; max-width: 720px; }
+      button { margin: 4px 8px 4px 0; }
+      #log { white-space: pre-wrap; background: #111; color: #d8ffd8; padding: 12px; min-height: 120px; }
+    </style>
+  </head>
+  <body>
+    <h1>System-112 ambience files</h1>
+    <p>Local-only loops. Click a profile, confirm it is audible, then Stop.</p>
+    <div id="buttons"></div>
+    <p><button id="stop">Stop</button></p>
+    <div id="log"></div>
+    <script>
+      const files = {
+        FIRE: 'fire_loop.mp3',
+        TRAFFIC_ACCIDENT: 'traffic_accident_loop.mp3',
+        POLICE_OR_FIGHT: 'argument_crowd_loop.mp3',
+        GAS: 'gas_building_loop.mp3',
+        MEDICAL: 'medical_room_loop.mp3',
+        INFRASTRUCTURE: 'urban_infrastructure_loop.mp3',
+        WATER_FLOOD: 'water_emergency_loop.mp3',
+        CROWD_PUBLIC_PLACE: 'street_crowd_loop.mp3',
+        GENERIC_EMERGENCY: 'generic_emergency_loop.mp3',
+        EXPLOSION_AFTERMATH: 'urban_infrastructure_loop.mp3',
+      };
+      const log = (msg) => {
+        document.getElementById('log').textContent += msg + '\n';
+      };
+      let current;
+      const buttons = document.getElementById('buttons');
+      for (const [name, file] of Object.entries(files)) {
+        const btn = document.createElement('button');
+        btn.textContent = name;
+        btn.onclick = async () => {
+          current?.pause();
+          current = new Audio('./' + file);
+          current.loop = true;
+          current.volume = name === 'FIRE' ? 0.28 : name === 'MEDICAL' || name === 'GAS' ? 0.35 : 0.55;
+          await current.play();
+          log('playing ' + name + ' ' + file);
+        };
+        buttons.appendChild(btn);
+      }
+      document.getElementById('stop').onclick = () => {
+        current?.pause();
+        log('stopped');
+      };
+      log('ready ' + Object.keys(files).join(', '));
+    </script>
+  </body>
+</html>

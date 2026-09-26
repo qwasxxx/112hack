@@ -3,12 +3,27 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from sys112_stt.audio import pcm_s16le_to_float32
-from sys112_stt.config import HF_STT_MODES, HF_TOKEN, STT_MODE, STT_SAMPLE_RATE
-
-_ENDPOINT_CONFIRM = 0.12
-_PARTIAL_DELAY = 0.5
-from sys112_stt.transcript_postprocessor import normalize_transcript, stable_prefix
+from sys112_stt.audio import pcm_s16le_to_float32, resample_float32
+from sys112_stt.config import (
+    FASTER_WHISPER_MODES,
+    HF_STT_MODES,
+    HF_TOKEN,
+    STT_DECODING_METHOD,
+    STT_ENGINE,
+    STT_ENDPOINT_CONFIRM,
+    STT_ENDPOINT_RULE1,
+    STT_ENDPOINT_RULE2,
+    STT_MODE,
+    STT_MODEL_DIR,
+    STT_NUM_THREADS,
+    STT_ONNX_PROVIDER,
+    STT_PARTIAL_DELAY,
+    STT_SAMPLE_RATE,
+    STT_WIRE_SAMPLE_RATE,
+    TONE_NATIVE_RATE,
+    WHISPER_SAMPLE_RATE,
+)
+from sys112_stt.transcript_postprocessor import normalize_transcript, polish_operator_transcript, stable_prefix
 
 MOCK_PHRASES = [
     "Здравствуйте, у меня пожар.",
@@ -28,11 +43,37 @@ class RecognizerLike(Protocol):
 
 
 def load_recognizer() -> tuple[RecognizerLike | None, str]:
-    if STT_MODE == "mock":
+    if STT_MODE == "mock" or STT_ENGINE == "mock":
         return None, "mock"
+    if STT_ENGINE == "faster_whisper" or STT_MODE in FASTER_WHISPER_MODES:
+        try:
+            from sys112_stt.engine_faster_whisper import load_model
+
+            load_model()
+            return None, "ready"
+        except Exception:
+            return None, "not_ready"
     if STT_MODE in HF_STT_MODES:
         return None, "ready" if HF_TOKEN else "not_ready"
-    return None, "not_ready"
+    if not model_files_present(STT_MODEL_DIR):
+        return None, "not_ready"
+    import sherpa_onnx
+
+    recognizer = sherpa_onnx.OnlineRecognizer.from_t_one_ctc(
+        tokens=str(STT_MODEL_DIR / "tokens.txt"),
+        model=str(STT_MODEL_DIR / "model.onnx"),
+        num_threads=STT_NUM_THREADS,
+        sample_rate=TONE_NATIVE_RATE,
+        feature_dim=80,
+        decoding_method=STT_DECODING_METHOD,
+        provider=STT_ONNX_PROVIDER,
+        enable_endpoint_detection=True,
+        rule1_min_trailing_silence=STT_ENDPOINT_RULE1,
+        rule2_min_trailing_silence=STT_ENDPOINT_RULE2,
+        rule3_min_utterance_length=20.0,
+        debug=False,
+    )
+    return recognizer, "ready"
 
 
 @dataclass
@@ -40,6 +81,7 @@ class SttSession:
     recognizer: RecognizerLike | None
     stream: Any | None
     sample_rate: int = STT_SAMPLE_RATE
+    wire_rate: int | None = None
     audio_seconds: float = 0.0
     last_partial: str = ""
     finals: list[dict[str, Any]] = field(default_factory=list)
@@ -54,7 +96,13 @@ class SttSession:
         samples = pcm_s16le_to_float32(chunk)
         if not samples:
             return []
-        duration = len(samples) / self.sample_rate
+        src_rate = self.wire_rate or self.sample_rate
+        src_count = len(samples)
+        if src_rate != self.sample_rate:
+            samples = resample_float32(samples, src_rate, self.sample_rate)
+            if not samples:
+                return []
+        duration = src_count / src_rate
         self.audio_seconds += duration
         if self.mock:
             return self._mock_decode()
@@ -140,7 +188,7 @@ class SttSession:
     def _commit_final(self, text: str) -> list[dict[str, Any]]:
         assert self.recognizer is not None
         assert self.stream is not None
-        final_text = normalize_transcript(text or self.full_hypothesis or self.last_partial)
+        final_text = polish_operator_transcript(text or self.full_hypothesis or self.last_partial)
         self.pending_endpoint = False
         self.held_seconds = 0.0
         self.last_partial = ""
@@ -175,8 +223,21 @@ def _is_shorter_partial(previous: str, visible: str) -> bool:
 
 
 def create_session(recognizer: RecognizerLike | None, status: str) -> SttSession:
-    if STT_MODE in HF_STT_MODES:
+    if STT_ENGINE == "faster_whisper" or STT_MODE in FASTER_WHISPER_MODES or STT_MODE in HF_STT_MODES:
         from sys112_stt.engine_hf import HuggingFaceSttSession
+        from sys112_stt.engine_router import transcribe_wav
 
-        return HuggingFaceSttSession()  # type: ignore[return-value]
-    return SttSession(recognizer=None, stream=None, mock=recognizer is None or status != "ready")
+        return HuggingFaceSttSession(transcribe=transcribe_wav, sample_rate=WHISPER_SAMPLE_RATE)  # type: ignore[return-value]
+    mock = recognizer is None or status != "ready"
+    if recognizer is None:
+        return SttSession(recognizer=None, stream=None, mock=mock)
+    stream = recognizer.create_stream()
+    pad = [0.0] * int(TONE_NATIVE_RATE * 0.3)
+    stream.accept_waveform(TONE_NATIVE_RATE, pad)
+    return SttSession(
+        recognizer=recognizer,
+        stream=stream,
+        mock=False,
+        sample_rate=TONE_NATIVE_RATE,
+        wire_rate=STT_WIRE_SAMPLE_RATE,
+    )

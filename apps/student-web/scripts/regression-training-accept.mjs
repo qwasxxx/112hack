@@ -168,7 +168,8 @@ assert.match(read('src/progress/score-training.ts'), /WHAT_REASK/);
 assert.match(read('src/progress/score-training.ts'), /scrubWhatRemark/);
 assert.match(read('src/data/ags-tickets.ts'), /22530000/);
 assert.match(read('src/progress/ticket-facts.ts'), /namesFromTicket/);
-assert.match(read('src/progress/ticket-facts.ts'), /упал\|отек/);
+assert.match(read('src/progress/ticket-parse.ts'), /упал\|отек/);
+assert.match(read('src/data/caller-truth.ts'), /export function callerTruthFrom/);
 assert.match(read('src/progress/score-card.ts'), /nameOverlap/);
 assert.match(read('src/progress/score-card.ts'), /medicalClose/);
 

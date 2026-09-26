@@ -58,9 +58,22 @@ services:
     container_name: sys112-stt
     environment:
       STT_MODE: ${STT_MODE:-huggingface}
+      STT_ENGINE: ${STT_ENGINE:-hf}
+      STT_FALLBACK: ${STT_FALLBACK:-}
+      STT_FW_MODEL: ${STT_FW_MODEL:-large-v3-turbo}
+      STT_FW_DEVICE: cpu
+      STT_FW_COMPUTE_TYPE: int8
       HF_TOKEN: ${HF_TOKEN:-}
       STT_HF_MODEL: ${STT_HF_MODEL:-openai/whisper-large-v3-turbo}
-      STT_HF_LANGUAGE: russian
+      STT_HF_LANGUAGE: ru
+      STT_MODEL_PATH: /models/sherpa-onnx-streaming-t-one-russian-2025-09-08
+      STT_SAMPLE_RATE: "16000"
+      STT_NUM_THREADS: "2"
+      STT_DECODING_METHOD: greedy_search
+      STT_ONNX_PROVIDER: cpu
+      STT_ENDPOINT_RULE1: "1.2"
+      STT_ENDPOINT_RULE2: "0.7"
+      STT_ENDPOINT_CONFIRM: "0.12"
       STT_HOST: 0.0.0.0
       STT_PORT: "8090"
     ports:
@@ -90,9 +103,12 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-https://router.huggingface.co}
       LLM_HOST: 0.0.0.0
       LLM_PORT: "8091"
-      LLM_TEMPERATURE: "0.3"
-      LLM_TOP_P: "0.8"
-      LLM_MAX_TOKENS: "48"
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.6}
+      LLM_TOP_P: ${LLM_TOP_P:-0.8}
+      LLM_MAX_TOKENS: ${LLM_MAX_TOKENS:-120}
+      LLM_CONTEXT_SIZE: ${LLM_CONTEXT_SIZE:-8192}
+    volumes:
+      - ../../models:/models
     ports:
       - "8091:8091"
     healthcheck:
@@ -119,10 +135,14 @@ services:
       TTS_BACKEND: ${TTS_BACKEND:-fish}
       FISH_API_KEY: ${FISH_API_KEY:-}
       FISH_MODEL: ${FISH_MODEL:-s2.1-pro}
-      FISH_LATENCY: ${FISH_LATENCY:-normal}
+      FISH_LATENCY: ${FISH_LATENCY:-balanced}
+      FISH_FORMAT: ${FISH_FORMAT:-pcm}
+      FISH_SAMPLE_RATE: ${FISH_SAMPLE_RATE:-44100}
       FISH_REFERENCE_ID: ${FISH_REFERENCE_ID:-}
       FISH_REFERENCE_AUDIO: ${FISH_REFERENCE_AUDIO:-}
       FISH_REFERENCE_TEXT: ${FISH_REFERENCE_TEXT:-}
+      FISH_VICTIM_FEMALE_REFERENCE_ID: ${FISH_VICTIM_FEMALE_REFERENCE_ID:-}
+      FISH_VICTIM_MALE_REFERENCE_ID: ${FISH_VICTIM_MALE_REFERENCE_ID:-}
     volumes:
       - tts-cache:/root/.cache
     ports:

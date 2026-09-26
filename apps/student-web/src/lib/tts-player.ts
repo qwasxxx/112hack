@@ -1,4 +1,34 @@
+import { callerPhoneInput } from './caller-phone-voice';
+import { takeSpeechChunks, type TtsPlaybackHooks } from './speech-pipeline';
+
+export { takeSpeechChunks };
+export type { TtsPlaybackHooks };
+
+export type TtsChunkPlaybackInfo = {
+  text: string;
+  durationMs: number;
+};
+
+export type TtsChunkProgressInfo = {
+  durationMs: number;
+  complete?: boolean;
+};
+
+export type TtsChunkHooks = TtsPlaybackHooks & {
+  onChunkPlaybackStart?: (info: TtsChunkPlaybackInfo) => void;
+  onChunkPlaybackProgress?: (info: TtsChunkProgressInfo) => void;
+  onChunkPlaybackEnd?: (info: { text: string }) => void;
+  onPlaybackCancelled?: () => void;
+};
+
+type InternalPlayHooks = TtsChunkHooks & {
+  onBufferScheduled?: (durationMs: number) => void;
+  onBufferAudible?: () => void;
+};
+
 let playToken = 0;
+let startTimers = new Set<number>();
+const activeCancelHooks = new Set<TtsChunkHooks>();
 let currentAudio: HTMLAudioElement | undefined;
 let currentSource: AudioBufferSourceNode | undefined;
 const currentSources: AudioBufferSourceNode[] = [];
@@ -9,6 +39,31 @@ let playbackDone: (() => void) | undefined;
 let playChain: Promise<void> = Promise.resolve();
 let audioCtx: AudioContext | undefined;
 let nextStart = 0;
+let reserveLock: Promise<void> = Promise.resolve();
+let fetchInFlight = 0;
+const TTS_FIRST_BYTE_MS = 18_000;
+const TTS_STALL_MS = 12_000;
+
+function createStallWatch(abort: AbortController): { heard: () => void; stop: () => void } {
+  let timer = 0;
+  const clear = () => {
+    if (timer) {
+      window.clearTimeout(timer);
+      timer = 0;
+    }
+  };
+  const arm = (ms: number) => {
+    clear();
+    timer = window.setTimeout(() => abort.abort(), ms);
+  };
+  arm(TTS_FIRST_BYTE_MS);
+  return {
+    heard() {
+      arm(TTS_STALL_MS);
+    },
+    stop: clear,
+  };
+}
 let recordMix: GainNode | undefined;
 let recordTap: ScriptProcessorNode | undefined;
 let recordSink: GainNode | undefined;
@@ -18,6 +73,9 @@ let recordFilled = 0;
 let recordOrigin = 0;
 let recordingOn = false;
 let recordCarry = 0;
+const recordTaps: AudioNode[] = [];
+let voiceActivityListener: ((active: boolean) => void) | undefined;
+let voiceActive = false;
 
 function ttsUrl(): string {
   return '/api/v1/tts/synthesize';
@@ -28,11 +86,56 @@ function getAudioContext(): AudioContext {
   return audioCtx;
 }
 
-export function unlockTtsAudio(): void {
+export function getSharedAudioContext(): AudioContext {
+  return getAudioContext();
+}
+
+export function setTtsVoiceActivityListener(listener?: (active: boolean) => void): void {
+  voiceActivityListener = listener;
+}
+
+export function connectToCallRecording(node: AudioNode): void {
+  if (!recordTaps.includes(node)) {
+    recordTaps.push(node);
+  }
+  if (recordMix) {
+    try {
+      node.connect(recordMix);
+    } catch {
+      undefined;
+    }
+  }
+}
+
+export function disconnectFromCallRecording(node: AudioNode): void {
+  const index = recordTaps.indexOf(node);
+  if (index >= 0) {
+    recordTaps.splice(index, 1);
+  }
+  if (recordMix) {
+    try {
+      node.disconnect(recordMix);
+    } catch {
+      undefined;
+    }
+  }
+}
+
+function notifyVoiceActivity(): void {
+  const active = currentSources.length > 0 || currentSource != null || currentAudio != null;
+  if (active === voiceActive) {
+    return;
+  }
+  voiceActive = active;
+  voiceActivityListener?.(active);
+}
+
+export function unlockTtsAudio(): Promise<void> {
   const ctx = getAudioContext();
   if (ctx.state === 'suspended') {
-    void ctx.resume();
+    return ctx.resume().then(() => undefined, () => undefined);
   }
+  return Promise.resolve();
 }
 
 function releaseRecordingGraph() {
@@ -168,6 +271,13 @@ export function beginCallRecording(mic: MediaStream): { stop: () => Promise<Blob
   recordSink.gain.value = 0;
   recordTap.connect(recordSink);
   recordSink.connect(ctx.destination);
+  for (const node of recordTaps) {
+    try {
+      node.connect(recordMix);
+    } catch {
+      undefined;
+    }
+  }
   return {
     stop: () => Promise.resolve(takeRecording()),
   };
@@ -181,12 +291,22 @@ export type TtsVoiceHint = {
   gender?: string;
 };
 
-export async function playTtsAudio(text: string, conversationRole?: string, voice?: TtsVoiceHint): Promise<void> {
+export async function playTtsAudio(
+  text: string,
+  conversationRole?: string,
+  voice?: TtsVoiceHint,
+  hooks?: TtsChunkHooks,
+): Promise<void> {
   stopTtsAudio();
-  return enqueueTtsAudio(text, conversationRole, voice);
+  return enqueueTtsAudio(text, conversationRole, voice, hooks);
 }
 
-export function enqueueTtsAudio(text: string, conversationRole?: string, voice?: TtsVoiceHint): Promise<void> {
+export function enqueueTtsAudio(
+  text: string,
+  conversationRole?: string,
+  voice?: TtsVoiceHint,
+  hooks?: TtsChunkHooks,
+): Promise<void> {
   const trimmed = text.trim();
   if (!trimmed) {
     return Promise.resolve();
@@ -197,30 +317,69 @@ export function enqueueTtsAudio(text: string, conversationRole?: string, voice?:
   const abort = new AbortController();
   abortControllers.add(abort);
   currentAbort = abort;
-  const pending = fetchTtsResponse(trimmed, role, token, abort, voice);
-  const done = playChain.then(async () => {
-    try {
-      if (token !== playToken) {
-        return;
-      }
-      const response = await pending;
-      if (!response || token !== playToken) {
-        return;
-      }
-      await playTtsResponse(response, token);
-    } finally {
-      abortControllers.delete(abort);
-      if (currentAbort === abort) {
-        currentAbort = undefined;
-      }
+  if (hooks) {
+    activeCancelHooks.add(hooks);
+  }
+  const stall = createStallWatch(abort);
+  hooks?.onRequestStart?.();
+  const gate = createPlayGate();
+  const phoneLine = isCallerVoice(role, voice);
+  const consume = consumeTtsResponse(trimmed, role, token, abort, voice, hooks, gate, stall);
+  const played = playChain.then(async () => {
+    if (token !== playToken) {
+      return;
     }
+    await playGate(gate, token, hooks, trimmed, phoneLine);
   });
-  playChain = done.catch(() => undefined);
-  return done;
+  playChain = played.catch(() => undefined);
+  return Promise.all([consume.catch(() => undefined), played.catch(() => undefined)]).then(async () => {
+    stall.stop();
+    abortControllers.delete(abort);
+    if (currentAbort === abort) {
+      currentAbort = undefined;
+    }
+    if (hooks) {
+      activeCancelHooks.delete(hooks);
+    }
+    await played;
+  });
+}
+
+function isCallerVoice(role: string, voice?: TtsVoiceHint): boolean {
+  return role !== 'operator' && role !== 'service' && voice?.emotion !== 'dispatch';
+}
+
+export function isTtsBusy(): boolean {
+  return (
+    currentSources.length > 0 ||
+    currentSource != null ||
+    currentAudio != null ||
+    abortControllers.size > 0 ||
+    fetchInFlight > 0
+  );
 }
 
 export function waitTtsQueue(): Promise<void> {
   return playChain;
+}
+
+function clearStartTimers() {
+  for (const id of startTimers) {
+    window.clearTimeout(id);
+  }
+  startTimers = new Set();
+}
+
+function notifyPlaybackCancelled() {
+  const pending = [...activeCancelHooks];
+  activeCancelHooks.clear();
+  for (const hooks of pending) {
+    try {
+      hooks.onPlaybackCancelled?.();
+    } catch {
+      undefined;
+    }
+  }
 }
 
 export function stopTtsAudio(): void {
@@ -231,10 +390,12 @@ export function stopTtsAudio(): void {
     abort.abort();
   }
   abortControllers = new Set();
+  clearStartTimers();
   playbackDone?.();
   playbackDone = undefined;
   playChain = Promise.resolve();
   nextStart = 0;
+  reserveLock = Promise.resolve();
   for (const source of currentSources.splice(0)) {
     try {
       source.stop();
@@ -258,54 +419,8 @@ export function stopTtsAudio(): void {
     URL.revokeObjectURL(url);
   }
   objectUrls = [];
-}
-
-export function takeSpeechChunks(full: string, already: string): { chunks: string[]; spoken: string } {
-  const same = normalizeSpeech(full) === normalizeSpeech(already);
-  const alreadyCovers =
-    Boolean(normalizeSpeech(already)) && normalizeSpeech(already).startsWith(normalizeSpeech(full));
-  if (same || alreadyCovers) {
-    return { chunks: [], spoken: full };
-  }
-  let prefix = already;
-  if (prefix && !full.startsWith(prefix)) {
-    prefix = speechCut(full, already);
-  }
-  let rest = full.slice(prefix.length);
-  const chunks: string[] = [];
-  while (rest) {
-    const match = rest.match(/^[\s\S]*?[.!?…](?:\s+|$)/) || rest.match(/^[\s\S]{18,120}?[,;:](?:\s+|$)/);
-    if (!match) {
-      break;
-    }
-    const piece = match[0].trim();
-    if (piece.length >= 2) {
-      chunks.push(piece);
-    }
-    prefix += match[0];
-    rest = full.slice(prefix.length);
-  }
-  return { chunks, spoken: prefix };
-}
-
-function normalizeSpeech(value: string): string {
-  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
-}
-
-function speechCut(full: string, already: string): string {
-  const spoken = normalizeSpeech(already);
-  const next = normalizeSpeech(full);
-  if (!spoken || !next.startsWith(spoken)) {
-    return '';
-  }
-  let left = spoken.length;
-  let index = 0;
-  for (; index < full.length && left > 0; index += 1) {
-    if (/[\p{L}\p{N}]/u.test(full[index])) {
-      left -= 1;
-    }
-  }
-  return full.slice(0, index);
+  notifyPlaybackCancelled();
+  notifyVoiceActivity();
 }
 
 async function fetchTtsResponse(
@@ -318,6 +433,7 @@ async function fetchTtsResponse(
   const operator = voiceId === 'operator';
   const service = voiceId === 'service' || voice?.emotion === 'dispatch';
   const brisk = service && (!voice?.emotion || voice.emotion === 'dispatch');
+  fetchInFlight += 1;
   try {
     const response = await fetch(ttsUrl(), {
       method: 'POST',
@@ -341,38 +457,183 @@ async function fetchTtsResponse(
     return response;
   } catch {
     return undefined;
+  } finally {
+    fetchInFlight = Math.max(0, fetchInFlight - 1);
   }
 }
 
-async function playTtsResponse(response: Response, token: number): Promise<void> {
+async function consumeTtsResponse(
+  text: string,
+  voiceId: string,
+  token: number,
+  abort: AbortController,
+  voice: TtsVoiceHint | undefined,
+  hooks: TtsChunkHooks | undefined,
+  gate: PlayGate,
+  stall: { heard: () => void; stop: () => void },
+): Promise<void> {
+  try {
+    const response = await fetchTtsResponse(text, voiceId, token, abort, voice);
+    if (!response || token !== playToken) {
+      return;
+    }
+    stall.heard();
+    await feedTtsResponse(response, token, hooks, gate, stall);
+  } catch {
+    undefined;
+  } finally {
+    stall.stop();
+    gate.finish();
+  }
+}
+
+async function feedTtsResponse(
+  response: Response,
+  token: number,
+  hooks: TtsChunkHooks | undefined,
+  gate: PlayGate,
+  stall: { heard: () => void; stop: () => void },
+): Promise<void> {
   const streamed =
     !!response.body &&
     ((response.headers.get('content-type') || '').includes('octet-stream') ||
       response.headers.get('x-tts-stream') === '1');
   if (streamed && response.body) {
-    await playStream(response.body, token);
+    await feedStream(response.body, token, hooks, gate, stall);
     return;
   }
+  hooks?.onFirstNetworkAudio?.();
   const blob = await response.blob();
-  if (blob.size >= 64) {
-    await playBlob(blob, token);
+  if (blob.size >= 64 && token === playToken) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const decoded = await decodeChunk(bytes, token);
+    if (decoded) {
+      hooks?.onFirstDecoded?.();
+      gate.push({ buffer: decoded });
+    } else {
+      gate.push({ blob });
+    }
   }
 }
 
-async function playStream(body: ReadableStream<Uint8Array>, token: number): Promise<void> {
+type Playable = { buffer?: AudioBuffer; blob?: Blob };
+
+type PlayGate = {
+  push: (item: Playable) => void;
+  finish: () => void;
+  take: () => Promise<Playable | undefined>;
+};
+
+function createPlayGate(): PlayGate {
+  const items: Playable[] = [];
+  let finished = false;
+  const waiters: Array<() => void> = [];
+  const poke = () => {
+    const pending = waiters.splice(0);
+    for (const resume of pending) {
+      resume();
+    }
+  };
+  return {
+    push(item: Playable) {
+      if (finished) {
+        return;
+      }
+      items.push(item);
+      poke();
+    },
+    finish() {
+      finished = true;
+      poke();
+    },
+    async take() {
+      while (!items.length && !finished) {
+        await new Promise<void>((resolve) => {
+          waiters.push(resolve);
+        });
+      }
+      return items.shift();
+    },
+  };
+}
+
+async function playGate(
+  gate: PlayGate,
+  token: number,
+  hooks: TtsChunkHooks | undefined,
+  chunkText: string,
+  phoneLine = false,
+): Promise<void> {
+  const plays: Promise<void>[] = [];
+  let latencyHooks: TtsChunkHooks | undefined = hooks;
+  let reservedMs = 0;
+  let audible = false;
+  while (token === playToken) {
+    const item = await gate.take();
+    if (!item || token !== playToken) {
+      break;
+    }
+    const first = latencyHooks;
+    const local: InternalPlayHooks = {
+      onFirstPlayback: first?.onFirstPlayback,
+      onFirstDecoded: first?.onFirstDecoded,
+      onFirstAudible: first?.onFirstAudible,
+      onBufferScheduled: (durationMs) => {
+        reservedMs += durationMs;
+        if (audible) {
+          hooks?.onChunkPlaybackProgress?.({ durationMs: reservedMs });
+        }
+      },
+      onBufferAudible: () => {
+        if (audible || token !== playToken) {
+          return;
+        }
+        audible = true;
+        first?.onFirstAudible?.();
+        hooks?.onChunkPlaybackStart?.({ text: chunkText, durationMs: reservedMs });
+      },
+    };
+    latencyHooks = undefined;
+    if (item.buffer) {
+      plays.push(playBuffer(item.buffer, token, 0, local, phoneLine));
+    } else if (item.blob) {
+      plays.push(playBlob(item.blob, token, local, phoneLine));
+    }
+  }
+  if (token === playToken && audible) {
+    hooks?.onChunkPlaybackProgress?.({ durationMs: reservedMs, complete: true });
+  }
+  await Promise.all(plays);
+  if (token === playToken && audible) {
+    hooks?.onChunkPlaybackEnd?.({ text: chunkText });
+  }
+}
+
+async function feedStream(
+  body: ReadableStream<Uint8Array>,
+  token: number,
+  hooks: TtsChunkHooks | undefined,
+  gate: PlayGate,
+  stall: { heard: () => void; stop: () => void },
+): Promise<void> {
   const reader = body.getReader();
   let buffer: Uint8Array = new Uint8Array(0);
-  const plays: Promise<void>[] = [];
+  let heardNetwork = false;
+  let firstHooks = hooks;
   try {
     while (token === playToken) {
       const { done, value } = await reader.read();
       if (value) {
+        stall.heard();
+        if (!heardNetwork) {
+          heardNetwork = true;
+          firstHooks?.onFirstNetworkAudio?.();
+        }
         buffer = concatBytes(buffer, value);
       }
       while (buffer.length >= 4 && token === playToken) {
         const length = readU32(buffer);
         if (length === 0) {
-          await Promise.all(plays);
           return;
         }
         if (buffer.length < 4 + length) {
@@ -382,16 +643,18 @@ async function playStream(body: ReadableStream<Uint8Array>, token: number): Prom
         buffer = buffer.slice(4 + length);
         const decoded = await decodeChunk(chunk, token);
         if (decoded) {
-          plays.push(playBuffer(decoded, token, 0));
+          firstHooks?.onFirstDecoded?.();
+          gate.push({ buffer: decoded });
+          firstHooks = undefined;
         } else {
-          plays.push(playBlob(new Blob([chunk], { type: sniffAudioType(chunk) }), token));
+          gate.push({ blob: new Blob([chunk], { type: sniffAudioType(chunk) }) });
+          firstHooks = undefined;
         }
       }
       if (done) {
         break;
       }
     }
-    await Promise.all(plays);
   } finally {
     await reader.cancel().catch(() => undefined);
   }
@@ -413,61 +676,129 @@ async function decodeChunk(chunk: Uint8Array, token: number): Promise<AudioBuffe
   }
 }
 
-async function playBuffer(buffer: AudioBuffer, token: number, gap = 0): Promise<void> {
-  if (token !== playToken) {
-    return;
-  }
+async function reserveSlot(duration: number, token: number): Promise<number | undefined> {
+  const run = reserveLock.then(async () => {
+    if (token !== playToken) {
+      return undefined;
+    }
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') {
+      await ctx.resume();
+    }
+    if (token !== playToken) {
+      return undefined;
+    }
+    const when = Math.max(ctx.currentTime, nextStart);
+    nextStart = when + duration;
+    return when;
+  });
+  reserveLock = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+function contextOutputDelay(ctx: AudioContext): number {
+  const output = 'outputLatency' in ctx && typeof ctx.outputLatency === 'number' ? ctx.outputLatency : 0;
+  const base = typeof ctx.baseLatency === 'number' ? ctx.baseLatency : 0;
+  return Math.min(0.08, Math.max(0, output || base * 0.5 || 0));
+}
+
+function scheduleAudible(when: number, token: number, isSettled: () => boolean, fire: () => void) {
   const ctx = getAudioContext();
-  if (ctx.state === 'suspended') {
-    await ctx.resume();
-  }
+  const target = when + contextOutputDelay(ctx);
+  const arm = () => {
+    if (isSettled() || token !== playToken) {
+      return;
+    }
+    if (ctx.currentTime + 0.004 >= target) {
+      fire();
+      return;
+    }
+    const wait = Math.max(8, (target - ctx.currentTime) * 1000);
+    const id = window.setTimeout(() => {
+      startTimers.delete(id);
+      arm();
+    }, wait);
+    startTimers.add(id);
+  };
+  arm();
+}
+
+async function playBuffer(
+  buffer: AudioBuffer,
+  token: number,
+  gap = 0,
+  hooks?: InternalPlayHooks,
+  phoneLine = false,
+): Promise<void> {
   if (token !== playToken) {
     return;
   }
+  const when = await reserveSlot(buffer.duration + gap, token);
+  if (when == null || token !== playToken) {
+    return;
+  }
+  const durationMs = buffer.duration * 1000;
+  hooks?.onBufferScheduled?.(durationMs);
+  const ctx = getAudioContext();
   await new Promise<void>((resolve) => {
     let settled = false;
+    let timer = 0;
     const source = ctx.createBufferSource();
     const finish = () => {
       if (settled) {
         return;
       }
       settled = true;
+      if (timer) {
+        window.clearTimeout(timer);
+        timer = 0;
+      }
+      const index = currentSources.indexOf(source);
+      if (index >= 0) {
+        currentSources.splice(index, 1);
+      }
       if (playbackDone === finish) {
         playbackDone = undefined;
       }
       if (currentSource === source) {
         currentSource = undefined;
       }
+      notifyVoiceActivity();
       resolve();
     };
     source.buffer = buffer;
-    source.connect(ctx.destination);
+    if (phoneLine) {
+      source.connect(callerPhoneInput(ctx));
+    } else {
+      source.connect(ctx.destination);
+    }
+    if (recordMix) {
+      source.connect(recordMix);
+    }
     currentSource = source;
     playbackDone = finish;
-    const when = Math.max(ctx.currentTime, nextStart);
-    if (recordingOn) {
-      const channels = buffer.numberOfChannels;
-      const mono = new Float32Array(buffer.length);
-      for (let channel = 0; channel < channels; channel += 1) {
-        const data = buffer.getChannelData(channel);
-        for (let i = 0; i < mono.length; i += 1) {
-          mono[i] += (data[i] ?? 0) / channels;
-        }
-      }
-      mixAt(Math.round((when - recordOrigin) * 16000), resampleMono(mono, buffer.sampleRate));
-    }
     source.onended = finish;
     currentSources.push(source);
     source.start(when);
-    nextStart = when + buffer.duration + gap;
-    window.setTimeout(
+    notifyVoiceActivity();
+    hooks?.onFirstPlayback?.();
+    scheduleAudible(when, token, () => settled, () => hooks?.onBufferAudible?.());
+    timer = window.setTimeout(
       finish,
       Math.max(30, (when - ctx.currentTime + buffer.duration + 0.08) * 1000),
     );
   });
 }
 
-async function playBlob(blob: Blob, token: number): Promise<void> {
+async function playBlob(
+  blob: Blob,
+  token: number,
+  hooks?: InternalPlayHooks,
+  phoneLine = false,
+): Promise<void> {
   if (token !== playToken || blob.size < 64) {
     return;
   }
@@ -483,7 +814,8 @@ async function playBlob(blob: Blob, token: number): Promise<void> {
     if (token !== playToken) {
       return;
     }
-    await playBuffer(buffer, token);
+    hooks?.onFirstDecoded?.();
+    await playBuffer(buffer, token, 0, hooks, phoneLine);
     return;
   } catch {
     undefined;
@@ -494,6 +826,7 @@ async function playBlob(blob: Blob, token: number): Promise<void> {
   currentAudio = audio;
   await new Promise<void>((resolve) => {
     let settled = false;
+    let scheduled = false;
     const finish = () => {
       if (settled) {
         return;
@@ -505,11 +838,31 @@ async function playBlob(blob: Blob, token: number): Promise<void> {
       if (currentAudio === audio) {
         currentAudio = undefined;
       }
+      notifyVoiceActivity();
       resolve();
+    };
+    const announceDuration = () => {
+      if (scheduled) {
+        return;
+      }
+      const durationMs =
+        Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration * 1000 : 0;
+      if (durationMs <= 0) {
+        return;
+      }
+      scheduled = true;
+      hooks?.onBufferScheduled?.(durationMs);
     };
     playbackDone = finish;
     audio.onended = finish;
     audio.onerror = finish;
+    audio.onloadedmetadata = announceDuration;
+    audio.onplaying = () => {
+      announceDuration();
+      hooks?.onBufferAudible?.();
+    };
+    notifyVoiceActivity();
+    hooks?.onFirstPlayback?.();
     void audio.play().catch(finish);
   });
 }

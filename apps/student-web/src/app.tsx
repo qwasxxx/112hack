@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Role } from '@sys112/shared-types';
 import { AdminApp } from './admin/admin-app';
+import { LogoutConfirmDialog } from './auth/logout-confirm';
+import { STUDENT_BACK_EVENT } from './student-navigation';
 import {
   authenticate,
   createManagedAccount,
@@ -36,6 +38,7 @@ export function App() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string>();
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>();
+  const [logoutOpen, setLogoutOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,6 +70,24 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!session) {
+      setLogoutOpen(false);
+      return;
+    }
+    const marker = { sys112Guard: true };
+    history.replaceState(marker, '');
+    history.pushState(marker, '');
+    function onPop() {
+      history.pushState(marker, '');
+      window.dispatchEvent(new Event(STUDENT_BACK_EVENT));
+    }
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+    };
+  }, [session]);
 
   function persist(next: Account[]) {
     setAccounts(next);
@@ -119,8 +140,10 @@ export function App() {
 
   function logout() {
     const current = session;
+    setLogoutOpen(false);
     setSession(null);
     writeSession(null);
+    history.replaceState({ sys112: 'login' }, '');
     if (current) {
       void recordAuthEvent(current, 'logout', { role: current.role });
     }
@@ -223,6 +246,10 @@ export function App() {
     return <div className="login-screen" aria-busy="true" />;
   }
 
+  const logoutDialog = (
+    <LogoutConfirmDialog open={logoutOpen} onCancel={() => setLogoutOpen(false)} onConfirm={logout} />
+  );
+
   if (!session) {
     return (
       <LoginPage
@@ -240,28 +267,39 @@ export function App() {
 
   if (session.role === Role.ADMIN) {
     return (
-      <AdminApp
-        operator={session}
-        accounts={accounts}
-        onLogout={logout}
-        onCreateAccount={createAccount}
-        onToggleAccount={toggleAccount}
-        onChangeRole={changeAccountRole}
-        onResetPassword={resetAccountPassword}
-      />
+      <>
+        <AdminApp
+          operator={session}
+          accounts={accounts}
+          onLogout={() => setLogoutOpen(true)}
+          onCreateAccount={createAccount}
+          onToggleAccount={toggleAccount}
+          onChangeRole={changeAccountRole}
+          onResetPassword={resetAccountPassword}
+        />
+        {logoutDialog}
+      </>
     );
   }
 
   if (session.role === Role.TEACHER) {
-    return <TeacherApp operator={session} onLogout={logout} />;
+    return (
+      <>
+        <TeacherApp operator={session} onLogout={() => setLogoutOpen(true)} />
+        {logoutDialog}
+      </>
+    );
   }
 
   return (
-    <StudentApp
-      operator={session}
-      onLogout={logout}
-      onArmTrainingComplete={recordArmTraining}
-      onDdsTrainingComplete={recordDdsTraining}
-    />
+    <>
+      <StudentApp
+        operator={session}
+        onLogout={() => setLogoutOpen(true)}
+        onArmTrainingComplete={recordArmTraining}
+        onDdsTrainingComplete={recordDdsTraining}
+      />
+      {logoutDialog}
+    </>
   );
 }

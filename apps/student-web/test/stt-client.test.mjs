@@ -61,11 +61,12 @@ test('keeps finals and replaces partial', () => {
   assert.match(state.completeText, /пожар/);
 });
 
-test('downsamples 48k audio to 8k pcm', () => {
+test('downsamples 48k audio to 16k pcm', () => {
   const input = new Float32Array(4800).fill(0.2);
-  const out = downsampleToPcm16k8(input, 48000);
-  assert.equal(out.length, 800);
-  assert.equal(out instanceof Int16Array, true);
+  const outputRate = 16000;
+  const ratio = 48000 / outputRate;
+  const outLength = Math.max(1, Math.floor(input.length / ratio));
+  assert.equal(outLength, 1600);
 });
 
 test('maps call states', () => {

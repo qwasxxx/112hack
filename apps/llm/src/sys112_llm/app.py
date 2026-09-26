@@ -29,11 +29,15 @@ from sys112_llm.conversation import (
     analysis_messages,
     apply_teacher_intervention,
     call_score_messages,
+    PRESENCE_INTENTS,
     generation_messages,
     TEACHER_NUDGE_TEXT,
     last_user_text,
     breaks_character,
     leaves_role,
+    presence_cue,
+    presence_spoken,
+    remembered_reply,
     repair_victim_reply,
     session_scenario_extra,
     should_speak_intervention,
@@ -335,6 +339,24 @@ async def llm_socket(ws: WebSocket) -> None:
                     elif manager.accept_user(call_id, TEACHER_NUDGE_TEXT, nudge_id) is not None:
                         gen_task = asyncio.create_task(_reply_until_idle(call_id, ws))
                 continue
+            if kind == "cancel_presence":
+                live = manager.get(call_id) if call_id else None
+                if live and live.presence:
+                    live.cancel.set()
+                continue
+            if kind == "presence":
+                if not call_id:
+                    continue
+                current = manager.get(call_id)
+                if current is None or current.closed or current.busy:
+                    continue
+                intent = str(payload.get("intent") or "")
+                if intent not in PRESENCE_INTENTS:
+                    continue
+                current.presence = True
+                current.presence_intent = intent
+                gen_task = asyncio.create_task(_reply_until_idle(call_id, ws))
+                continue
             if kind == "user_final":
                 if not call_id:
                     await ws.send_json({"type": "error", "message": "Сессия звонка не создана."})
@@ -347,7 +369,7 @@ async def llm_socket(ws: WebSocket) -> None:
                 text = str(payload.get("text") or "")
                 if current.busy:
                     current.pending = [(message_id, text)]
-                    if not current.emitted:
+                    if not current.emitted or current.presence:
                         current.cancel.set()
                     continue
                 session = manager.accept_user(call_id, text, message_id)
@@ -399,13 +421,17 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
         session.busy = True
         session.cancel.clear()
         session.emitted = False
+        session.streamed = ""
         session.generation += 1
         gen_id = session.generation
-        logger.info("[LLM] User transcript received")
-        logger.info("[LLM] Generating response")
+        logger.info("[LLM] Generating response presence=%s", int(session.presence))
         try:
-            full = await _generate(generation_messages(session), ws, session=session, gen_id=gen_id)
-            if session.conversation_role == "victim" and full and leaves_role(full):
+            messages = generation_messages(session)
+            if session.presence and messages:
+                cue = presence_cue(session.presence_intent, session.conversation_role)
+                messages.append({"role": "system", "content": cue})
+            full = await _generate(messages, ws, session=session, gen_id=gen_id)
+            if session.conversation_role == "victim" and full and leaves_role(full) and not session.presence:
                 nudged = generation_messages(session)
                 nudged.insert(
                     1,
@@ -425,6 +451,8 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
         except Exception:
             logger.exception("[LLM] Generation failed")
             session.busy = False
+            session.presence = False
+            session.presence_intent = ""
             try:
                 await ws.send_json({"type": "error", "message": "Не удалось получить ответ модели."})
             except Exception:
@@ -436,10 +464,13 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
             if manager.accept_user(call_id, text, message_id) is None:
                 return
             continue
-        aborted = full is None or (session.cancel.is_set() and not session.emitted)
+        aborted = full is None or (session.cancel.is_set() and (not session.emitted or session.presence))
         if aborted:
-            manager.drop_unanswered_user(call_id)
+            if not session.presence:
+                manager.drop_unanswered_user(call_id)
             session.busy = False
+            session.presence = False
+            session.presence_intent = ""
             logger.info("[LLM] Generation cancelled")
             try:
                 await ws.send_json({"type": "generation_cancelled", "gen": gen_id})
@@ -457,20 +488,32 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
                 full = "Повторите адрес и суть."
             elif breaks_character(full) and session.conversation_role != "victim":
                 full = "Назовите адрес, где это происходит."
-            elif session.conversation_role == "victim":
+            elif session.conversation_role == "victim" and not session.presence:
                 full = repair_victim_reply(
                     full,
                     last_user_text(session),
                     session.conversation_role,
                     session_scenario_extra(session),
                 )
+            if session.presence:
+                full = presence_spoken(session.presence_intent, full)
+            full = remembered_reply(session.streamed, full)
             manager.append_assistant(call_id, full)
-            await ws.send_json({"type": "assistant_final", "text": full, "gen": gen_id})
+            await ws.send_json(
+                {
+                    "type": "assistant_final",
+                    "text": full,
+                    "gen": gen_id,
+                    "purpose": "presence" if session.presence else "dialogue",
+                }
+            )
             logger.info("[LLM] Response complete")
         else:
             await ws.send_json({"type": "assistant_final", "text": "", "gen": gen_id})
             logger.warning("[LLM] Empty response")
         session.busy = False
+        session.presence = False
+        session.presence_intent = ""
         if not session.pending:
             return
         message_id, text = session.pending.pop(0)
@@ -508,7 +551,12 @@ async def _generate(
     filter_ = ThinkFilter()
     visible = ""
     last_sent = ""
-    async for piece in client.stream_chat(messages, max_tokens=max_tokens, should_stop=stopped):
+    async for piece in client.stream_chat(
+        messages,
+        max_tokens=max_tokens,
+        should_stop=stopped,
+        conversation=partial_type == "assistant_partial",
+    ):
         if stopped():
             break
         chunk = filter_.feed(piece)
@@ -524,20 +572,27 @@ async def _generate(
             continue
         if live is not None and partial_type == "assistant_partial" and live.conversation_role == "victim":
             operator_line = last_user_text(live)
-            holds_mama = bool(re.search(r"\bя\s+мам", spoken, re.IGNORECASE))
-            holds_nudge = operator_line.strip() == TEACHER_NUDGE_TEXT
-            if holds_mama or holds_nudge:
-                fixed = repair_victim_reply(
-                    spoken,
-                    operator_line,
-                    "victim",
-                    session_scenario_extra(live),
-                )
-                if fixed != spoken:
-                    continue
+            fixed = repair_victim_reply(
+                spoken,
+                operator_line,
+                "victim",
+                session_scenario_extra(live),
+            )
+            if fixed != spoken:
+                continue
+        if live is not None and live.presence and partial_type == "assistant_partial":
+            continue
         if live is not None and partial_type == "assistant_partial":
             live.emitted = True
-        await ws.send_json({"type": partial_type, "text": spoken, "gen": gen_id})
+            live.streamed = spoken
+        await ws.send_json(
+            {
+                "type": partial_type,
+                "text": spoken,
+                "gen": gen_id,
+                "purpose": "presence" if live is not None and live.presence else "dialogue",
+            }
+        )
         last_sent = spoken
     if stopped() and not last_sent:
         return None

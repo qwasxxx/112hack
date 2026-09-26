@@ -19,4 +19,7 @@ export { clearArmDraft, readArmDraft, writeArmDraft } from './draft-store';
 export { PASS_SCORE, PASS_SCORE_EXAM, CARD_TIMER_LIMIT_SEC } from './types';
 export type { LessonFinding, LessonMode, LessonRecord } from './types';
 export type { TranscriptTurn } from './score-call';
-export { incomingChannelFor, incomingNumberFor, smsFromTicket } from './ticket-facts';
+export { incomingChannelFor, incomingNumberFor, smsFromTicket, ticketFactsFrom, callerTruthFrom, classifyIncident, callerOpeningFrom, callerEmotionProfile, validateCallerTruth } from './ticket-facts';
+export type { TicketFacts } from './ticket-facts';
+export type { CallerTruth, IncidentClass, CallerEmotionProfile, VictimFactModel, LocationFactModel, OpeningFactSet } from './ticket-facts';
+export type { CallerFact, FactPriorityBundle, FactPriorityLevel } from './ticket-facts';

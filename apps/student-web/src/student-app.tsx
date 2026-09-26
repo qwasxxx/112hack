@@ -8,6 +8,7 @@ import { DdsTrainingPage } from './features/dds-training';
 import type { DdsCheckResult } from './features/dds-training/use-dds-session';
 import { readLearnerTrack, writeLearnerTrack, type LearnerTrack } from './learner-track';
 import { lessonScreenFor } from './lesson-routing';
+import { previousStudentScreenName, STUDENT_BACK_EVENT, type StudentScreenName } from './student-navigation';
 import { BriefingPage } from './pages/briefing-page';
 import { CatalogPage, type CatalogView } from './pages/catalog-page';
 import { DebriefPage, DdsDebriefPage, type DdsFinish, type TrainingFinish } from './pages/debrief-page';
@@ -47,6 +48,14 @@ export function StudentApp(props: Props) {
       clearDdsHint(props.operator.login);
     };
   }, [props.operator.login]);
+
+  useEffect(() => {
+    function onBack() {
+      setScreen((current) => goToPreviousStudentScreen(current));
+    }
+    window.addEventListener(STUDENT_BACK_EVENT, onBack);
+    return () => window.removeEventListener(STUDENT_BACK_EVENT, onBack);
+  }, []);
 
   useEffect(() => {
     const live =
@@ -237,4 +246,18 @@ export function StudentApp(props: Props) {
       onLogout={props.onLogout}
     />
   );
+}
+
+function goToPreviousStudentScreen(screen: Screen): Screen {
+  const next = previousStudentScreenName(screen.name as StudentScreenName);
+  if (next === screen.name) {
+    return screen;
+  }
+  if (next === 'briefing') {
+    const scenario = 'scenario' in screen ? screen.scenario : undefined;
+    if (scenario) {
+      return { name: 'briefing', scenario };
+    }
+  }
+  return { name: 'catalog' };
 }

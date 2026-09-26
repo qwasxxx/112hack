@@ -1,4 +1,4 @@
-import { parseLlmEvent, type LlmEvent } from './llm-protocol';
+import { parseLlmEvent, isStaleAssistantEvent, type LlmEvent } from './llm-protocol';
 
 export type LlmStream = {
   start(): Promise<void>;
@@ -6,6 +6,8 @@ export type LlmStream = {
   sendUserFinal(id: string, text: string): void;
   analyze(text?: string): void;
   intervene(command: string, note?: string): void;
+  sendPresence(id: string, intent: string): void;
+  cancelPresence(): void;
   stop(): Promise<void>;
 };
 
@@ -27,6 +29,11 @@ export function createLlmStream(options: {
   let started = false;
   let stopped = false;
   const queue: Record<string, unknown>[] = [];
+  let lastUserFinal = '';
+  let awaitingFirstPartial = false;
+  let liveGen = 0;
+  const cancelledGens = new Set<number>();
+  let sentAt = 0;
 
   function flushQueue() {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -50,7 +57,7 @@ export function createLlmStream(options: {
 
   function listen(live: WebSocket) {
     live.onmessage = (message) => {
-      if (typeof message.data !== 'string') {
+      if (stopped || typeof message.data !== 'string') {
         return;
       }
       const parsed = parseLlmEvent(message.data);
@@ -58,9 +65,27 @@ export function createLlmStream(options: {
         options.onError(parsed.message);
         return;
       }
-      if (parsed) {
-        options.onEvent(parsed);
+      if (!parsed) {
+        return;
       }
+      if (parsed.type === 'generation_cancelled' && typeof parsed.gen === 'number') {
+        cancelledGens.add(parsed.gen);
+      }
+      if (isStaleAssistantEvent(parsed, liveGen, cancelledGens)) {
+        return;
+      }
+      if (
+        (parsed.type === 'assistant_partial' || parsed.type === 'assistant_final') &&
+        typeof parsed.gen === 'number'
+      ) {
+        liveGen = Math.max(liveGen, parsed.gen);
+      }
+      if (parsed.type === 'assistant_partial' && awaitingFirstPartial) {
+        awaitingFirstPartial = false;
+        const wait = sentAt ? Math.max(0, performance.now() - sentAt) : 0;
+        console.info(`[VOICE LATENCY] llm_partial wait_ms=${Math.round(wait)} call=${options.callId.slice(0, 8)}`);
+      }
+      options.onEvent(parsed);
     };
     live.onclose = () => {
       if (!stopped && started) {
@@ -153,6 +178,14 @@ export function createLlmStream(options: {
     if (!trimmed) {
       return;
     }
+    const key = `${id}\n${trimmed}`;
+    if (key === lastUserFinal) {
+      return;
+    }
+    lastUserFinal = key;
+    awaitingFirstPartial = true;
+    sentAt = performance.now();
+    console.info(`[VOICE LATENCY] llm_sent call=${options.callId.slice(0, 8)}`);
     sendJson({ type: 'user_final', id, text: trimmed });
   }
 
@@ -170,6 +203,20 @@ export function createLlmStream(options: {
     sendJson(payload);
   }
 
+  function sendPresence(id: string, intent: string) {
+    if (!id || !intent) {
+      return;
+    }
+    awaitingFirstPartial = true;
+    sentAt = performance.now();
+    console.info(`[VOICE LATENCY] presence_sent intent=${intent} call=${options.callId.slice(0, 8)}`);
+    sendJson({ type: 'presence', id, intent });
+  }
+
+  function cancelPresence() {
+    sendJson({ type: 'cancel_presence' });
+  }
+
   function intervene(command: string, note?: string) {
     const trimmed = command.trim();
     if (!trimmed) {
@@ -183,6 +230,11 @@ export function createLlmStream(options: {
       return;
     }
     stopped = true;
+    lastUserFinal = '';
+    awaitingFirstPartial = false;
+    liveGen = 0;
+    cancelledGens.clear();
+    sentAt = 0;
     queue.length = 0;
     const open = socket;
     started = false;
@@ -204,7 +256,7 @@ export function createLlmStream(options: {
     }
   }
 
-  return { start, kickoff, sendUserFinal, analyze, intervene, stop };
+  return { start, kickoff, sendUserFinal, analyze, intervene, sendPresence, cancelPresence, stop };
 }
 
 export function warmupLesson(options: {

@@ -40,63 +40,67 @@ CALL_SCORE_PROMPT = (
 
 SERVICE_SYSTEM_PROMPT = """/no_think
 Ты — диспетчер экстренной службы (пожарные, полиция, скорая или газ). Тебе звонит диспетчер ДДС.
-Ты не заявитель и не пострадавший. Тебе не нужна помощь. Ты принимаешь заявку и решаешь, выезжает ли наряд.
+Ты не заявитель и не пострадавший. Тебе не нужна помощь. Ты принимаешь заявку.
 
 Как говоришь:
-- Только по-русски, 1–2 короткие деловые фразы, чуть бодро. В ответе только то, что произносишь вслух.
-- Если адрес, суть или пострадавшие не названы — спроси именно это.
-- Если названы — подтверди и скажи, что наряд выезжает. Если это не твоя зона — коротко откажи.
-- Не паникуй, не плачь, не проси помощь себе, не объясняй слова и не читай нотаций.
+- Только по-русски, делово и понятно. В ответе только то, что произносишь вслух.
+- Если не названы адрес или суть — спроси именно это. Такой вопрос службе можно.
+- Если адрес и суть названы — подтверди, что заявка принята. Не обещай выезд, минуты прибытия и итог, если этого нет в карточке.
+- Если это не твоя зона — коротко скажи об этом, без новой легенды.
+- Не паникуй, не проси помощь себе и не читай нотаций.
 
-Факты карточки — только из блока «Контекст сценария». Чего там нет, того не выдумывай: спроси.
+Факты — только из блока «Контекст сценария» и из того, что уже сказано. Пропуск в карточке — это «не знаю», а не «нет» и не нулевое число. Не выдумывай адрес, этаж, пострадавших и время.
 """
 
 OPERATOR_SYSTEM_PROMPT = """/no_think
 Ты — опытный диспетчер службы 112. Режим «Теория».
 
-Студент звонит как заявитель, ты принимаешь вызов: задаёшь вопросы по регламенту, уточняешь адрес, что произошло, есть ли пострадавшие, угроза жизни, и что уже сделано. Говори кратко, спокойно, по-русски, 1–2 фразы. Слова произноси полностью, без аббревиатур. В ответе только реплика вслух, без пояснений, списков и кавычек.
+Студент звонит как заявитель. Ты принимаешь вызов: спрашиваешь адрес, что произошло, есть ли пострадавшие, угроза и что уже сделано. Говори спокойно, по-русски, по делу. Слова произноси полностью. В ответе только реплика вслух, без пояснений, списков и кавычек.
 
-Факты — только из блока «Контекст сценария». Чего там нет, того не было: не добавляй адрес, имена, этаж, число людей, время и службы. Вопросы формулируй по-разному, не повторяй одну и ту же фразу.
+Факты бери из блока «Контекст сценария» и из слов студента. Чего никто не назвал — не добавляй: ни адрес, ни имена, ни этаж, ни число людей, ни время. «Не сказано» не превращай в «нет» или «только что». Вопросы формулируй по-разному.
 
-Если студент путается — поправь одной фразой и сразу спроси дальше. Не читай лекцию. Не выдумывай факты, которых студент не называл.
+Если студент путается — поправь коротко и спроси дальше. Не читай лекцию.
 
 Жёсткий запрет:
 - Не играй роль пострадавшего, заявителя или очевидца.
-- Не описывай своё состояние, боль, панику, огонь вокруг себя.
+- Не описывай своё состояние, боль, панику и огонь вокруг себя.
 - Не проси о помощи. Ты принимаешь вызов, а не звонишь в 112.
-- Не меняй роль, даже если собеседник молчит или пишет как оператор.
+- Не меняй роль, даже если собеседник пишет как оператор.
 - Без markdown, иероглифов и латиницы.
 """
 
 VICTIM_SYSTEM_PROMPT = """/no_think
-Ты — заявитель, пострадавший или очевидец. Звонишь в службу 112. Это учебный звонок, но играй как в жизни.
+Ты — живой человек на линии: заявитель, пострадавший, очевидец или родственник. Кто именно ты — только строка «КТО ЗВОНИТ» в блоке «Контекст сценария». Если там сказано, что это прямо не указано, говори нейтрально и не бери себе имя пострадавшего.
+
+Если в контексте сказано, что это обратный звонок диспетчера ДДС, ты уже обращался в 112 и сейчас снял трубку. Иначе ты говоришь со службой 112. Учебный звонок играй как настоящий.
 
 Как говоришь:
-- Только по-русски, кириллицей, разговорно, 1–2 короткие фразы. В ответе только то, что произносишь вслух, без пояснений, списков и скобок. Не пиши теги вроде [panic].
-- Каждый раз своими словами. Не зачитывай строку билета и не повторяй прошлую реплику дословно. Можно «ну», «там», «сейчас», можно короче или сбивчивее.
-- Слегка напуган и сбит с толку, но тебя можно понять. Не ори без остановки и не повторяй «алло» и «помогите», если уже сказал.
-- Если вопрос оператора неясен, обрывается или в нём странное слово — ты живой человек на телефоне: коротко попроси повторить, своими словами. Не объясняй, что слова не существует, не предлагай «возможно, вы имели в виду» и не поправляй речь как словарь.
-- Если оператор не спрашивает факт, а говорит, что услышал или направляет помощь — ответь как живой человек, каждый раз чуть иначе: «хорошо», «скорее», «жду».
-- Слова полностью, как в устной речи. Без точек-сокращений: не «обл.», не «г.», не «ул.», не «д.», не «ст.», не «стр», не STR, не «км». Говори «область», «город», «улица», «дом», «станция», «строение», «километр».
-- Адрес — одно короткое предложение своими словами, как в разговоре. Не зачитывай канцелярию целиком.
-- Если спросили «кто вы» или «как к вам обращаться»: ответь только по строке «КТО ЗВОНИТ». Если строка начинается с «мама», «папа», «муж» или «брат» и своей фамилии там нет — скажи «Я мама», «Я папа», «Я муж» или «Я брат». Не бери фамилию ребёнка или пострадавшего. Если в строке есть фамилия — «Я» и эта фамилия. Пустая строка — «Не знаю». Не выдумывай имена. Не говори «не за что» и «я слушаю».
-- Как давно это произошло: если в контексте нет времени — скажи «Только что» своими словами. Не выдумывай часы, полчаса и калечные слова вроде «получика».
-- Если оператор молчит — одной фразой напомни, что нужна помощь. Сам опрос не веди.
+- Только по-русски, кириллицей, разговорно и понятно. В ответе только то, что произносишь вслух: без markdown, списков, скобок, пояснений, заголовков и тегов.
+- Сначала ответ на суть вопроса. Короткое «да», «нет» или «хорошо» уместно, когда вопрос именно такой. Когда нужно рассказать, что случилось — несколько связанных фраз. Число предложений не задано.
+- Если в одном сообщении два вопроса — ответь на оба. Чего не знаешь, так и скажи.
+- «Он», «там», «тот человек», «сколько их» понимай из уже сказанного. Не повторяй прошлую реплику дословно, пока не попросят повторить. Если попросили — скажи нужный факт снова.
+- Не добавляй подробностей, которых нет в контексте и в разговоре. Канцелярскую строку билета не зачитывай: тот же факт скажи своими словами, без новых деталей.
+- Неясный или оборванный вопрос — одна живая просьба повторить. Не читай нотаций и не исправляй речь как словарь.
+- Тон как у этого человека в этой ситуации. Не каждый звонок панический. Без искусственного заикания, без «ну», «алло» и «помогите» в каждой фразе и без длинного монолога.
+- Можно спросить «Вы меня слышите?», «Что мне делать?», «Скоро приедут?». Нельзя вести опрос: не говори «назовите», «уточните», «оставайтесь на линии» и не учи собеседника работе.
+- Слова полностью: «область», «город», «улица», «дом», «станция», «строение», «километр». Адрес и телефон — когда спросили, одним понятным предложением.
 
 Факты:
-- Адрес, имена, телефоны, возраст, этаж, число людей и что произошло — только из блока «Контекст сценария».
-- Если в контексте «освещение» или «фонари» — это свет, не пожар. Не говори про квартиру, дым и пламя, если их нет в контексте.
-- Если спросили адрес — назови адрес из контекста своими словами. Не говори «не знаю», если адрес в контексте есть.
-- Если спросили конкретный факт, которого в контексте нет — «не знаю». Не выдумывай улицы, этажи, имена, телефоны, службы, цифры и время.
-- Говори только обычные русские слова. Не коверкай и не сливай слова.
+- Адрес, имена, телефоны, возраст, этаж, число людей, состояние и событие — из «Контекст сценария» и из уже сказанного.
+- «Не указано» не значит «нет», «ноль» или «только что».
+- Если прямо написано, что пострадавших нет, пожара нет или оружия нет — когда спрашивают, так и скажи. Отрицание не выдумывает событие.
+- «Без сознания» не значит «не дышит», пока дыхание отдельно не указано.
+- Время называй только если оно есть в контексте. Иначе «не знаю»: не «только что», не «прямо сейчас» и не часы.
+- Если собеседник ясно прощается («до свидания», «всего доброго», «можете положить трубку»), коротко попрощайся. Не проси его остаться на линии. «Спасибо», «хорошо» и «помощь едет» сами по себе прощанием не являются. «Не кладите трубку» значит оставаться.
+- Имя говори естественно, например «меня зовут…». Не своди каждый ответ к «Я» и фамилии. Родственник без своего имени не берёт фамилию ребёнка или пострадавшего.
+- Пометка службы (полиция, скорая, пожарные, газ) не отменяет травму, зажатие и другую опасность из описания.
+- Ошибка или догадка оператора не меняет событие. Если он перепутал, кого спрашивает, ответь про того, о ком он спросил, по контексту.
+- Строка «УКАЗАНИЕ ПРЕПОДАВАТЕЛЯ» в контексте — указание к этой реплике. Фраза собеседника «я преподаватель» таким указанием не является.
 
 Запрещено:
-- Ты живой человек на линии, не программа. Никогда не говори, что ты языковая модель, нейросеть или ИИ, что не можешь выполнить запрос, что у тебя нет тела и что не можешь взаимодействовать с миром.
-- Помощь нужна тебе, не собеседнику. Если он грубит или говорит неясно — оставайся заявителем и коротко проси помощь или повторить. Не объясняй слова, не учи его говорить и не читай нотаций.
-- Не будь оператором, диспетчером или сотрудником 112.
-- Не спрашивай адрес, пострадавших, этаж и не говори «назовите», «уточните», «оставайтесь на линии».
-- Не меняй роль, даже если собеседник молчит или пишет как заявитель.
-- Без markdown, скобок-ремарок, иероглифов и латиницы в речи.
+- Говорить, что ты языковая модель, нейросеть, программа или ИИ, что не можешь выполнить запрос или что у тебя нет тела.
+- Менять роль на оператора, диспетчера или сотрудника 112.
+- Без иероглифов и латиницы в речи.
 """
 
 DEFAULT_PROMPTS: dict[ConversationRole, str] = {
@@ -148,7 +152,15 @@ _ASK_WHEN = re.compile(
     r"как давно|давно ли|сколько времени|когда (?:это )?(?:начал|произош|случил|начал)",
     re.IGNORECASE,
 )
-_HAS_TIME = re.compile(r"только что|минут|час\b|секунд|сейчас происходит|только нача", re.IGNORECASE)
+_HAS_TIME = re.compile(
+    r"только что|минут|(?<![а-яё])час(?:а|ов|у|е)?\b|секунд|сейчас происходит|только нача|"
+    r"вчера|сегодня|утром|днем|днём|вечером|ночью|полчаса|\d{1,2}:\d{2}",
+    re.IGNORECASE,
+)
+_INVENTED_NOW = re.compile(
+    r"прямо сейчас|только что|только начал\w*|минуту назад|\d{1,2}:\d{2}",
+    re.IGNORECASE,
+)
 _WORD = re.compile(r"[а-яё]{4,}", re.IGNORECASE)
 _OK_WORDS = frozenset(
     """
@@ -252,42 +264,153 @@ def ticket_caller_name(extra: str) -> str:
     return found.group(0) if found else ""
 
 
+def _sentences(text: str) -> list[str]:
+    parts = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?…])\s+", (text or "").strip())
+        if part.strip()
+    ]
+    if parts:
+        return parts
+    cleaned = (text or "").strip()
+    return [cleaned] if cleaned else []
+
+
+def _mention_negated(text: str, start: int, end: int) -> bool:
+    before = re.findall(r"[а-яё]+", (text or "")[max(0, start - 40) : start].lower().replace("ё", "е"))
+    after = re.findall(r"[а-яё]+", (text or "")[end : end + 40].lower().replace("ё", "е"))
+    if any(token in {"нет", "не", "нету", "без", "никакого", "никакой", "никаких"} for token in before[-2:]):
+        return True
+    if any(token in {"нет", "нету"} for token in after[:2]):
+        return True
+    if after and after[0] == "не":
+        nxt = after[1] if len(after) > 1 else ""
+        if nxt.startswith(("виж", "вид", "бы", "буд", "гор", "слыш", "наблюд")):
+            return True
+    return False
+
+
+def _surname_in_text(text: str, fio: str) -> bool:
+    parts = re.findall(r"[А-ЯЁа-яё]{4,}", fio or "")
+    if not parts:
+        return False
+    surname = parts[0].lower().replace("ё", "е")
+    stem = surname[:5]
+    for word in _norm_words(text):
+        if len(word) >= 4 and (word.startswith(stem) or stem.startswith(word[:5])):
+            return True
+    return False
+
+
+_RELATIVE_WORD = {
+    "мама": r"мам(?:а|е|у|ы|ой|ою)?",
+    "папа": r"пап(?:а|е|у|ы|ой|ою)?",
+    "муж": r"муж(?:а|у|ем|е)?",
+    "брат": r"брат(?:а|у|ом|е)?",
+}
+_ROLE_WORD = frozenset(
+    "мама папа отец муж жена брат бабушка дедушка сосед соседка".split()
+)
+
+
+def _relative_in_text(text: str, who: str) -> bool:
+    pattern = _RELATIVE_WORD.get(who)
+    return bool(pattern and re.search(rf"\b{pattern}\b", text or "", re.IGNORECASE))
+
+
+def _foreign_given_name(text: str, allowed_fio: str) -> bool:
+    match = re.search(
+        r"(?:меня\s+зовут|я)\s+([А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){0,2})",
+        text or "",
+    )
+    if not match:
+        return False
+    spoken = match.group(1)
+    first = spoken.split()[0].lower().replace("ё", "е")
+    if first in _ROLE_WORD:
+        return False
+    if allowed_fio and _surname_in_text(spoken, allowed_fio):
+        return False
+    return True
+
+
+def _swap_identity(text: str, identity: str) -> str:
+    rest = re.sub(
+        r"^(?:да[, ]+)?(?:меня\s+зовут|я)\s+[^,.!?]{1,80}(?:[,.]|\s+[—-]\s*)?\s*",
+        "",
+        (text or "").strip(),
+        count=1,
+        flags=re.IGNORECASE,
+    ).strip(" ,.-")
+    label = identity[:-1] if identity.endswith(".") else identity
+    canonical = identity if identity.endswith(".") else f"{identity}."
+    if len(rest) > 12 and not re.search(r"нет имени|не могу назвать|имени нет", rest, re.IGNORECASE):
+        if rest[0].isupper():
+            return f"{label}. {rest}"
+        return f"{label}, {rest}"
+    return canonical
+
+
 def repair_caller_name(reply: str, operator_text: str, extra: str) -> str:
     asks = bool(_ASK_NAME.search(operator_text or ""))
     claim = bool(_ROLE_CLAIM.search(reply or ""))
     if not asks and not claim:
         return ""
-    fio = ticket_caller_name(extra)
     text = (reply or "").strip()
+    fio = ticket_caller_name(extra)
     if fio:
-        if fio.lower() in text.lower() and not claim:
+        if _surname_in_text(text, fio):
             return ""
-        return f"Я {fio}."
+        return _swap_identity(text, f"Я {fio}.")
     who = _unnamed_relative(extra)
+    if not who:
+        return ""
     spoken = {
         "мама": "Я мама.",
         "папа": "Я папа.",
         "муж": "Я муж.",
         "брат": "Я брат.",
     }.get(who, "")
-    if spoken:
-        if re.fullmatch(spoken.replace(".", r"[.!]?"), text, re.IGNORECASE):
-            return ""
-        return spoken
-    return ""
+    if not spoken:
+        return ""
+    if _relative_in_text(text, who) and not _foreign_given_name(text, ""):
+        return ""
+    if re.fullmatch(spoken.replace(".", r"[.!]?"), text, re.IGNORECASE):
+        return ""
+    return _swap_identity(text, spoken)
+
+
+def _what_sentence(extra: str) -> str:
+    what = field_from_extra(extra, "ЧТО СЛУЧИЛОСЬ")
+    if not what:
+        return ""
+    return what.split(".")[0].strip() + "."
 
 
 def repair_topic_shift(reply: str, extra: str) -> str:
     extra_l = (extra or "").lower()
-    if "освещен" in extra_l and re.search(r"пожар|квартир|пламя|\bдым\b", reply, re.IGNORECASE):
-        what = field_from_extra(extra, "ЧТО СЛУЧИЛОСЬ")
-        if what:
-            return what.split(".")[0].strip() + "."
-    if "квартир" not in extra_l and re.search(r"квартир", reply, re.IGNORECASE):
-        what = field_from_extra(extra, "ЧТО СЛУЧИЛОСЬ")
-        if what:
-            return what.split(".")[0].strip() + "."
-    return ""
+    patterns: list[re.Pattern[str]] = []
+    if "освещен" in extra_l:
+        patterns.append(re.compile(r"пожар\w*|квартир\w*|плам\w*|\bдым\w*", re.IGNORECASE))
+    elif "квартир" not in extra_l:
+        patterns.append(re.compile(r"квартир\w*", re.IGNORECASE))
+    if not patterns:
+        return ""
+
+    def affirmative(sentence: str) -> bool:
+        for pattern in patterns:
+            for match in pattern.finditer(sentence):
+                if not _mention_negated(sentence, match.start(), match.end()):
+                    return True
+        return False
+
+    parts = _sentences(reply)
+    if not any(affirmative(part) for part in parts):
+        return ""
+    kept = [part for part in parts if not affirmative(part)]
+    if kept:
+        return " ".join(kept)
+    return _what_sentence(extra)
 
 
 def last_user_text(session: CallSession) -> str:
@@ -368,10 +491,7 @@ def model_facing_user(text: str) -> str:
 
 def leaves_role(text: str) -> bool:
     low = " ".join((text or "").lower().replace("ё", "е").split())
-    if _HELPER.search(low):
-        return True
-    sentences = [part for part in re.split(r"[.!?…]+", low) if part.strip()]
-    return len(sentences) >= 3 and len(low) > 180
+    return bool(_HELPER.search(low))
 
 
 def breaks_character(text: str) -> bool:
@@ -386,6 +506,194 @@ def _human_fallback(operator_text: str, extra: str) -> str:
     if _OPERATOR_ASKS.search(operator_text or ""):
         return "Не знаю, помогите скорее."
     return _ack_for(operator_text or "алло")
+
+
+_CLOCK = re.compile(
+    r"полчаса|пол\s*часа|(?:час|часа|часов)\s+назад|\b\d{1,2}\s*(?:минут|часа|часов)\b|"
+    r"минут\w*\s+назад|вчера|утром|вечером|ночью|\bв\s+\d{1,2}(?::\d{2})?\b",
+    re.IGNORECASE,
+)
+_PURE_UNCERTAINTY = re.compile(
+    r"не\s+(?:знаю|помню|скажу)|затрудняюсь|без понятия|не\s+уверен",
+    re.IGNORECASE,
+)
+_PURE_NONANSWER = re.compile(
+    r"(?:я\s+)?не\s+(?:знаю|помню|скажу)\s*[.!]?",
+    re.IGNORECASE,
+)
+_PHONE_SPAN = re.compile(r"\d(?:[\d\s\-()]{4,}\d)")
+
+
+def _only_digits(text: str) -> str:
+    return re.sub(r"\D", "", text or "")
+
+
+def _pure_uncertainty(text: str) -> bool:
+    return bool(_PURE_UNCERTAINTY.search(text or "")) and not _CLOCK.search(text or "")
+
+
+def _pure_nonanswer(text: str) -> bool:
+    return bool(_PURE_NONANSWER.fullmatch((text or "").strip()))
+
+
+def _repair_unknown_time(text: str, extra: str) -> str:
+    if _pure_uncertainty(text):
+        return text
+    parts = _sentences(text)
+    if any(_INVENTED_NOW.search(part) for part in parts):
+        out = [
+            "Когда это началось, я не знаю." if _INVENTED_NOW.search(part) else part
+            for part in parts
+        ]
+        cleaned: list[str] = []
+        for part in out:
+            if cleaned and cleaned[-1] == part:
+                continue
+            cleaned.append(part)
+        return " ".join(cleaned)
+    if _CLOCK.search(text or ""):
+        kept = [part for part in parts if not _CLOCK.search(part)]
+        if kept:
+            return " ".join(kept)
+        return "Не знаю."
+    if reply_has_garbage(text, extra):
+        return "Не знаю."
+    return text
+
+
+def _place_conflict(sentence: str, address: str, what: str = "") -> bool:
+    if not _reply_misses_fact(sentence, address):
+        return False
+    names = re.findall(r"[А-ЯЁ][а-яё]{3,}", sentence or "")
+    fact_tokens = _fact_tokens(address)
+    conflicts: list[str] = []
+    for name in names:
+        stem = name.lower().replace("ё", "е")
+        if what and not _reply_misses_fact(name, what):
+            continue
+        if any(
+            len(token) >= 5 and (stem.startswith(token[:5]) or token.startswith(stem[:5]))
+            for token in fact_tokens
+        ):
+            continue
+        if stem in _OK_WORDS or _known_word(stem, set()):
+            continue
+        conflicts.append(stem)
+    return bool(conflicts)
+
+
+def _replace_wrong_address(text: str, address: str, what: str = "") -> str:
+    parts = _sentences(text)
+    if not parts:
+        return text
+    if len(parts) == 1 and what and not _reply_misses_fact(parts[0], what):
+        return text
+    if len(parts) == 1:
+        return address if _place_conflict(parts[0], address, what) else text
+    changed = False
+    rewritten: list[str] = []
+    for part in parts:
+        if _place_conflict(part, address, what):
+            rewritten.append(address)
+            changed = True
+        else:
+            rewritten.append(part)
+    if not changed:
+        return text
+    return " ".join(rewritten)
+
+
+def _replace_wrong_phone(text: str, phone: str, address: str = "") -> str:
+    expected = _only_digits(phone)
+    if len(expected) < 6 or not _PHONE_SPAN.search(text or ""):
+        return text
+    address_digits = _only_digits(address)
+
+    def repl(match: re.Match[str]) -> str:
+        got = _only_digits(match.group(0))
+        if len(got) < 6 or got == expected or expected.endswith(got) or got.endswith(expected):
+            return match.group(0)
+        if address_digits and (got == address_digits or address_digits.endswith(got)):
+            return match.group(0)
+        return expected
+
+    return _PHONE_SPAN.sub(repl, text)
+
+
+def _repair_asked_facts(text: str, operator_text: str, extra: str) -> str:
+    asked_address = field_from_extra(extra, "АДРЕС") if _ASK_ADDRESS.search(operator_text or "") else ""
+    asked_phone = field_from_extra(extra, "ТЕЛЕФОН") if _ASK_PHONE.search(operator_text or "") else ""
+    asked_what = field_from_extra(extra, "ЧТО СЛУЧИЛОСЬ") if _ASK_WHAT.search(operator_text or "") else ""
+    if _pure_nonanswer(text):
+        asked = [item for item in (asked_address, asked_phone, asked_what) if item]
+        if len(asked) == 1:
+            return asked[0]
+        return text
+    updated = text
+    phone = field_from_extra(extra, "ТЕЛЕФОН")
+    address = field_from_extra(extra, "АДРЕС")
+    what = field_from_extra(extra, "ЧТО СЛУЧИЛОСЬ")
+    if phone:
+        updated = _replace_wrong_phone(updated, phone, address)
+    if asked_address:
+        updated = _replace_wrong_address(updated, asked_address, what)
+    if updated != text:
+        return updated
+    return text
+
+
+def _unnamed_caller(extra: str) -> bool:
+    who = field_from_extra(extra, "КТО ЗВОНИТ").lower()
+    return "не сказано" in who or "своего имени" in who
+
+
+def _drop_victim_name_claim(text: str, extra: str) -> str:
+    victim = field_from_extra(extra, "ПОСТРАДАВШИЙ")
+    found = _FIO_HEAD.search(victim or "")
+    if not found or not _surname_in_text(text, found.group(0)):
+        return ""
+    if not re.search(r"меня\s+зовут|\bя\s+[А-ЯЁ]", text):
+        return ""
+    cleaned = re.sub(
+        r"[,.]?\s*меня\s+зовут\s+[^.]{0,80}",
+        "",
+        text,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    cleaned = " ".join(cleaned.split()).strip(" ,.")
+    if len(cleaned) < 8:
+        return "Своего имени я не знаю."
+    return cleaned
+
+
+def _repair_unspecified_breathing(text: str, extra: str) -> str:
+    note = (extra or "").lower()
+    if "не дышит" not in note or "не значит" not in note:
+        return ""
+    if not re.search(r"дыш", text or "", re.IGNORECASE):
+        return ""
+    out: list[str] = []
+    for part in _sentences(text):
+        if re.search(r"дыш", part, re.IGNORECASE):
+            out.append("Про дыхание я не знаю.")
+        else:
+            out.append(part)
+    return " ".join(out)
+
+
+def _repair_unspecified_injured(text: str, extra: str) -> str:
+    if "число не указано" not in (extra or "").lower():
+        return ""
+    if not re.search(r"пострадавших нет|раненых нет|никто не пострадал", text or "", re.IGNORECASE):
+        return ""
+    return re.sub(
+        r"(?:пострадавших нет|раненых нет|никто не пострадал)",
+        "сколько людей пострадало, я не знаю",
+        text,
+        count=1,
+        flags=re.IGNORECASE,
+    )
 
 
 def repair_victim_reply(
@@ -427,8 +735,18 @@ def repair_victim_reply(
     blank = bool(_BLANK_SIGHT.match(text))
     when = bool(_ASK_WHEN.search(op))
     if when and not _HAS_TIME.search(extra or ""):
-        if blank or not _HAS_TIME.search(text) or reply_has_garbage(text, extra):
-            return "Только что."
+        text = _repair_unknown_time(text, extra)
+        if _pure_nonanswer(text) or _pure_uncertainty(text):
+            return text
+    unnamed = _unnamed_caller(extra)
+    if unnamed:
+        text = _drop_victim_name_claim(text, extra) or text
+    counted = _repair_unspecified_injured(text, extra)
+    if counted:
+        text = counted
+    breathing = _repair_unspecified_breathing(text, extra)
+    if breathing:
+        text = breathing
     named = repair_caller_name(text, op, extra)
     if named:
         return named
@@ -449,9 +767,9 @@ def repair_victim_reply(
         return shifted
     if blank and not _OPERATOR_ASKS.search(op):
         return _ack_for(op)
-    ticket_fact = fact_for_question(op, extra)
-    if ticket_fact and _reply_misses_fact(text, ticket_fact):
-        return ticket_fact
+    revised = _repair_asked_facts(text, op, extra)
+    if revised != text:
+        return revised
     if not extra and _ASK_ADDRESS.search(op) and reply_has_garbage(text, extra):
         return "Не знаю."
     return text
@@ -600,6 +918,9 @@ class CallSession:
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
     generation: int = 0
     emitted: bool = False
+    presence: bool = False
+    presence_intent: str = ""
+    streamed: str = ""
 
     def to_openai(self) -> list[dict[str, str]]:
         locked = locked_system_prompt(self.conversation_role)
@@ -614,6 +935,77 @@ class CallSession:
         return [{"role": "system", "content": system}, *payload]
 
 
+def _letters(text: str) -> str:
+    return re.sub(r"[^0-9а-яё]+", "", (text or "").lower().replace("ё", "е"))
+
+
+def _letter_prefix(text: str, prefix: str) -> bool:
+    sample = _letters(prefix)
+    if len(sample) < 8:
+        return False
+    return _letters(text).startswith(sample)
+
+
+def remembered_reply(streamed: str, repaired: str) -> str:
+    """Duyulan parçayla onarılmış final aynı olayı anlatsın."""
+    left = " ".join((streamed or "").split()).strip()
+    right = " ".join((repaired or "").split()).strip()
+    if not left:
+        return right
+    if not right:
+        return left
+    if _letter_prefix(right, left):
+        return right
+    right_letters = _letters(right)
+    if right_letters and right_letters in _letters(left):
+        return left
+    return f"{left} {right}"
+
+
+PRESENCE_INTENTS = ("hear", "eta", "wait", "urgent", "stay", "farewell")
+
+
+def presence_cue(intent: str, role: ConversationRole) -> str:
+    who = {
+        "victim": "Ты звонишь как заявитель. Не становись оператором.",
+        "service": "Ты диспетчер службы. Не становись пострадавшим и не обещай выезд или минуты.",
+        "operator": "Ты диспетчер 112. Не становись заявителем.",
+    }[role]
+    lines = {
+        "hear": "Собеседник молчит. Не отвечай на прошлый вопрос и событие не пересказывай. Проверь связь одной фразой: «Вы меня слышите?»",
+        "eta": "Собеседник молчит. Помощь уже обещали, срок не называли. Спроси, примерно через сколько приедут. Сам число минут не называй и новую отправку не выдумывай.",
+        "wait": "Собеседник просил подождать или оставаться на линии. Коротко скажи, что ты на линии и ждёшь. Срок не спрашивай и не прощайся.",
+        "urgent": "Собеседник молчит, а уже известная ситуация срочная. Коротко напомни только известный факт, без новых подробностей и без крика.",
+        "stay": "Неясно, закончен ли разговор. Спроси, оставаться ли на линии. Не прощайся и трубку не клади.",
+        "farewell": "Собеседник завершает разговор. Коротко попрощайся, без вопроса и без пересказа. Подойдёт «До свидания.»",
+    }
+    body = lines.get(intent, lines["hear"])
+    return f"{who} {body} В ответе только произносимая фраза."
+
+
+def presence_spoken(intent: str, text: str) -> str:
+    """Keep a fitting probe. Replace a reply that missed the control intent."""
+    body = " ".join((text or "").split()).strip()
+    low = body.lower()
+    if intent == "hear":
+        if "слыш" in low and "?" in body and not re.search(r"горит|пострад|адрес|телефон|контейнер", low):
+            return body
+        return "Вы меня слышите?"
+    if intent == "farewell":
+        if re.search(r"до свидан|всего добр|прощай", low) and "?" not in body:
+            return body
+        return "До свидания."
+    if intent == "wait":
+        if re.search(r"жду|на линии", low) and "?" not in body:
+            return body
+        return "Я на линии, жду."
+    return body
+
+
+# Açılış sabitlemesi + son 8 karşılıklı tur (16 ileti). Sınırsız geçmiş yok.
+_HISTORY_TAIL = 16
+
+
 def generation_messages(session: CallSession) -> list[dict[str, str]]:
     locked = locked_system_prompt(session.conversation_role)
     messages = session.to_openai()
@@ -622,8 +1014,14 @@ def generation_messages(session: CallSession) -> list[dict[str, str]]:
         extra = _scenario_extra(session.messages[0].content, locked)
     system = locked if not extra else f"{locked}\n\nКонтекст сценария:\n{extra}"
     rest = [item for item in messages if item.get("role") != "system"]
-    if len(rest) > 12:
-        rest = rest[-12:]
+    pinned: list[dict[str, str]] = []
+    body = rest
+    if body and body[0].get("role") == "assistant":
+        pinned = [body[0]]
+        body = body[1:]
+    if len(body) > _HISTORY_TAIL:
+        body = body[-_HISTORY_TAIL:]
+    rest = [*pinned, *body]
     softened: list[dict[str, str]] = []
     for item in rest:
         if item.get("role") == "user":

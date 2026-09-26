@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from collections.abc import AsyncIterator, Callable
 
 import httpx
@@ -23,6 +24,9 @@ from sys112_llm.config import (
 )
 
 logger = logging.getLogger("sys112_llm")
+# Çift satır sonu konuşmayı keser. Rol etiketleri kalır. Analiz isteği ANALYSIS_STOP kullanır.
+CONVERSATION_STOP = ["Оператор:", "Заявитель:"]
+ANALYSIS_STOP = ["\n\n", "Оператор:", "Заявитель:"]
 _THINK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _FOREIGN = re.compile(
     r"(?:[\u3000-\u303F\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF"
@@ -92,6 +96,7 @@ class LlamaClient:
     def __init__(self, base_url: str = LLM_BASE_URL) -> None:
         self.base_url = base_url.rstrip("/")
         self._lock = asyncio.Semaphore(1)
+        self.last_metrics: dict[str, str | int] = {}
         self._http = httpx.AsyncClient(
             timeout=httpx.Timeout(LLM_TIMEOUT_SEC, connect=5.0),
             trust_env=False,
@@ -122,7 +127,7 @@ class LlamaClient:
             "temperature": LLM_TEMPERATURE,
             "top_p": LLM_TOP_P,
             "max_tokens": max_tokens,
-            "stop": ["\n\n", "Оператор:", "Заявитель:"],
+            "stop": list(CONVERSATION_STOP),
         }
         if LLM_PROVIDER == "huggingface":
             payload["chat_template_kwargs"] = {"enable_thinking": False}
@@ -185,9 +190,19 @@ class LlamaClient:
         messages: list[dict[str, str]],
         max_tokens: int | None = None,
         should_stop: Callable[[], bool] | None = None,
+        *,
+        conversation: bool = True,
     ) -> AsyncIterator[str]:
+        queued = time.perf_counter()
         async with self._lock:
-            async for piece in self._stream_unlocked(messages, max_tokens, should_stop):
+            queue_ms = int((time.perf_counter() - queued) * 1000)
+            async for piece in self._stream_unlocked(
+                messages,
+                max_tokens,
+                should_stop,
+                conversation=conversation,
+                queue_ms=queue_ms,
+            ):
                 yield piece
 
     async def _stream_unlocked(
@@ -195,48 +210,92 @@ class LlamaClient:
         messages: list[dict[str, str]],
         max_tokens: int | None = None,
         should_stop: Callable[[], bool] | None = None,
+        *,
+        conversation: bool = True,
+        queue_ms: int = 0,
     ) -> AsyncIterator[str]:
         payload = self._chat_payload(
             messages,
             stream=True,
             max_tokens=LLM_MAX_TOKENS if max_tokens is None else max_tokens,
         )
-        async with self._http.stream(
-            "POST",
-            f"{self.base_url}/v1/chat/completions",
-            json=payload,
-            headers=self._headers(),
-        ) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if should_stop and should_stop():
-                    return
-                if not line:
-                    continue
-                if line.startswith("data:"):
-                    data = line[5:].strip()
-                else:
-                    data = line.strip()
-                if not data or data == "[DONE]":
-                    continue
-                try:
-                    chunk = json.loads(data)
-                except json.JSONDecodeError:
-                    continue
-                timings = chunk.get("timings")
-                if timings:
-                    logger.info(
-                        "[LLM] prompt %sms / %s tok, decode %sms / %s tok",
-                        round(float(timings.get("prompt_ms") or 0)),
-                        timings.get("prompt_n"),
-                        round(float(timings.get("predicted_ms") or 0)),
-                        timings.get("predicted_n"),
-                    )
-                choice = (chunk.get("choices") or [{}])[0]
-                delta = choice.get("delta") or {}
-                piece = delta.get("content") or ""
-                if piece:
-                    yield piece
+        if not conversation:
+            payload["stop"] = list(ANALYSIS_STOP)
+        started = time.perf_counter()
+        first_at: float | None = None
+        finish = ""
+        prompt_tokens = "-"
+        completion_tokens = "-"
+        try:
+            async with self._http.stream(
+                "POST",
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._headers(),
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if should_stop and should_stop():
+                        finish = finish or "cancelled"
+                        return
+                    if not line:
+                        continue
+                    if line.startswith("data:"):
+                        data = line[5:].strip()
+                    else:
+                        data = line.strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    timings = chunk.get("timings")
+                    if timings:
+                        logger.info(
+                            "[LLM] prompt %sms / %s tok, decode %sms / %s tok",
+                            round(float(timings.get("prompt_ms") or 0)),
+                            timings.get("prompt_n"),
+                            round(float(timings.get("predicted_ms") or 0)),
+                            timings.get("predicted_n"),
+                        )
+                    usage = chunk.get("usage") or {}
+                    if usage.get("prompt_tokens") is not None:
+                        prompt_tokens = str(usage.get("prompt_tokens"))
+                    if usage.get("completion_tokens") is not None:
+                        completion_tokens = str(usage.get("completion_tokens"))
+                    choice = (chunk.get("choices") or [{}])[0]
+                    reason = choice.get("finish_reason")
+                    if reason:
+                        finish = str(reason)
+                    delta = choice.get("delta") or {}
+                    piece = delta.get("content") or ""
+                    if piece:
+                        if first_at is None:
+                            first_at = time.perf_counter()
+                        yield piece
+        finally:
+            total_ms = int((time.perf_counter() - started) * 1000)
+            ttft_ms = int((first_at - started) * 1000) if first_at is not None else -1
+            self.last_metrics = {
+                "conversation": int(conversation),
+                "queue_ms": queue_ms,
+                "ttft_ms": ttft_ms,
+                "total_ms": total_ms,
+                "finish": finish or "none",
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            }
+            logger.info(
+                "[LLM LATENCY] conversation=%s queue_ms=%s ttft_ms=%s total_ms=%s finish=%s prompt_tokens=%s completion_tokens=%s",
+                int(conversation),
+                queue_ms,
+                ttft_ms,
+                total_ms,
+                finish or "none",
+                prompt_tokens,
+                completion_tokens,
+            )
 
     async def complete_chat(
         self,

@@ -96,7 +96,7 @@ export function Arm112TrainingPage(props: Props) {
                 workspace.acceptSms();
                 return;
               }
-              unlockTtsAudio();
+              void unlockTtsAudio();
               workspace.acceptCall();
             }}
           />

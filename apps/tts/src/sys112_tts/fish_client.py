@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import re
 import struct
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from sys112_tts.config import (
     FISH_API_KEY,
@@ -28,6 +32,9 @@ from sys112_tts.config import (
 )
 
 logger = logging.getLogger("sys112_tts")
+FISH_API_BASE = "https://api.fish.audio"
+_TTS_TIMEOUT = httpx.Timeout(45.0, connect=5.0, pool=5.0)
+_TTS_LIMITS = httpx.Limits(max_keepalive_connections=8, max_connections=8, keepalive_expiry=120.0)
 
 DISPATCH_PREFIX = "[serious] [professional broadcast tone] [clear speech] "
 _PANIC = {"panic", "panic_high", "fear", "victim_panic"}
@@ -152,6 +159,22 @@ class FishTTSClient:
         self.audio_format = (audio_format or FISH_FORMAT or "pcm").strip()
         self.sample_rate = int(sample_rate or FISH_SAMPLE_RATE or 44100)
         self._sdk: Any = None
+        self._http: httpx.AsyncClient | None = None
+
+    async def aclose(self) -> None:
+        sdk = self._sdk
+        http = self._http
+        self._sdk = None
+        self._http = None
+        if sdk is not None:
+            close = getattr(sdk, "aclose", None) or getattr(sdk, "close", None)
+            if close is not None:
+                result = close()
+                if hasattr(result, "__await__"):
+                    await result
+                http = None
+        if http is not None and not http.is_closed:
+            await http.aclose()
 
     def ready(self) -> bool:
         return bool(self.api_key)
@@ -162,8 +185,38 @@ class FishTTSClient:
         if self._sdk is None:
             from fishaudio import AsyncFishAudio
 
-            self._sdk = AsyncFishAudio(api_key=self.api_key)
+            params = inspect.signature(AsyncFishAudio.__init__).parameters
+            if "httpx_client" in params:
+                self._http = httpx.AsyncClient(
+                    base_url=FISH_API_BASE,
+                    timeout=_TTS_TIMEOUT,
+                    limits=_TTS_LIMITS,
+                    trust_env=False,
+                )
+                self._sdk = AsyncFishAudio(api_key=self.api_key, httpx_client=self._http)
+            else:
+                self._sdk = AsyncFishAudio(api_key=self.api_key)
         return self._sdk
+
+    async def warm(self) -> None:
+        if not self.api_key:
+            return
+        try:
+            client = self._client()
+            wrapper = getattr(client, "_client_wrapper", None)
+            http = getattr(wrapper, "client", None) if wrapper is not None else self._http
+            if http is None:
+                return
+            await http.get("/", timeout=3.0)
+        except Exception:
+            logger.info("[TTS] http warmup skipped")
+
+    async def _reset_sdk(self) -> None:
+        try:
+            await self.aclose()
+        except Exception:
+            self._sdk = None
+            self._http = None
 
     def voice_for(
         self,
@@ -221,10 +274,11 @@ class FishTTSClient:
             "latency": self.latency or "balanced",
             "format": self.audio_format,
             "chunk_length": 100,
+            "min_chunk_length": 20,
             "temperature": 0.5,
             "top_p": 0.65,
             "normalize": False,
-            "condition_on_previous_chunks": True,
+            "condition_on_previous_chunks": False,
         }
         if self.audio_format == "pcm":
             fields["sample_rate"] = self.sample_rate
@@ -238,6 +292,9 @@ class FishTTSClient:
 
     async def _audio_frames(self, raw_chunks: AsyncIterator[bytes]) -> AsyncIterator[bytes]:
         pending = b""
+        first = True
+        first_min = max(2, int(self.sample_rate * 0.004) * 2)
+        next_min = max(first_min, int(self.sample_rate * 0.012) * 2)
         async for chunk in raw_chunks:
             if not chunk:
                 continue
@@ -246,8 +303,10 @@ class FishTTSClient:
                 continue
             pending += chunk
             even = len(pending) - (len(pending) % 2)
-            if even < 8000:
+            min_bytes = first_min if first else next_min
+            if even < min_bytes:
                 continue
+            first = False
             pcm, pending = pending[:even], pending[even:]
             framed = pcm16_to_wav(pcm, self.sample_rate)
             if framed:
@@ -256,6 +315,70 @@ class FishTTSClient:
             framed = pcm16_to_wav(pending[: len(pending) - (len(pending) % 2)], self.sample_rate)
             if framed:
                 yield framed
+
+    async def _iter_raw_audio(
+        self,
+        client: Any,
+        tagged: str,
+        ref_id: str | None,
+        refs: list[Any] | None,
+        config: Any,
+    ) -> AsyncIterator[bytes]:
+        wrapper = getattr(client, "_client_wrapper", None)
+        http = getattr(wrapper, "client", None) if wrapper is not None else None
+        if http is not None and hasattr(http, "send") and hasattr(http, "build_request"):
+            async for chunk in self._stream_http(http, wrapper, tagged, config):
+                yield chunk
+            return
+        stream = client.tts.stream(
+            text=tagged,
+            reference_id=ref_id,
+            references=refs,
+            format=self.audio_format,
+            latency=self.latency,
+            config=config,
+            model=self.model,
+        )
+        if hasattr(stream, "__await__"):
+            stream = await stream
+        async for chunk in stream:
+            if chunk:
+                yield chunk
+
+    async def _stream_http(
+        self,
+        http: httpx.AsyncClient,
+        wrapper: Any,
+        tagged: str,
+        config: Any,
+    ) -> AsyncIterator[bytes]:
+        import ormsgpack
+        from fishaudio.exceptions import APIError
+
+        payload = config.model_dump(exclude_none=True)
+        payload["text"] = tagged
+        extra = {"Content-Type": "application/msgpack", "model": self.model}
+        get_headers = getattr(wrapper, "get_headers", None)
+        headers = get_headers(extra) if callable(get_headers) else extra
+        request = http.build_request(
+            "POST",
+            "/v1/tts",
+            headers=headers,
+            content=ormsgpack.packb(payload),
+            timeout=_TTS_TIMEOUT,
+        )
+        response = await http.send(request, stream=True)
+        try:
+            status = getattr(response, "status_code", 200)
+            ok = getattr(response, "is_success", status < 400)
+            if not ok:
+                body = (await response.aread()).decode("utf-8", "replace")
+                raise APIError(status, body[:280], body)
+            async for chunk in response.aiter_bytes():
+                if chunk:
+                    yield chunk
+        finally:
+            await response.aclose()
 
     async def stream_text(
         self,
@@ -272,6 +395,9 @@ class FishTTSClient:
         tagged = apply_fish_prosody(text, role=role, emotion=emotion, gender=gender)
         if not tagged:
             return
+        logger.info("[VOICE LATENCY] T7_fish_req role=%s", role)
+        started = time.perf_counter()
+        first = True
         ref_id, refs = self.voice_for(
             role,
             gender=gender,
@@ -282,25 +408,20 @@ class FishTTSClient:
         pace = speed if (emotion or "").strip().lower() == "dispatch" else None
         config = self._config(ref_id, refs, pace)
         client = self._client()
-        stream = client.tts.stream(
-            text=tagged,
-            reference_id=ref_id,
-            references=refs,
-            format=self.audio_format,
-            latency=self.latency,
-            config=config,
-            model=self.model,
-        )
-        if hasattr(stream, "__await__"):
-            stream = await stream
-
-        async def _raw() -> AsyncIterator[bytes]:
-            async for chunk in stream:
-                if chunk:
-                    yield chunk
-
-        async for framed in self._audio_frames(_raw()):
-            yield framed
+        try:
+            raw = self._iter_raw_audio(client, tagged, ref_id, refs, config)
+            async for framed in self._audio_frames(raw):
+                if first:
+                    first = False
+                    logger.info(
+                        "[VOICE LATENCY] T8_fish_audio=%.3f role=%s",
+                        time.perf_counter() - started,
+                        role,
+                    )
+                yield framed
+        except Exception:
+            await self._reset_sdk()
+            raise
 
     async def stream_llm(
         self,
@@ -353,8 +474,12 @@ class FishTTSClient:
                 if chunk:
                     yield chunk
 
-        async for framed in self._audio_frames(_raw()):
-            yield framed
+        try:
+            async for framed in self._audio_frames(_raw()):
+                yield framed
+        except Exception:
+            await self._reset_sdk()
+            raise
 
     async def speak(
         self,

@@ -623,8 +623,8 @@
 }
 
 .catalog-toolbar {
-  display: grid;
-  grid-template-columns: minmax(200px, 1.2fr) repeat(4, minmax(128px, 0.58fr)) auto auto;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px 10px;
   align-items: center;
   min-width: 0;
@@ -650,7 +650,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
   min-height: 40px;
   height: 40px;
   padding: 0 12px;
@@ -688,9 +687,16 @@
     0 0 0 3px rgba(58, 81, 102, 0.08);
 }
 
+.catalog-search {
+  flex: 1 1 220px;
+  min-width: 200px;
+  max-width: 420px;
+}
+
 .catalog-menu {
   position: relative;
-  min-width: 0;
+  flex: 0 0 auto;
+  min-width: max-content;
   height: 40px;
   overflow: visible;
   z-index: 1;
@@ -711,7 +717,8 @@
   position: relative;
   isolation: isolate;
   overflow: visible;
-  width: 100%;
+  width: auto;
+  min-width: max-content;
   padding-right: 28px;
   background-color: rgba(255, 255, 255, 0.58);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23516273' stroke-width='1.5' d='M2.4 4.4L6 8l3.6-3.6'/%3E%3C/svg%3E");
@@ -748,8 +755,8 @@
 }
 
 .catalog-filter span {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: unset;
   white-space: nowrap;
 }
 
@@ -759,11 +766,11 @@
   position: absolute;
   top: calc(100% + 6px);
   left: 0;
-  right: 0;
+  right: auto;
   z-index: 30;
   display: grid;
   gap: 2px;
-  width: 100%;
+  width: max-content;
   min-width: 100%;
   padding: 6px;
   overflow: visible;
@@ -838,6 +845,7 @@
 
 .catalog-found {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   align-self: center;
   min-height: 40px;
@@ -869,6 +877,7 @@
 }
 
 .catalog-random {
+  flex: 0 0 auto;
   min-height: 36px;
   padding: 0 14px;
   border: 1px solid #d5dce3;
@@ -1594,16 +1603,13 @@
 }
 
 @media (max-width: 1180px) {
-  .catalog-toolbar {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .catalog-search {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
+    max-width: none;
   }
 
   .catalog-found {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
     justify-self: start;
     min-height: 28px;
     padding: 2px 4px 0;
@@ -1658,7 +1664,6 @@
   }
 
   .catalog-highlights,
-  .catalog-toolbar,
   .scenario-row {
     grid-template-columns: 1fr;
   }

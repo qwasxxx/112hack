@@ -25,10 +25,19 @@ async def lifespan(_app: FastAPI):
     try:
         engine.load()
         logger.info("[TTS] %s engine ready", engine.backend)
+        warm = getattr(engine, "warm", None)
+        if warm is not None:
+            await warm()
     except Exception:
         logger.exception("[TTS] engine load failed")
         engine.status = "not_ready"
     yield
+    close = getattr(engine, "aclose", None)
+    if close is not None:
+        try:
+            await close()
+        except Exception:
+            logger.exception("[TTS] engine close failed")
 
 
 app = FastAPI(title="sys112-tts", lifespan=lifespan)
@@ -96,6 +105,7 @@ async def _streamed(body: SynthesizeRequest, role: str, voice_id: str | None, st
 
     tta_ms = (time.perf_counter() - started) * 1000
     logger.info("[TTS] Time-To-Audio %.1fms http_first_chunk bytes=%s role=%s", tta_ms, len(first), role)
+    logger.info("[VOICE LATENCY] tts_tta_ms=%.0f role=%s", tta_ms, role)
 
     async def generate():
         yield _frame(first)
@@ -143,6 +153,7 @@ async def synthesize(body: SynthesizeRequest) -> StreamingResponse:
 
     tta_ms = (time.perf_counter() - started) * 1000
     logger.info("[TTS] Time-To-Audio %.1fms http_first_chunk bytes=%s role=%s", tta_ms, len(first), role)
+    logger.info("[VOICE LATENCY] tts_tta_ms=%.0f role=%s", tta_ms, role)
 
     async def generate():
         yield _frame(first)

@@ -12,7 +12,7 @@ async function migrate(): Promise<void> {
   if (!url) {
     throw new Error('DATABASE_URL is not set');
   }
-  const local = /localhost|127\.0\.0\.1/.test(url);
+  const local = /localhost|127\.0\.0\.1|@postgres[:/]/.test(url);
   const sql = postgres(url, { max: 1, ssl: local ? false : { rejectUnauthorized: false } });
   const dir = process.env.MIGRATIONS_DIR
     ? resolve(process.env.MIGRATIONS_DIR)

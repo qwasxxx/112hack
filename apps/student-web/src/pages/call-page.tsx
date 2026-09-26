@@ -3,9 +3,35 @@ import type { LessonSection, TrainingScenario } from '../data/scenarios';
 import { SECTION_AI_ROLE } from '../data/scenarios';
 import { buildLessonSystemPrompt } from '../data/ags-tickets';
 import { createLlmStream } from '../lib/llm-stream';
+import {
+  createAiSpeechSession,
+  USER_FLUSH_COALESCE_MS,
+  type TtsPlaybackHooks,
+} from '../lib/speech-pipeline';
 import { applySttEvent, emptyTranscript } from '../lib/stt-protocol';
 import { createSttStream } from '../lib/stt-stream';
-import { beginCallRecording, enqueueTtsAudio, stopTtsAudio, takeSpeechChunks, unlockTtsAudio, waitTtsQueue } from '../lib/tts-player';
+import { classifyIncident } from '../data/caller-truth';
+import { holdRequested, operatorMayEndCall, presenceDecision, soundsLikeFarewell } from '../lib/call-presence';
+import { ambienceProfileForIncident } from '../lib/ambience-profile';
+import { startCallAmbience, stopCallAmbience } from '../lib/ambience-player';
+import {
+  beginCallRecording,
+  connectToCallRecording,
+  disconnectFromCallRecording,
+  enqueueTtsAudio,
+  getSharedAudioContext,
+  isTtsBusy,
+  setTtsVoiceActivityListener,
+  stopTtsAudio,
+  unlockTtsAudio,
+  waitTtsQueue,
+  type TtsChunkHooks,
+} from '../lib/tts-player';
+import {
+  commitSpokenCaption,
+  createSpokenTranscript,
+  upsertSpokenCaption,
+} from '../lib/spoken-transcript';
 import type { TranscriptTurn } from '../progress';
 import { patchLive, readLiveSessions, refreshCuesFromApi, subscribeCues, takePendingLlmCues } from '../progress';
 
@@ -14,6 +40,7 @@ type Line = {
   role: 'caller' | 'operator';
   text: string;
   live?: boolean;
+  speaking?: boolean;
   source?: 'stt' | 'llm' | 'typed';
   at: number;
 };
@@ -80,7 +107,13 @@ export function CallPage(props: Props) {
   const [micError, setMicError] = useState<string | undefined>();
   const [muted, setMuted] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const linesRef = useRef<Line[]>([]);
+  const aiRoleRef = useRef<Line['role']>('caller');
+  const spokenRef = useRef<ReturnType<typeof createSpokenTranscript> | undefined>(undefined);
+  const captionListenerRef = useRef<(state: { visibleText: string; speaking: boolean; generation: number }) => void>(
+    () => undefined,
+  );
   const streamRef = useRef<ReturnType<typeof createSttStream> | undefined>(undefined);
   const llmRef = useRef<ReturnType<typeof createLlmStream> | undefined>(undefined);
   const startingRef = useRef(false);
@@ -92,6 +125,11 @@ export function CallPage(props: Props) {
   const flushTimerRef = useRef<number | undefined>(undefined);
   const ttsHoldRef = useRef(false);
   const spokenTtsRef = useRef('');
+  const speechRef = useRef<ReturnType<typeof createAiSpeechSession> | undefined>(undefined);
+  const micReleaseRef = useRef<Promise<void> | undefined>(undefined);
+  const micReleaseTurnRef = useRef(-1);
+  const aiTurnRef = useRef(0);
+  const flushOriginRef = useRef<number | undefined>(undefined);
   const userSpokeRef = useRef(false);
   const awaitingReplyRef = useRef(false);
   const replyShownRef = useRef(false);
@@ -99,8 +137,20 @@ export function CallPage(props: Props) {
   const lastSentRef = useRef('');
   const staleGensRef = useRef(new Set<number>());
   const endedSentRef = useRef(false);
+  const callEpochRef = useRef(0);
   const recorderRef = useRef<{ stop: () => Promise<Blob | null> } | undefined>(undefined);
   const mutedRef = useRef(false);
+  const draftRef = useRef('');
+  const lastHumanAtRef = useRef(0);
+  const probesRef = useRef(0);
+  const probeAudioEndedAtRef = useRef<number | null>(null);
+  const holdRef = useRef(false);
+  const closeArmedRef = useRef(false);
+  const askedStayRef = useRef(false);
+  const probeTurnRef = useRef(false);
+  const farewellTurnRef = useRef(false);
+  const hangupRef = useRef<() => Promise<void>>(async () => undefined);
+  draftRef.current = draft;
   const voiceRef = useRef(props.scenario.ttsVoice);
   const teacherToneRef = useRef<{ emotion: string; pitch: string; speed: number } | undefined>(undefined);
   const aiVoiceId = conversationRole;
@@ -117,9 +167,26 @@ export function CallPage(props: Props) {
   }, [recording, callState]);
 
   useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
+    if (!stickToBottomRef.current) {
+      return;
+    }
+    const id = window.requestAnimationFrame(() => {
+      const el = logRef.current;
+      if (!el || !stickToBottomRef.current) {
+        return;
+      }
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(id);
   }, [lines]);
   linesRef.current = lines;
+  aiRoleRef.current = aiRole;
+  captionListenerRef.current = (state) => {
+    if (spokenRef.current && state.generation !== spokenRef.current.generation()) {
+      return;
+    }
+    setLines((current) => upsertSpokenCaption(current, aiRoleRef.current, state.visibleText, state.speaking));
+  };
 
   useEffect(() => {
     const login = props.operatorLogin;
@@ -196,7 +263,11 @@ export function CallPage(props: Props) {
       if (!armed) {
         return;
       }
+      callEpochRef.current += 1;
+      startingRef.current = false;
       leavingRef.current = true;
+      speechRef.current?.cancel();
+      spokenRef.current?.cancel();
       if (flushTimerRef.current !== undefined) {
         window.clearTimeout(flushTimerRef.current);
       }
@@ -205,19 +276,218 @@ export function CallPage(props: Props) {
       recorderRef.current = undefined;
       void llmRef.current?.stop();
       stopTtsAudio();
+      stopCallAmbience();
       streamRef.current = undefined;
       llmRef.current = undefined;
     };
   }, []);
 
-  async function startCall() {
-    if (startingRef.current || recording) {
+  function ensureSpoken() {
+    if (!spokenRef.current) {
+      spokenRef.current = createSpokenTranscript({
+        now: () => performance.now(),
+        raf: (callback) => window.requestAnimationFrame(callback),
+        caf: (handle) => window.cancelAnimationFrame(handle),
+        onChange: (state) => captionListenerRef.current(state),
+      });
+    }
+    return spokenRef.current;
+  }
+
+  function attachCaptionHooks(base?: TtsPlaybackHooks): TtsChunkHooks {
+    const spoken = ensureSpoken();
+    const generation = spoken.generation();
+    const epoch = callEpochRef.current;
+    return {
+      ...base,
+      onChunkPlaybackStart: (info) => {
+        if (callEpochRef.current !== epoch) {
+          return;
+        }
+        spoken.startChunk(info.text, info.durationMs, generation);
+      },
+      onChunkPlaybackProgress: (info) => {
+        if (callEpochRef.current !== epoch || spoken.generation() !== generation) {
+          return;
+        }
+        spoken.setChunkDuration(info.durationMs, info.complete);
+      },
+      onChunkPlaybackEnd: () => {
+        if (callEpochRef.current !== epoch) {
+          return;
+        }
+        spoken.finishChunk(generation);
+      },
+      onPlaybackCancelled: () => {
+        if (callEpochRef.current !== epoch || spoken.generation() !== generation) {
+          return;
+        }
+        spoken.cancel();
+      },
+    };
+  }
+
+  function commitSpokenLine() {
+    setLines((current) => commitSpokenCaption(current));
+  }
+
+  function createSpeech() {
+    const session = createAiSpeechSession({
+      enqueue: (text, hooks) =>
+        enqueueTtsAudio(
+          text,
+          conversationRole === 'service' ? 'service' : aiVoiceId,
+          callerVoice(),
+          attachCaptionHooks(hooks),
+        ),
+      waitQueue: waitTtsQueue,
+      stop: stopTtsAudio,
+      isBusy: isTtsBusy,
+      now: () => performance.now(),
+      onLatency: (line) => {
+        console.info(line);
+      },
+    });
+    speechRef.current = session;
+    return session;
+  }
+
+  async function releaseMicAfterAi(turnId: number) {
+    try {
+      await speechRef.current?.waitForTurnEnd();
+    } finally {
+      if (leavingRef.current || aiTurnRef.current !== turnId) {
+        return;
+      }
+      if (probeTurnRef.current && !farewellTurnRef.current) {
+        probeAudioEndedAtRef.current = performance.now();
+        probeTurnRef.current = false;
+      } else {
+        lastHumanAtRef.current = performance.now();
+      }
+      if (closeArmedRef.current) {
+        const heard = speechRef.current?.getSpoken() || '';
+        if (farewellTurnRef.current || soundsLikeFarewell(heard)) {
+          farewellTurnRef.current = false;
+          probeTurnRef.current = false;
+          void hangupRef.current();
+          return;
+        }
+        farewellTurnRef.current = true;
+        probeTurnRef.current = true;
+        const next = speechRef.current ?? createSpeech();
+        aiTurnRef.current += 1;
+        next.beginTurn();
+        ensureSpoken().beginTurn();
+        llmRef.current?.sendPresence(crypto.randomUUID(), 'farewell');
+        ensureAiTurnWaiter();
+        return;
+      }
+      ttsHoldRef.current = false;
+      replyShownRef.current = false;
+      commitSpokenLine();
+      if (!mutedRef.current) {
+        streamRef.current?.setCaptureEnabled(true);
+      }
+      const sent = lastSentRef.current;
+      const queued = pendingUserRef.current.trim();
+      pendingUserRef.current = '';
+      lastSentRef.current = '';
+      if (queued && !leavingRef.current && !repeatsSent(queued, sent)) {
+        const id = crypto.randomUUID();
+        lastSentRef.current = queued;
+        setLines((current) => {
+          const lastUser = [...current].reverse().find((line) => line.role === userRole && !line.live);
+          if (lastUser && repeatsSent(queued, lastUser.text)) {
+            return current;
+          }
+          return replaceOrAppendUser(current, userRole, queued, id, 'stt');
+        });
+        sendToLlm(id, queued);
+      }
+    }
+  }
+
+  function ensureAiTurnWaiter() {
+    if (!ttsHoldRef.current) {
+      holdMicForTts();
+    }
+    const turnId = aiTurnRef.current;
+    if (micReleaseRef.current && micReleaseTurnRef.current === turnId) {
       return;
     }
+    const pending = releaseMicAfterAi(turnId);
+    micReleaseRef.current = pending;
+    micReleaseTurnRef.current = turnId;
+    void pending.finally(() => {
+      if (micReleaseRef.current === pending) {
+        micReleaseRef.current = undefined;
+      }
+    });
+  }
+
+  function noteOperatorText(text: string) {
+    closeArmedRef.current = operatorMayEndCall(text);
+    holdRef.current = holdRequested(text);
+    if (!closeArmedRef.current) {
+      farewellTurnRef.current = false;
+    }
+    lastHumanAtRef.current = performance.now();
+    probesRef.current = 0;
+    probeAudioEndedAtRef.current = null;
+    askedStayRef.current = false;
+    probeTurnRef.current = false;
+    llmRef.current?.cancelPresence();
+  }
+
+  function sendToLlm(id: string, text: string) {
+    noteOperatorText(text);
+    aiTurnRef.current += 1;
+    const session = speechRef.current ?? createSpeech();
+    session.beginTurn({ userFinalAt: flushOriginRef.current ?? performance.now() });
+    ensureSpoken().beginTurn();
+    session.markLlmSent(performance.now());
+    flushOriginRef.current = undefined;
+    userSpokeRef.current = true;
+    awaitingReplyRef.current = true;
+    llmRef.current?.sendUserFinal(id, text);
+  }
+
+  async function startCall() {
+    if (startingRef.current) {
+      return;
+    }
+    if (recording && !leavingRef.current) {
+      return;
+    }
+    const epoch = (callEpochRef.current += 1);
+    const live = () => callEpochRef.current === epoch && !leavingRef.current;
     startingRef.current = true;
     leavingRef.current = false;
+    lastHumanAtRef.current = performance.now();
+    probesRef.current = 0;
+    probeAudioEndedAtRef.current = null;
+    holdRef.current = false;
+    closeArmedRef.current = false;
+    askedStayRef.current = false;
+    probeTurnRef.current = false;
+    farewellTurnRef.current = false;
     setSeconds(0);
-    unlockTtsAudio();
+    speechRef.current?.resetForNewCall();
+    void unlockTtsAudio();
+    if (!live()) {
+      startingRef.current = false;
+      return;
+    }
+    stopTtsAudio();
+    startCallAmbience(ambienceProfileForIncident(classifyIncident(props.scenario).class, props.scenario), {
+      getContext: getSharedAudioContext,
+      connectRecording: connectToCallRecording,
+      disconnectRecording: disconnectFromCallRecording,
+      listenVoiceActivity: setTtsVoiceActivityListener,
+    });
+    aiTurnRef.current += 1;
+    createSpeech();
     seenFinalsRef.current = new Set();
     finalsRef.current = emptyTranscript();
     utterancePartsRef.current = [];
@@ -227,6 +497,7 @@ export function CallPage(props: Props) {
       flushTimerRef.current = undefined;
     }
     spokenTtsRef.current = '';
+    flushOriginRef.current = undefined;
     userSpokeRef.current = false;
     awaitingReplyRef.current = false;
     replyShownRef.current = false;
@@ -235,6 +506,7 @@ export function CallPage(props: Props) {
     staleGensRef.current = new Set();
     ttsHoldRef.current = false;
     endedSentRef.current = false;
+    ensureSpoken().reset();
     setLines([]);
     setMicError(undefined);
     setRecording(true);
@@ -243,16 +515,26 @@ export function CallPage(props: Props) {
       props.opening?.trim() ||
       (conversationRole === 'victim' ? props.scenario.callerOpening.trim() : '');
     if (opening) {
-      setLines([
-        {
-          id: 'caller-opening',
-          role: 'caller',
-          text: opening,
-          source: 'llm',
-          at: Date.now(),
-        },
-      ]);
+      spokenTtsRef.current = opening;
+      ensureSpoken().beginTurn();
+      const openingTurn = aiTurnRef.current;
       holdMicForTts();
+      void enqueueTtsAudio(
+        opening,
+        conversationRole === 'service' ? 'service' : aiVoiceId,
+        callerVoice(),
+        attachCaptionHooks(),
+      ).finally(() => {
+        if (leavingRef.current || awaitingReplyRef.current || aiTurnRef.current !== openingTurn) {
+          return;
+        }
+        commitSpokenLine();
+        lastHumanAtRef.current = performance.now();
+        ttsHoldRef.current = false;
+        if (!mutedRef.current) {
+          streamRef.current?.setCaptureEnabled(true);
+        }
+      });
     }
     const callId = crypto.randomUUID();
     const llm = createLlmStream({
@@ -270,14 +552,14 @@ export function CallPage(props: Props) {
             staleGensRef.current.add(event.gen);
           }
           awaitingReplyRef.current = false;
-          if (!ttsHoldRef.current) {
+          speechRef.current?.failGeneration();
+          spokenRef.current?.cancel();
+          if (ttsHoldRef.current) {
+            ensureAiTurnWaiter();
+          } else {
             replyShownRef.current = false;
           }
-          setLines((current) =>
-            current.map((line) =>
-              line.role === aiRole && line.live ? { ...line, live: false, id: crypto.randomUUID() } : line,
-            ),
-          );
+          commitSpokenLine();
           return;
         }
         if (event.type === 'assistant_partial' && event.text.trim()) {
@@ -285,20 +567,26 @@ export function CallPage(props: Props) {
             return;
           }
           replyShownRef.current = true;
-          if (!ttsHoldRef.current) {
-            holdMicForTts();
+          if (!speechRef.current?.isGenerationOpen()) {
+            speechRef.current?.beginTurn();
+            ensureSpoken().beginTurn();
           }
-          setLines((current) => upsertLive(current, aiRole, event.text, 'llm'));
-          queueCallerSpeech(event.text);
+          ensureAiTurnWaiter();
+          speechRef.current?.ingestPartial(event.text);
+          spokenTtsRef.current = speechRef.current?.getSpoken() || spokenTtsRef.current;
         }
         if (event.type === 'assistant_final') {
           awaitingReplyRef.current = false;
           if (!event.text.trim()) {
-            replyShownRef.current = false;
-            awaitingReplyRef.current = false;
-            ttsHoldRef.current = false;
-            if (!mutedRef.current) {
-              streamRef.current?.setCaptureEnabled(true);
+            speechRef.current?.failGeneration();
+            if (ttsHoldRef.current) {
+              ensureAiTurnWaiter();
+            } else {
+              replyShownRef.current = false;
+              ttsHoldRef.current = false;
+              if (!mutedRef.current) {
+                streamRef.current?.setCaptureEnabled(true);
+              }
             }
             if (userSpokeRef.current) {
               setMicError('Модель не вернула ответ. Повторите фразу.');
@@ -306,6 +594,7 @@ export function CallPage(props: Props) {
             return;
           }
           if (!userSpokeRef.current && isSameSpeech(event.text, opening)) {
+            speechRef.current?.failGeneration();
             ttsHoldRef.current = false;
             if (!mutedRef.current) {
               streamRef.current?.setCaptureEnabled(true);
@@ -313,17 +602,26 @@ export function CallPage(props: Props) {
             return;
           }
           replyShownRef.current = true;
-          setLines((current) => commitLive(current, aiRole, event.text, 'llm'));
-          void speakAi(event.text);
+          if (!speechRef.current?.isGenerationOpen() && !speechRef.current?.getSpoken()) {
+            speechRef.current?.beginTurn();
+            ensureSpoken().beginTurn();
+          }
+          ensureAiTurnWaiter();
+          speechRef.current?.ingestFinal(event.text);
+          spokenTtsRef.current = speechRef.current?.getSpoken() || event.text;
         }
       },
       onError: (message) => {
         setMicError(message);
-        ttsHoldRef.current = false;
-        replyShownRef.current = false;
         awaitingReplyRef.current = false;
-        if (!mutedRef.current) {
-          streamRef.current?.setCaptureEnabled(true);
+        speechRef.current?.failGeneration();
+        if (ttsHoldRef.current) {
+          ensureAiTurnWaiter();
+        } else {
+          replyShownRef.current = false;
+          if (!mutedRef.current) {
+            streamRef.current?.setCaptureEnabled(true);
+          }
         }
       },
     });
@@ -339,7 +637,12 @@ export function CallPage(props: Props) {
       liveSttRef.current = '';
       if (!text.trim() || repeatsSent(text, lastSentRef.current) || isPhantomSpeech(text)) {
         setLines((current) => current.filter((line) => !(line.live && line.role === userRole)));
+        flushOriginRef.current = undefined;
         return;
+      }
+      const origin = flushOriginRef.current;
+      if (origin != null) {
+        console.info(`[VOICE LATENCY] frontend_handoff_ms=${Math.max(0, Math.round(performance.now() - origin))}`);
       }
       const id = crypto.randomUUID();
       lastSentRef.current = text;
@@ -349,15 +652,24 @@ export function CallPage(props: Props) {
         return;
       }
       beginUserTurn();
-      awaitingReplyRef.current = true;
-      llmRef.current?.sendUserFinal(id, text);
+      sendToLlm(id, text);
+    };
+
+    const postponeFlushForLiveSpeech = () => {
+      if (flushTimerRef.current !== undefined) {
+        window.clearTimeout(flushTimerRef.current);
+        flushTimerRef.current = undefined;
+      }
     };
 
     const scheduleFlush = () => {
+      if (flushOriginRef.current === undefined) {
+        flushOriginRef.current = performance.now();
+      }
       if (flushTimerRef.current !== undefined) {
         window.clearTimeout(flushTimerRef.current);
       }
-      flushTimerRef.current = window.setTimeout(flushUtterance, 1000);
+      flushTimerRef.current = window.setTimeout(flushUtterance, USER_FLUSH_COALESCE_MS);
     };
 
     const showUserSpeech = (parts: string[], live: string) => {
@@ -376,12 +688,18 @@ export function CallPage(props: Props) {
         if (ttsHoldRef.current || mutedRef.current) {
           return;
         }
+        const previousFinalCount = finalsRef.current.finals.length;
         finalsRef.current = applySttEvent(finalsRef.current, event);
-        if (event.type === 'partial' && event.text.trim()) {
-          if (!isShorterTranscript(liveSttRef.current, event.text)) {
-            liveSttRef.current = event.text;
+        const live = finalsRef.current.partial;
+        if (event.type === 'partial' && live.trim()) {
+          postponeFlushForLiveSpeech();
+          if (!isShorterTranscript(liveSttRef.current, live)) {
+            liveSttRef.current = live;
           }
           showUserSpeech(utterancePartsRef.current, liveSttRef.current);
+        }
+        if (event.type === 'final' && finalsRef.current.finals.length === previousFinalCount) {
+          return;
         }
         if (event.type === 'final') {
           const last = finalsRef.current.finals.at(-1);
@@ -413,12 +731,19 @@ export function CallPage(props: Props) {
     streamRef.current = stream;
     try {
       await llm.start();
+      if (!live()) {
+        void llm.stop();
+        return;
+      }
       if (conversationRole === 'victim' && !opening) {
         llm.kickoff();
       }
     } catch (error: unknown) {
+      if (!live()) {
+        return;
+      }
       const text = error instanceof Error ? error.message : '';
-      if (leavingRef.current || text === 'stopped') {
+      if (text === 'stopped') {
         setRecording(false);
         setCallState('idle');
         return;
@@ -432,7 +757,14 @@ export function CallPage(props: Props) {
       );
     }
     try {
+      if (!live()) {
+        return;
+      }
       await stream.start();
+      if (!live()) {
+        await stream.stop();
+        return;
+      }
       const mic = stream.mediaStream();
       if (mic) {
         try {
@@ -441,27 +773,15 @@ export function CallPage(props: Props) {
           recorderRef.current = undefined;
         }
       }
-      if (opening) {
-        queueCallerSpeech(opening);
-        void Promise.race([
-          waitTtsQueue(),
-          new Promise((resolve) => window.setTimeout(resolve, 12000)),
-        ]).finally(() => {
-          if (leavingRef.current || awaitingReplyRef.current) {
-            return;
-          }
-          ttsHoldRef.current = false;
-          if (!mutedRef.current) {
-            streamRef.current?.setCaptureEnabled(true);
-          }
-        });
-      }
       if (ttsHoldRef.current) {
         stream.setCaptureEnabled(false);
       } else if (mutedRef.current) {
         stream.setCaptureEnabled(false);
       }
     } catch (error: unknown) {
+      if (!live()) {
+        return;
+      }
       if (error instanceof DOMException && error.name === 'NotAllowedError') {
         setMicError('Нет доступа к микрофону. Можно отвечать текстом.');
       } else if (error instanceof DOMException && error.name === 'NotFoundError') {
@@ -470,7 +790,9 @@ export function CallPage(props: Props) {
         setMicError('Распознавание речи недоступно. Можно отвечать текстом.');
       }
     } finally {
-      startingRef.current = false;
+      if (callEpochRef.current === epoch) {
+        startingRef.current = false;
+      }
     }
   }
 
@@ -499,72 +821,12 @@ export function CallPage(props: Props) {
     streamRef.current?.setCaptureEnabled(false);
   }
 
-  function queueCallerSpeech(full: string) {
-    const fresh = full.trim();
-    if (!fresh) {
-      return;
-    }
-    const already = spokenTtsRef.current;
-    if (already && !fresh.startsWith(already)) {
-      const aligned = takeSpeechChunks(fresh, already).spoken;
-      if (!aligned) {
-        return;
-      }
-    }
-    const { chunks, spoken } = takeSpeechChunks(fresh, already);
-    if (!chunks.length) {
-      if (spoken) {
-        spokenTtsRef.current = spoken;
-      }
-      return;
-    }
-    spokenTtsRef.current = spoken;
-    const role = conversationRole === 'service' ? 'service' : aiVoiceId;
-    const voice = callerVoice();
-    for (const chunk of chunks) {
-      void enqueueTtsAudio(chunk, role, voice);
-    }
-  }
-
-  async function speakAi(text: string) {
-    holdMicForTts();
-    queueCallerSpeech(text);
-    try {
-      await Promise.race([
-        waitTtsQueue(),
-        new Promise((resolve) => window.setTimeout(resolve, 12000)),
-      ]);
-    } finally {
-      ttsHoldRef.current = false;
-      replyShownRef.current = false;
-      if (!leavingRef.current && !mutedRef.current) {
-        streamRef.current?.setCaptureEnabled(true);
-      }
-      const sent = lastSentRef.current;
-      const queued = pendingUserRef.current.trim();
-      pendingUserRef.current = '';
-      lastSentRef.current = '';
-      if (queued && !leavingRef.current && !repeatsSent(queued, sent)) {
-        const id = crypto.randomUUID();
-        lastSentRef.current = queued;
-        setLines((current) => {
-          const lastUser = [...current].reverse().find((line) => line.role === userRole && !line.live);
-          if (lastUser && repeatsSent(queued, lastUser.text)) {
-            return current;
-          }
-          return replaceOrAppendUser(current, userRole, queued, id, 'stt');
-        });
-        userSpokeRef.current = true;
-        awaitingReplyRef.current = true;
-        llmRef.current?.sendUserFinal(id, queued);
-      }
-    }
-  }
-
   function beginUserTurn() {
+    aiTurnRef.current += 1;
+    speechRef.current?.cancel();
+    commitSpokenLine();
     userSpokeRef.current = true;
     spokenTtsRef.current = '';
-    stopTtsAudio();
     ttsHoldRef.current = false;
     if (!mutedRef.current) {
       streamRef.current?.setCaptureEnabled(true);
@@ -584,8 +846,7 @@ export function CallPage(props: Props) {
       return;
     }
     beginUserTurn();
-    awaitingReplyRef.current = true;
-    llmRef.current?.sendUserFinal(id, trimmed);
+    sendToLlm(id, trimmed);
     setDraft('');
   }
 
@@ -618,17 +879,27 @@ export function CallPage(props: Props) {
   }
 
   async function hangup() {
-    const snapshot: TranscriptTurn[] = linesRef.current
+    const epoch = (callEpochRef.current += 1);
+    startingRef.current = false;
+    leavingRef.current = true;
+    ttsHoldRef.current = false;
+    setRecording(false);
+    spokenRef.current?.cancel();
+    speechRef.current?.cancel();
+    stopTtsAudio();
+    stopCallAmbience();
+    const stream = streamRef.current;
+    const llm = llmRef.current;
+    const rec = recorderRef.current;
+    streamRef.current = undefined;
+    llmRef.current = undefined;
+    recorderRef.current = undefined;
+    const committed = commitSpokenCaption(linesRef.current);
+    setLines(committed);
+    linesRef.current = committed;
+    const snapshot: TranscriptTurn[] = committed
       .filter((line) => !line.live && line.text.trim())
       .map((line) => ({ role: line.role, text: line.text.trim(), at: line.at || Date.now() }));
-    if (!streamRef.current && !llmRef.current) {
-      const rec = recorderRef.current;
-      recorderRef.current = undefined;
-      emitEnded(snapshot, rec ? rec.stop().catch(() => null) : undefined);
-      return;
-    }
-    leavingRef.current = true;
-    stopTtsAudio();
     if (flushTimerRef.current !== undefined) {
       window.clearTimeout(flushTimerRef.current);
       flushTimerRef.current = undefined;
@@ -640,17 +911,74 @@ export function CallPage(props: Props) {
       snapshot.push({ role: userRole, text: leftover.trim(), at: Date.now() });
       setLines((current) => commitLive(current, userRole, leftover, 'stt'));
     }
-    const rec = recorderRef.current;
-    recorderRef.current = undefined;
     const audio = rec ? rec.stop().catch(() => null) : undefined;
-    await streamRef.current?.stop();
-    streamRef.current = undefined;
-    await llmRef.current?.stop();
-    llmRef.current = undefined;
-    setRecording(false);
+    await stream?.stop();
+    await llm?.stop();
+    if (callEpochRef.current !== epoch) {
+      return;
+    }
     setCallState('ended');
     emitEnded(snapshot, audio);
   }
+
+  hangupRef.current = hangup;
+
+  useEffect(() => {
+    if (!recording) {
+      return;
+    }
+    const role = conversationRole === 'service' || conversationRole === 'operator' ? conversationRole : 'victim';
+    const timer = window.setInterval(() => {
+      if (leavingRef.current) {
+        return;
+      }
+      const linesNow = linesRef.current;
+      const operator = [...linesNow].reverse().find((line) => line.role === userRole && !line.live)?.text ?? '';
+      const assistant =
+        [...linesNow].reverse().find((line) => line.role === aiRole && !line.live)?.text ?? spokenTtsRef.current;
+      const decision = presenceDecision({
+        now: performance.now(),
+        callActive: !leavingRef.current,
+        userBusy:
+          awaitingReplyRef.current ||
+          ttsHoldRef.current ||
+          isTtsBusy() ||
+          Boolean(liveSttRef.current.trim()) ||
+          utterancePartsRef.current.length > 0 ||
+          flushTimerRef.current !== undefined ||
+          Boolean(pendingUserRef.current.trim()) ||
+          Boolean(draftRef.current.trim()) ||
+          Boolean(speechRef.current?.isGenerationOpen()) ||
+          probeTurnRef.current ||
+          farewellTurnRef.current,
+        lastHumanAt: lastHumanAtRef.current || performance.now(),
+        probes: probesRef.current,
+        probeAudioEndedAt: probeAudioEndedAtRef.current,
+        hold: holdRef.current,
+        closeArmed: closeArmedRef.current,
+        farewellAudioReady: false,
+        operatorText: operator,
+        assistantText: assistant,
+        role,
+        askedStay: askedStayRef.current,
+      });
+      if (decision.kind !== 'probe') {
+        return;
+      }
+      probesRef.current += 1;
+      if (decision.intent === 'stay') {
+        askedStayRef.current = true;
+      }
+      probeTurnRef.current = true;
+      const session = speechRef.current ?? createSpeech();
+      aiTurnRef.current += 1;
+      session.beginTurn();
+      ensureSpoken().beginTurn();
+      llmRef.current?.sendPresence(crypto.randomUUID(), decision.intent);
+      ensureAiTurnWaiter();
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [aiRole, conversationRole, recording, userRole]);
 
   function setField(key: string, value: string) {
     setCard((current) => ({ ...current, [key]: value }));
@@ -735,7 +1063,15 @@ export function CallPage(props: Props) {
       <div className={`call-body${showCard ? '' : ' call-body-solo'}`}>
         <section className={`panel call-log${embedded ? ' call-log-panel' : ''}`} aria-label="Разговор">
           {embedded ? null : <h2>Разговор</h2>}
-          <div className="log" ref={logRef}>
+          <div
+            className="log"
+            ref={logRef}
+            lang="ru"
+            onScroll={(event) => {
+              const el = event.currentTarget;
+              stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 56;
+            }}
+          >
             {lines.length === 0 ? (
               <p className="hint">
                 {props.hint ??
@@ -745,8 +1081,12 @@ export function CallPage(props: Props) {
               </p>
             ) : null}
             {lines.map((line) => (
-              <article key={line.id} className={`line line-${line.role}${line.live ? ' line-partial' : ''}`}>
-                <span>
+              <article
+                key={line.id}
+                className={`line line-${line.role}${line.live ? ' line-partial' : ''}${line.speaking ? ' line-speaking' : ''}`}
+                aria-current={line.speaking ? 'true' : undefined}
+              >
+                <span className="line-speaker">
                   {line.role === 'caller'
                     ? conversationRole === 'service'
                       ? 'Служба'
@@ -754,6 +1094,7 @@ export function CallPage(props: Props) {
                     : conversationRole === 'service'
                       ? 'Диспетчер'
                       : 'Оператор'}
+                  {line.speaking ? <i className="line-speak-pulse" aria-hidden="true" /> : null}
                 </span>
                 <p>{line.text}</p>
               </article>

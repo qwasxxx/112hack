@@ -19,7 +19,7 @@ export class DatabaseService {
       return;
     }
     try {
-      const local = /localhost|127\.0\.0\.1/.test(this.env.DATABASE_URL);
+      const local = /localhost|127\.0\.0\.1|@postgres[:/]/.test(this.env.DATABASE_URL);
       this.client = postgres(this.env.DATABASE_URL, {
         max: 4,
         ssl: local ? false : { rejectUnauthorized: false },

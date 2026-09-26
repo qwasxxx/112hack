@@ -73,7 +73,7 @@ def test_default_prompt_is_light_and_keeps_history():
     payload = generation_messages(victim)
     assert payload[0]["role"] == "system"
     assert "пострадавший" in payload[0]["content"]
-    assert "Не будь оператором" in payload[0]["content"]
+    assert "Менять роль на оператора" in payload[0]["content"]
     assert payload[0]["content"].startswith("/no_think")
 
 
@@ -87,9 +87,111 @@ def test_generation_keeps_only_recent_turns():
         manager.append_assistant("long", f"Ответ {index}.")
     payload = generation_messages(manager.get("long"))
     user_assistant = [item for item in payload if item["role"] != "system"]
-    assert len(user_assistant) == 12
-    assert user_assistant[0]["content"] == "Реплика 4."
+    assert len(user_assistant) == 16
+    assert user_assistant[0]["content"] == "Реплика 2."
     assert user_assistant[-1]["content"] == "Ответ 9."
+
+
+def test_opening_stays_when_recent_turns_are_trimmed():
+    from sys112_llm.conversation import generation_messages
+
+    manager = ConversationManager()
+    manager.create("long-open", "victim", "Билет 1", "Алло, здесь пожар!")
+    for index in range(12):
+        manager.accept_user("long-open", f"Вопрос {index}.", f"u{index}")
+        manager.append_assistant("long-open", f"Ответ {index}.")
+    payload = generation_messages(manager.get("long-open"))
+    spoken = [item for item in payload if item["role"] != "system"]
+    assert spoken[0]["content"] == "Алло, здесь пожар!"
+    assert spoken[1]["content"] == "Вопрос 4."
+    assert spoken[-1]["content"] == "Ответ 11."
+    assert len(spoken) == 17
+
+
+def test_conversation_stop_does_not_cut_paragraphs():
+    from sys112_llm.client import ANALYSIS_STOP, CONVERSATION_STOP
+
+    assert "\n\n" not in CONVERSATION_STOP
+    assert "Оператор:" in CONVERSATION_STOP
+    assert "\n\n" in ANALYSIS_STOP
+
+
+def test_remembered_reply_keeps_heard_text_and_correction():
+    from sys112_llm.conversation import presence_cue, remembered_reply
+
+    heard = "Мы стоим около большого дома на Тверской."
+    fixed = "Мы стоим около большого дома на Волжском бульваре."
+    both = remembered_reply(heard, fixed)
+    assert heard in both
+    assert "Волжском" in both
+    assert remembered_reply(heard, heard + " Дым виден.") == heard + " Дым виден."
+    session = ConversationManager().create("presence", "victim", opening="Алло, здесь пожар!")
+    before = len(session.messages)
+    cue = presence_cue("hear", "victim")
+    assert len(session.messages) == before
+    assert "слышит" in cue
+    assert not any(item.role == "user" and "слышит" in item.content for item in session.messages)
+
+
+def test_presence_spoken_replaces_a_missed_probe():
+    from sys112_llm.conversation import presence_spoken
+
+    retold = "Хорошо, горит мусорный контейнер, пострадавших нет."
+    assert presence_spoken("hear", retold) == "Вы меня слышите?"
+    assert presence_spoken("hear", "Вы меня слышите?") == "Вы меня слышите?"
+    assert presence_spoken("farewell", "Хорошо, спасибо, что сообщили.") == "До свидания."
+    assert presence_spoken("farewell", "До свидания.") == "До свидания."
+    assert presence_spoken("wait", "Я на линии, жду.") == "Я на линии, жду."
+    assert "через сколько" in presence_spoken("eta", "Скажите, примерно через сколько приедут?")
+
+
+def test_unnamed_caller_does_not_keep_the_victim_name():
+    from sys112_llm.conversation import repair_victim_reply
+
+    extra = "\n".join(
+        [
+            "КТО ЗВОНИТ: в билете прямо не сказано, кто говорит",
+            "ПОСТРАДАВШИЙ (это не ты): Иванова Елена Сергеевна",
+            "ПОСТРАДАВШИЕ: число не указано. Не говори «ноль».",
+        ]
+    )
+    spoken = repair_victim_reply(
+        "Водитель заблокирован, меня зовут Иванова Елена Сергеевна.",
+        "Кто заблокирован?",
+        "victim",
+        extra,
+    )
+    assert "зовут" not in spoken.lower()
+    assert "заблокирован" in spoken.lower()
+    denied = repair_victim_reply(
+        "Пострадавших нет.",
+        "Есть пострадавшие?",
+        "victim",
+        extra,
+    )
+    assert "нет" not in denied.lower()
+    assert "не знаю" in denied.lower()
+    explicit = "ПОСТРАДАВШИЕ: в билете прямо сказано, что пострадавших нет."
+    kept = repair_victim_reply("Пострадавших нет.", "Есть раненые?", "victim", explicit)
+    assert kept == "Пострадавших нет."
+    medical = "\n".join(
+        [
+            "ВРЕМЯ: в билете не названо.",
+            "СЕЙЧАС ВАЖНО: Потеря сознания",
+            "СОСТОЯНИЕ: Потеря сознания. «Без сознания» не значит «не дышит», пока дыхание отдельно не написано.",
+        ]
+    )
+    timed = repair_victim_reply(
+        "Мне сорок лет. Это началось прямо сейчас.",
+        "Когда это началось?",
+        "victim",
+        medical,
+    )
+    assert "сорок" in timed.lower()
+    assert "прямо сейчас" not in timed.lower()
+    breath = repair_victim_reply("Я потеряла сознание. Я дышу.", "Что случилось?", "victim", medical)
+    assert "дышу" not in breath.lower()
+    assert "не знаю" in breath.lower()
 
 
 def test_closed_session_rejects_user():
@@ -347,9 +449,8 @@ def test_repair_victim_does_not_play_blind_on_dispatch():
     assert trapped.startswith("Я не могу двигаться")
     assert repair_victim_reply("Не знаю.", "Какой этаж?", "victim") == "Не знаю."
     assert repair_victim_reply("Горит контейнер у дома.", "Что случилось?", "victim") == "Горит контейнер у дома."
-    assert (
-        repair_victim_reply("Около получика.", "как давно произошло", "victim") == "Только что."
-    )
+    # В билете времени нет: обрывок «получика» не становится выдуманным «Только что».
+    assert repair_victim_reply("Около получика.", "как давно произошло", "victim") == "Не знаю."
     assert (
         repair_victim_reply(
             "Меня зовут Света.",
@@ -426,6 +527,213 @@ def test_repair_victim_does_not_play_blind_on_dispatch():
     assert "Волжск" in moscow
     assert "Тверск" not in moscow
     assert repair_victim_reply("Волжский какой-то.", "какой адрес?", "victim") == "Не знаю."
+
+
+def test_repair_keeps_natural_scenario_replies():
+    """Входы — проверяемые реплики, не записанный вывод модели."""
+    import re
+
+    from sys112_llm.conversation import breaks_character, leaves_role, repair_victim_reply
+
+    fire = (
+        "ЧТО СЛУЧИЛОСЬ: Возгорание мусорного контейнера, пострадавших нет\n"
+        "АДРЕС (назови, только если спросили): Москва, Депо, около станции Москва-Пассажирская Киевская\n"
+        "КТО ЗВОНИТ: Сидоров Иван Сергеевич\n"
+        "ТЕЛЕФОН (назови, только если спросили): 9161263471"
+    )
+    beam = (
+        "ЧТО СЛУЧИЛОСЬ: На машину упало бревно с грузовика. В машине Ваз красный, водитель заблокирован\n"
+        "АДРЕС (назови, только если спросили): Съезд с МКАД внутрь на Симферопольское шоссе, обочина\n"
+        "КТО ЗВОНИТ: Иванова Елена Сергеевна\n"
+        "ТЕЛЕФОН (назови, только если спросили): 9168963254"
+    )
+    medical = (
+        "ЧТО СЛУЧИЛОСЬ: Плохо женщине на автомобильной парковке. Потеря сознания\n"
+        "АДРЕС (назови, только если спросили): Московская область, Балашиха, Мирской проезд, дом 16"
+    )
+    police = "ЧТО СЛУЧИЛОСЬ: Дерутся 3 человека, без пострадавших, без оружия, очевидец"
+    gas = "ЧТО СЛУЧИЛОСЬ: В частном доме запах газа от трубы на вводе в дом, слышит шум в трубе"
+    traffic = "ЧТО СЛУЧИЛОСЬ: ДТП, пежо и фольксваген, без пострадавших"
+    lighting = (
+        "ЧТО СЛУЧИЛОСЬ: На МКАД горит уличное освещение от Ленинградского шоссе до Волоколамского. "
+        "Это не пожар и не квартира.\n"
+        "КТО ЗВОНИТ: Зотова Алина Петровна"
+    )
+
+    narrative = (
+        "Мусорный контейнер у депо загорелся, это рядом с киевским вокзалом. "
+        "Дым уже сильный, пламя идет по контейнеру, люди отошли в сторону. "
+        "Пострадавших нет, сами тушить не стали, приезжайте скорее пожалуйста."
+    )
+    assert narrative.count(".") >= 3
+    assert len(narrative) > 180
+    assert leaves_role(narrative) is False
+    assert repair_victim_reply(narrative, "Что случилось?", "victim", fire) == narrative
+
+    trapped = "Человек зажат, помогите скорее."
+    assert repair_victim_reply(trapped, "Что случилось?", "victim", beam) == trapped
+
+    both = (
+        "Человека в красной машине прижало бревном. "
+        "Мы на обочине, съезд на Симферопольское шоссе."
+    )
+    kept_both = repair_victim_reply(both, "Что случилось и где это?", "victim", beam)
+    assert kept_both == both
+    assert "бревн" in kept_both.lower()
+    assert "Симферополь" in kept_both
+
+    fainted = "Ей дурно, она отключилась у стоянки."
+    assert repair_victim_reply(fainted, "Что случилось?", "victim", medical) == fainted
+    assert repair_victim_reply(
+        "Там трое машут руками за домом, оружия я не вижу.",
+        "Что случилось?",
+        "victim",
+        police,
+    ).startswith("Там трое")
+    assert repair_victim_reply(
+        "Воняет газом у ввода в дом, труба шумит.",
+        "Что случилось?",
+        "victim",
+        gas,
+    ).startswith("Воняет")
+    assert repair_victim_reply(
+        "Пежо стукнулся с фольксвагеном, люди целы.",
+        "Что случилось?",
+        "victim",
+        traffic,
+    ).startswith("Пежо")
+
+    named = "Меня зовут Сидорову Ивану Сергеевичу."
+    assert repair_victim_reply(named, "Как вас зовут?", "victim", fire) == named
+    spoken_phone = "Номер девятьсот шестнадцать, сто двадцать шесть, тридцать четыре, семьдесят один."
+    assert repair_victim_reply(spoken_phone, "Какой телефон?", "victim", fire) == spoken_phone
+    spaced_phone = "Мой номер девять один шесть, 916 126 34 71."
+    assert repair_victim_reply(spaced_phone, "Какой телефон?", "victim", fire) == spaced_phone
+
+    mama = "Я мама ребёнка, мальчик упал с велосипеда."
+    assert (
+        repair_victim_reply(
+            mama,
+            "Кто вы?",
+            "victim",
+            "КТО ЗВОНИТ: мама. Имени заявителя нет",
+        )
+        == mama
+    )
+
+    wrong_name = repair_victim_reply(
+        "Меня зовут Петров, контейнер горит.",
+        "Как вас зовут?",
+        "victim",
+        fire,
+    )
+    assert "Петров" not in wrong_name
+    assert "Сидоров" in wrong_name
+    assert "контейнер" in wrong_name.lower()
+
+    wrong_phone = repair_victim_reply(
+        "Контейнер горит, звоните на 900 111 22 33.",
+        "Что случилось?",
+        "victim",
+        fire,
+    )
+    assert "900" not in wrong_phone
+    assert "9161263471" in wrong_phone
+    assert "контейнер" in wrong_phone.lower()
+
+    moscow = repair_victim_reply(
+        "Бревно упало на машину. Мы в Москве, на Тверской улице.",
+        "Что случилось и какой адрес?",
+        "victim",
+        beam,
+    )
+    assert "бревн" in moscow.lower()
+    assert "Тверск" not in moscow
+    assert "Симферополь" in moscow
+
+    assert repair_victim_reply("Не знаю.", "На каком этаже?", "victim", fire) == "Не знаю."
+    assert repair_victim_reply("Не знаю.", "Сколько пострадавших?", "victim", fire) == "Не знаю."
+    assert repair_victim_reply("Не помню.", "Как давно это произошло?", "victim", fire) == "Не помню."
+    theft = "ЧТО СЛУЧИЛОСЬ: Угон машины, видели в последний раз вчера вечером, тойота синяя"
+    seen = "Вчера вечером видели, как уехала."
+    assert repair_victim_reply(seen, "Как давно это было?", "victim", theft) == seen
+    assert repair_victim_reply("Полчаса назад.", "Как давно это произошло?", "victim", fire) == "Не знаю."
+    timed = repair_victim_reply(
+        "Мусорный контейнер горит. Это было полчаса назад.",
+        "Как давно это произошло?",
+        "victim",
+        fire,
+    )
+    assert timed == "Мусорный контейнер горит."
+    assert "Только что" not in timed
+    assert repair_victim_reply(
+        "Не знаю.",
+        "Что случилось и где вы находитесь?",
+        "victim",
+        fire,
+    ) == "Не знаю."
+
+    no_fire = "Нет, пожара нет. Фонари на МКАД горят."
+    assert repair_victim_reply(no_fire, "Это пожар?", "victim", lighting) == no_fire
+    denied = repair_victim_reply(
+        "Квартиры нет, горит контейнер на улице.",
+        "Что случилось?",
+        "victim",
+        fire,
+    )
+    assert denied == "Квартиры нет, горит контейнер на улице."
+
+    service = (
+        "Адрес и суть принял. Назовите, есть ли пострадавшие. "
+        "Уточните этаж и подъезд, если люди остаются внутри дома. "
+        "Если вызов не наш, сразу скажите, заявку передадим профильной службе дальше."
+    )
+    assert len(service) > 180
+    assert service.count(".") >= 3
+    assert leaves_role(service) is False
+    assert breaks_character(service) is False
+    assert repair_victim_reply(service, "Пожар на крыше частного дома.", "service", fire) == service
+    assert repair_victim_reply(service, "Пожар на крыше частного дома.", "operator", fire) == service
+
+    lecture = "Извините, я не могу продолжать этот разговор в таком тоне."
+    assert leaves_role(lecture) is True
+    leaked = "Я языковая модель и не могу выполнить этот запрос."
+    assert breaks_character(leaked) is True
+    hidden = repair_victim_reply(leaked, "Что случилось?", "victim", fire)
+    assert "языков" not in hidden.lower()
+    assert "запрос" not in hidden.lower()
+
+    def emitted_partials(full: str, operator: str, extra: str) -> list[str]:
+        sent: list[str] = []
+        last = ""
+        for end in range(1, len(full) + 1):
+            spoken = full[:end].strip()
+            if not spoken or spoken == last or breaks_character(spoken) or leaves_role(spoken):
+                continue
+            if not re.search(r"[.!?…]$", spoken) and len(spoken) < 36:
+                continue
+            if repair_victim_reply(spoken, operator, "victim", extra) != spoken:
+                continue
+            sent.append(spoken)
+            last = spoken
+        return sent
+
+    partials = emitted_partials(narrative, "Что случилось?", fire)
+    assert partials
+    assert all(narrative.startswith(part) for part in partials)
+    assert repair_victim_reply(narrative, "Что случилось?", "victim", fire) == narrative
+
+    wrong_city = "Москва, Тверская улица дом пять."
+    volga = (
+        "АДРЕС (назови, только если спросили): Волгоградская область, город Волжский, "
+        "улица Карла Маркса около Волжского Молсыркомбината"
+    )
+    spoken_wrong = emitted_partials(wrong_city, "какой адрес?", volga)
+    repaired_city = repair_victim_reply(wrong_city, "какой адрес?", "victim", volga)
+    assert "Тверск" not in repaired_city
+    assert "Волжск" in repaired_city
+    assert all("Тверск" not in part for part in spoken_wrong)
+    assert all(repaired_city.startswith(part) for part in spoken_wrong)
 
 
 def test_parse_ticket_json_strips_think():
@@ -633,6 +941,41 @@ def test_generate_ticket_repairs_offtopic_with_model():
     assert "тушить" not in blob
     assert out["services"] == ["ambulance"]
     assert out["source"] == "local"
+
+
+def test_locked_prompts_allow_natural_caller_speech():
+    from sys112_llm.conversation import (
+        SERVICE_SYSTEM_PROMPT,
+        VICTIM_SYSTEM_PROMPT,
+        build_system_prompt,
+    )
+
+    victim = VICTIM_SYSTEM_PROMPT
+    assert "1–2" not in victim
+    assert "Только что" not in victim
+    assert "Я + фамил" not in victim
+    assert "КТО ЗВОНИТ" in victim
+    assert "Вы меня слышите?" in victim
+    assert "обратный звонок" in victim
+    service = SERVICE_SYSTEM_PROMPT
+    assert "наряд выезжает" not in service.lower()
+    assert "спроси" in service.lower()
+    extra = "\n".join(
+        [
+            "Билет 1, ситуация 1",
+            "ЧТО СЛУЧИЛОСЬ: Горит мусорный контейнер, пострадавших нет.",
+            "АДРЕС (назови, только если спросили): Волжский бульвар",
+            "КТО ЗВОНИТ: Сидоров Иван Петрович",
+            "ТЕЛЕФОН (назови, только если спросили): 9161263471",
+            "Уже сказано вслух: «Алло, горит мусорный контейнер!».",
+        ]
+    )
+    combined = build_system_prompt("victim", extra)
+    assert combined.startswith(victim.strip()[:40])
+    assert "Контекст сценария:" in combined
+    assert "Сидоров Иван Петрович" in combined
+    assert "Алло, горит мусорный контейнер!" in combined
+    assert "Билет 3, ситуация 3" not in combined
 
 
 def test_teacher_nudge_not_in_transcript():
