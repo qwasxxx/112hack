@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol
 
 from sys112_stt.audio import pcm_s16le_to_float32, resample_float32
@@ -40,6 +41,11 @@ class RecognizerLike(Protocol):
     def is_endpoint(self, stream: Any) -> bool: ...
     def reset(self, stream: Any) -> None: ...
     def timestamps(self, stream: Any) -> list[float]: ...
+
+
+def model_files_present(model_dir: Path | str) -> bool:
+    path = Path(model_dir)
+    return (path / "tokens.txt").is_file() and (path / "model.onnx").is_file()
 
 
 def load_recognizer() -> tuple[RecognizerLike | None, str]:
