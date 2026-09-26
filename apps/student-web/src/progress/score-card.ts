@@ -10,6 +10,7 @@ import {
   ticketFactsFrom,
   type TicketFacts,
 } from './ticket-facts';
+import { incidentEssence } from './ticket-parse';
 import type { LessonFinding } from './types';
 
 const KIND_MARKERS: Record<TrainingScenario['services'][number], string[]> = {
@@ -38,9 +39,21 @@ export type CardPart = {
 };
 
 function serviceHit(name: string, kind: TrainingScenario['services'][number]): boolean {
-  const hay = name.toLowerCase();
-  return KIND_MARKERS[kind].some((mark) => hay.includes(mark));
+  const hay = name.toLowerCase().replace(/ё/g, 'е');
+  return KIND_MARKERS[kind].some((mark) => {
+    if (/^\d+$/.test(mark)) {
+      return new RegExp(`(^|[^0-9])${mark}([^0-9]|$)`).test(hay);
+    }
+    return hay.includes(mark);
+  });
 }
+
+const SERVICE_CODE: Record<TrainingScenario['services'][number], string> = {
+  fire: '101',
+  ambulance: '103',
+  police: '102',
+  gas: '104',
+};
 
 function tokens(value: string): string[] {
   return value
@@ -93,7 +106,7 @@ export function scoreCard50(result: Arm112PracticalResult, scenario: TrainingSce
   const fio = scoreFio(facts, card.caller.familyNameAndGivenName, findings, checks);
   const phone = scorePhone(facts.phone, cardPhones(card), findings, checks);
   const injured = scoreInjured(facts, card.injured, findings, checks);
-  const classifier = scoreClassifier(result, findings, checks);
+  const classifier = scoreClassifier(facts, result, findings, checks);
   const services = scoreServices(facts, result, findings, checks);
 
   const points = Math.max(
@@ -164,8 +177,8 @@ function scoreDescription(
     checks.push({ id: 'what', label: 'Что случилось', expected: facts.what, got: '—', state: 'empty', points: 0, max });
     return 0;
   }
-  const ratio = overlapRatio(facts.what, got);
-  const points = ratio >= 0.7 ? max : Math.max(0, Math.min(max, Math.round(max * ratio)));
+  const ratio = overlapRatio(incidentEssence(facts.what) || facts.what, got);
+  const points = ratio >= 0.66 ? max : Math.max(0, Math.min(max, Math.round(max * ratio)));
   if (points < 3) {
     note(findings, 'description-miss', 'Описание со слов заявителя', 'Текст не отражает суть билета', 'error');
   } else if (points < max) {
@@ -396,6 +409,7 @@ function scoreInjured(
 }
 
 function scoreClassifier(
+  facts: TicketFacts,
   result: Arm112PracticalResult,
   findings: LessonFinding[],
   checks: FieldCheck[],
@@ -441,6 +455,16 @@ function scoreClassifier(
   ) {
     points = 4;
     note(findings, 'classifier-partial', 'Классификатор', `Группа совпала, эталон ${expectedNo} не выбран`, 'warning');
+  } else if (facts.services.some((kind) => serviceHit(hay, kind))) {
+    points = 3;
+    const via = facts.services.filter((kind) => serviceHit(hay, kind)).map((kind) => SERVICE_CODE[kind]).join(', ');
+    note(
+      findings,
+      'classifier-partial',
+      'Классификатор',
+      `${via} — это номер службы, он засчитан в «Службы». Тип происшествия нужен отдельно: ${expectedLabel}`,
+      'warning',
+    );
   } else {
     note(findings, 'classifier-miss', 'Классификатор', `Эталон ${expectedLabel}`, 'error');
   }
@@ -472,9 +496,19 @@ function scoreServices(
 ): { points: number; missing: TrainingScenario['services'] } {
   const max = 6;
   const names = result.services.map((item) => item.name);
-  const missing = facts.services.filter((kind) => !names.some((name) => serviceHit(name, kind)));
+  const classifierHay = [
+    ...result.card.classification.selectedTypes,
+    ...result.card.classification.classifier.matchedNumbers,
+    result.classifier.priznak1 ?? '',
+  ].join(' ');
+  const hay = `${names.join(' ')} ${classifierHay}`;
+  const missing = facts.services.filter((kind) => !serviceHit(hay, kind));
+  const viaCode = facts.services.filter(
+    (kind) => serviceHit(classifierHay, kind) && !names.some((name) => serviceHit(name, kind)),
+  );
   const expected = serviceLabels(facts.services) || '—';
-  const got = names.join(', ') || '—';
+  const got =
+    [...names, ...viaCode.map((kind) => `${SERVICE_CODE[kind]} · ${serviceLabels([kind])}`)].join(', ') || '—';
   if (!facts.services.length) {
     const sentFire = names.some((name) => serviceHit(name, 'fire'));
     const points = sentFire ? 0 : max;
@@ -502,7 +536,7 @@ function scoreServices(
     label: 'Службы',
     expected,
     got,
-    state: checkState(points, max, names.join('')),
+    state: checkState(points, max, got === '—' ? '' : got),
     points,
     max,
   });

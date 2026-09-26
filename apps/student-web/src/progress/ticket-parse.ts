@@ -26,6 +26,21 @@ export function pickFragment(text: string, pattern: RegExp): string {
   return text.match(pattern)?.[1]?.trim() ?? '';
 }
 
+export function incidentEssence(text: string): string {
+  const cleaned = text
+    .replace(/\d+\s*(?:г|года|год|лет)\b\.?/gi, ' ')
+    .replace(/зарядк[а-яё]*[^.,]*/gi, ' ')
+    .replace(/\b(?:101|102|103|104|01|02|03|04)\s*не\s*треб[а-яё.]*/gi, ' ')
+    .replace(/звонит\s+сам[а-яё]*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const sentence = cleaned
+    .split(/[.!?…]/)
+    .map((part) => part.trim())
+    .find((part) => part.length >= 8);
+  return (sentence || cleaned).replace(/^[,\s]+|[,\s]+$/g, '');
+}
+
 export function situationCore(situation: string, fio: string, phone: string): string {
   if (/уличн[а-яё]*\s+освещен|горит\s+уличн/i.test(situation)) {
     return 'Горит уличное освещение на МКАД — фонари светят. Это не пожар и не квартира.';

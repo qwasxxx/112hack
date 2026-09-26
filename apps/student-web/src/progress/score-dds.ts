@@ -123,7 +123,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       severity: 'error',
     });
   } else {
-    servicePoints = 22;
+    servicePoints = 40;
     const place = input.facts.address
       .toLowerCase()
       .replace(/ё/g, 'е')
@@ -138,7 +138,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
         severity: 'warning',
       });
     } else {
-      servicePoints += 12;
+      servicePoints += 8;
     }
     if (!/наряд|бригад|выез|направ|отправ/.test(said)) {
       findings.push({
@@ -148,7 +148,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
         severity: 'warning',
       });
     } else {
-      servicePoints += 10;
+      servicePoints += 7;
     }
   }
 
@@ -161,7 +161,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       severity: 'error',
     });
   } else {
-    acceptPoints = 8;
+    acceptPoints = 5;
   }
   let closePoints = 0;
   if (status !== 'Работы завершены') {
@@ -174,7 +174,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       severity: 'error',
     });
   } else {
-    closePoints = 8;
+    closePoints = 5;
   }
   let naryadPoints = 0;
   if (!(input.naryad ?? '').trim()) {
@@ -185,7 +185,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       severity: 'error',
     });
   } else {
-    naryadPoints = 10;
+    naryadPoints = 6;
   }
   let fioPoints = 0;
   const fio = input.draft.callerName.trim();
@@ -197,7 +197,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       severity: 'error',
     });
   } else {
-    fioPoints = 8;
+    fioPoints = 6;
   }
 
   let injuredPoints = 0;
@@ -229,12 +229,12 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       });
     }
   } else {
-    phonePoints = 8;
+    phonePoints = 7;
   }
 
-  let timerPoints = 6;
+  let timerPoints = 8;
   if (elapsedSeconds > CARD_TIMER_LIMIT_SEC) {
-    timerPoints = elapsedSeconds > 60 ? 0 : 3;
+    timerPoints = elapsedSeconds > 60 ? 0 : 4;
     findings.push({
       code: 'timer-over',
       field: 'Время обработки',
@@ -255,7 +255,7 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
   const points = decisionOk ? Math.max(0, Math.min(100, raw)) : Math.min(40, Math.round(raw / 2));
   const ok =
     decisionOk &&
-    servicePoints === 44 &&
+    servicePoints === 55 &&
     check.injuredOk &&
     check.phoneOk &&
     fioPoints > 0 &&

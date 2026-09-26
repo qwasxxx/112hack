@@ -930,10 +930,10 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
     ? Math.round((foreign.filter((item) => item.decision === 'transfer' || item.workplaceStatus === 'Не принято').length / foreign.length) * 100)
     : 100;
   return [
-    { label: 'Связь со службой', value: avg(scored.map((item) => item.parts.call)), max: 44, hint: 'Нужная служба, адрес и просьба направить наряд' },
-    { label: 'Карточка', value: avg(scored.map((item) => item.parts.card)), max: 34, hint: 'Приём, ФИО, номер наряда, закрытие' },
-    { label: 'Факты', value: avg(scored.map((item) => item.parts.facts)), max: 16, hint: 'Пострадавшие и телефон' },
-    { label: 'Норматив', value: avg(scored.map((item) => item.parts.timer)), max: 6, hint: '30 секунд на карточку' },
+    { label: 'Связь со службой', value: avg(scored.map((item) => item.parts.call)), max: 55, hint: 'Нужная служба, адрес и просьба направить наряд' },
+    { label: 'Карточка', value: avg(scored.map((item) => item.parts.card)), max: 22, hint: 'Приём, ФИО, номер наряда, закрытие' },
+    { label: 'Факты', value: avg(scored.map((item) => item.parts.facts)), max: 15, hint: 'Пострадавшие и телефон' },
+    { label: 'Норматив', value: avg(scored.map((item) => item.parts.timer)), max: 8, hint: '30 секунд на карточку' },
     { label: 'Чужие карточки', value: transfer, max: 100, hint: 'Чужой профиль — «Не принято», без своей бригады' },
   ].filter((row) => row.label !== 'Чужие карточки' || foreign.length > 0);
 }
@@ -941,9 +941,24 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
 function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
   return cards.flatMap((card) => {
     const own = card.role === 'own';
+    const scored = scoreDdsCard({
+      scenario: card.scenario,
+      draft: card.draft,
+      facts: card.facts,
+      role: card.role,
+      decision: card.decision,
+      elapsedMs: card.elapsedMs,
+      naryad: card.naryad,
+      workplaceStatus: card.workplaceStatus,
+      callback: card.callback,
+      contacts: card.contacts,
+      history: card.history,
+    });
     const injuredOk = card.draft.injured === card.facts.injured;
     const phoneOk = phonesMatch(card.facts.callerPhone, card.draft.callerPhone);
     const profileOk = own ? card.decision === 'dispatch' : card.decision === 'transfer';
+    const cardReady =
+      card.workplaceStatus === 'Работы завершены' && Boolean(card.naryad) && card.draft.callerName.trim().length >= 5;
     return [
       {
         id: `${card.id}-profile`,
@@ -957,13 +972,31 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
       ...(own
         ? [
             {
+              id: `${card.id}-call`,
+              label: `${card.scenario.code} · связь`,
+              expected: 'Звонок в нужную службу: адрес и просьба направить наряд',
+              got: (card.contacts ?? []).map((item) => `${item.service}: ${item.said}`).join(' · ') || 'не звонили',
+              state: scored.parts.call >= 55 ? 'match' : scored.parts.call > 0 ? 'partial' : 'miss',
+              points: scored.parts.call,
+              max: 55,
+            } satisfies FieldCheck,
+            {
+              id: `${card.id}-flow`,
+              label: `${card.scenario.code} · карточка`,
+              expected: 'ФИО, наряд, Принята и Работы завершены',
+              got: `${card.draft.callerName || 'ФИО пусто'} · ${card.workplaceStatus ?? 'нет статуса'}${card.naryad ? ` · наряд ${card.naryad}` : ' · наряд пусто'}`,
+              state: cardReady ? 'match' : scored.parts.card > 0 ? 'partial' : 'miss',
+              points: scored.parts.card,
+              max: 22,
+            } satisfies FieldCheck,
+            {
               id: `${card.id}-inj`,
               label: `${card.scenario.code} · пострадавшие`,
               expected: card.facts.injured,
               got: card.draft.injured,
               state: injuredOk ? 'match' : 'miss',
-              points: injuredOk ? 1 : 0,
-              max: 1,
+              points: injuredOk ? 8 : 0,
+              max: 8,
             } satisfies FieldCheck,
             {
               id: `${card.id}-phone`,
@@ -971,30 +1004,8 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
               expected: card.facts.callerPhone || '—',
               got: card.draft.callerPhone || 'пусто',
               state: phoneOk ? 'match' : 'miss',
-              points: phoneOk ? 1 : 0,
-              max: 1,
-            } satisfies FieldCheck,
-            {
-              id: `${card.id}-flow`,
-              label: `${card.scenario.code} · карточка`,
-              expected: 'ФИО, наряд, Принята и Работы завершены',
-              got: `${card.draft.callerName || 'ФИО пусто'} · ${card.workplaceStatus ?? 'нет статуса'}${card.naryad ? ` · наряд ${card.naryad}` : ' · наряд пусто'}`,
-              state:
-                card.workplaceStatus === 'Работы завершены' && Boolean(card.naryad) && card.draft.callerName.trim().length >= 5
-                  ? 'match'
-                  : 'miss',
-              points:
-                card.workplaceStatus === 'Работы завершены' && card.naryad && card.draft.callerName.trim().length >= 5 ? 1 : 0,
-              max: 1,
-            } satisfies FieldCheck,
-            {
-              id: `${card.id}-call`,
-              label: `${card.scenario.code} · связь`,
-              expected: 'Звонок в нужную службу: адрес и просьба направить наряд',
-              got: (card.contacts ?? []).map((item) => `${item.service}: ${item.said}`).join(' · ') || 'не звонили',
-              state: (card.contacts ?? []).some((item) => /наряд|бригад|выез|направ|отправ/i.test(item.said)) ? 'match' : 'miss',
-              points: (card.contacts ?? []).some((item) => /наряд|бригад|выез|направ|отправ/i.test(item.said)) ? 1 : 0,
-              max: 1,
+              points: phoneOk ? 7 : 0,
+              max: 7,
             } satisfies FieldCheck,
           ]
         : []),

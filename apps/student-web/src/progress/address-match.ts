@@ -7,6 +7,7 @@ const STOP = new Set([
   'ул',
   'улица',
   'д',
+  'дер',
   'дом',
   'обл',
   'область',
@@ -15,6 +16,7 @@ const STOP = new Set([
   'пос',
   'поселок',
   'посёлок',
+  'поселка',
   'стр',
   'строение',
   'корп',
@@ -23,6 +25,34 @@ const STOP = new Set([
   'московская',
   'россия',
   'рф',
+  'при',
+  'не',
+  'за',
+  'на',
+  'по',
+  'от',
+  'до',
+  'из',
+  'во',
+  'ко',
+  'со',
+  'об',
+  'под',
+  'над',
+  'без',
+  'для',
+  'или',
+  'это',
+  'она',
+  'они',
+  'нахожусь',
+  'находится',
+  'около',
+  'адреса',
+  'адрес',
+  'уточнении',
+  'уточнение',
+  'уточнения',
 ]);
 
 export function normalizePlace(value: string): string {
@@ -37,7 +67,11 @@ export function normalizePlace(value: string): string {
 }
 
 export function placeTokens(value: string): string[] {
-  return normalizePlace(value)
+  const spoken = value
+    .replace(/при\s+уточнени[а-яё]*\s+адреса?/gi, ' ')
+    .replace(/[а-яё-]+(?:ская|ский|ское|ской)\s+(?:обл\.?|область|район)/gi, ' ')
+    .replace(/\b(?:обл\.?|область|район|р-н)\b/gi, ' ');
+  return normalizePlace(spoken)
     .split(' ')
     .filter((token) => token.length >= 2 && !STOP.has(token));
 }

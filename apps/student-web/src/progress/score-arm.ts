@@ -3,6 +3,7 @@ import type { IncidentCard } from '../features/arm112-simulator/model/arm112-mod
 import type { Arm112PracticalResult } from '../features/arm112-simulator/model/training-result';
 import { validateCard } from '../features/arm112-simulator/model/training-result';
 import { addressOverlap, cardAddressLine } from './address-match';
+import { incidentEssence, namesFromTicket, situationCore } from './ticket-parse';
 import { inspectOperatorText } from './text-quality';
 import { CARD_TIMER_LIMIT_SEC, PASS_SCORE, type LessonFinding, type LessonRecord } from './types';
 
@@ -14,12 +15,19 @@ const KIND_MARKERS: Record<TrainingScenario['services'][number], string[]> = {
 };
 
 function serviceHit(name: string, kind: TrainingScenario['services'][number]): boolean {
-  const hay = name.toLowerCase();
-  return KIND_MARKERS[kind].some((mark) => hay.includes(mark));
+  const hay = name.toLowerCase().replace(/ё/g, 'е');
+  return KIND_MARKERS[kind].some((mark) => {
+    if (/^\d+$/.test(mark)) {
+      return new RegExp(`(^|[^0-9])${mark}([^0-9]|$)`).test(hay);
+    }
+    return hay.includes(mark);
+  });
 }
 
 function descriptionCore(scenario: TrainingScenario): string {
-  return `${scenario.situation ?? scenario.summary} ${scenario.callerOpening}`;
+  const situation = scenario.situation ?? scenario.summary ?? '';
+  const people = namesFromTicket(situation);
+  return incidentEssence(situationCore(situation, people.callerFio || people.injuredName, ''));
 }
 
 export function scoreArmTraining(
@@ -61,7 +69,12 @@ export function scoreArmTraining(
   }
 
   const names = result.services.map((item) => item.name);
-  const missingKinds = scenario.services.filter((kind) => !names.some((name) => serviceHit(name, kind)));
+  const serviceHay = [
+    names.join(' '),
+    ...result.card.classification.selectedTypes,
+    ...result.card.classification.classifier.matchedNumbers,
+  ].join(' ');
+  const missingKinds = scenario.services.filter((kind) => !serviceHit(serviceHay, kind));
   let servicePoints = 20;
   if (missingKinds.length) {
     servicePoints = Math.max(0, 20 - missingKinds.length * 8);
