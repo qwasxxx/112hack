@@ -19,16 +19,13 @@ test('A: fire scenario maps to FIRE ambience profile', () => {
   assert.equal(profile.type, 'FIRE');
   assert.ok(profile.gain > 0.12 && profile.gain < 0.22);
   assert.ok(profile.layers.some((layer) => layer.kind === 'fire_crackle'));
-  assert.ok(profile.layers.some((layer) => layer.kind === 'crowd' && layer.gain < 0.4));
+  assert.ok(!profile.layers.some((layer) => layer.kind === 'crowd'));
   assert.ok(profile.layers.some((layer) => layer.kind === 'siren_distant' && layer.gain < 0.22));
   assert.ok(profile.assetUrl?.includes('fire_loop'));
-  const otherVoices = profile.layers.find((layer) => layer.id === 'voices');
-  assert.ok(otherVoices);
-  assert.equal(otherVoices?.kind, 'bystander');
-  assert.equal(otherVoices?.gain, 0.496);
+  assert.equal(profile.layers.find((layer) => layer.id === 'voices'), undefined);
 });
 
-test('ticket 1.1 fire adds real bystander voices behind the caller', () => {
+test('ticket 1.1 bin fire stays without screaming', () => {
   const source = {
     id: 'ags-01-1',
     ticketNo: 1,
@@ -38,11 +35,33 @@ test('ticket 1.1 fire adds real bystander voices behind the caller', () => {
   };
   const profile = ambienceProfileForIncident('fire', source);
   assert.equal(profile.type, 'FIRE');
-  const voices = profile.layers.find((layer) => layer.id === 'voices');
-  assert.ok(voices);
-  assert.equal(voices?.kind, 'bystander');
-  assert.ok(voices?.assetUrl?.includes('fire_voices_loop'));
-  assert.ok(voices && voices.gain === 0.62);
+  assert.equal(profile.layers.find((layer) => layer.id === 'voices'), undefined);
+});
+
+test('screaming stays only for a fire or a mass crash with victims', () => {
+  const houseFire = ambienceProfileForIncident('fire', {
+    id: 'fire-victims',
+    situation: 'Пожар в квартире, люди внутри, есть пострадавшие',
+    address: 'Москва, ул. Лесная, д. 4',
+  });
+  const houseVoices = houseFire.layers.find((layer) => layer.id === 'voices');
+  assert.equal(houseVoices?.kind, 'bystander');
+  assert.ok(houseVoices?.assetUrl?.includes('fire_voices_loop'));
+  assert.equal(houseVoices?.gain, 0.42);
+
+  const oneCar = ambienceProfileForIncident('traffic_accident', {
+    id: 'dtp-one',
+    situation: 'ДТП, один пострадавший, пежо',
+    address: 'Москва, МКАД',
+  });
+  assert.equal(oneCar.layers.find((layer) => layer.id === 'voices'), undefined);
+
+  const mass = ambienceProfileForIncident('traffic_accident', {
+    id: 'dtp-mass',
+    situation: 'Массовое ДТП, автобус и несколько машин, есть пострадавшие, люди кричат',
+    address: 'Москва, МКАД',
+  });
+  assert.equal(mass.layers.find((layer) => layer.id === 'voices')?.gain, 0.42);
 });
 
 test('B: traffic accident maps to TRAFFIC_ACCIDENT ambience profile', () => {
@@ -56,9 +75,7 @@ test('B: traffic accident maps to TRAFFIC_ACCIDENT ambience profile', () => {
   assert.ok(profile.layers.some((layer) => layer.kind === 'traffic_road'));
   assert.ok(profile.layers.some((layer) => layer.kind === 'impact' && !layer.loop));
   assert.ok(profile.gain > 0.2 && profile.gain < 0.5);
-  const trafficVoices = profile.layers.find((layer) => layer.id === 'voices');
-  assert.equal(trafficVoices?.kind, 'bystander');
-  assert.equal(trafficVoices?.gain, 0.496);
+  assert.equal(profile.layers.find((layer) => layer.id === 'voices'), undefined);
 });
 
 test('C: medical scenario does not use crash or fire ambience', () => {
@@ -72,10 +89,9 @@ test('C: medical scenario does not use crash or fire ambience', () => {
   assert.notEqual(profile.type, 'FIRE');
   assert.notEqual(profile.type, 'TRAFFIC_ACCIDENT');
   assert.notEqual(profile.type, 'POLICE_OR_FIGHT');
-  assert.ok(profile.layers.every((layer) => layer.kind === 'room' || layer.kind === 'street' || layer.kind === 'bystander'));
+  assert.ok(profile.layers.every((layer) => layer.kind === 'room' || layer.kind === 'street'));
   assert.ok(profile.gain > 0.12 && profile.gain < 0.28);
-  const medicalVoices = profile.layers.find((layer) => layer.id === 'voices');
-  assert.equal(medicalVoices?.gain, 0.496);
+  assert.equal(profile.layers.find((layer) => layer.id === 'voices'), undefined);
 });
 
 test('remaining Wave 1 incident classes map to fitting ambience', () => {
@@ -85,7 +101,7 @@ test('remaining Wave 1 incident classes map to fitting ambience', () => {
   assert.equal(ambienceTypeForIncident('other', { situation: 'Женщина собирала грибы, заблудилась' }), 'GENERIC_EMERGENCY');
   assert.equal(profileForType('QUIET').type, 'QUIET');
   assert.ok(!profileForType('QUIET').layers.some((layer) => layer.id === 'voices'));
-  assert.equal(profileForType('POLICE_OR_FIGHT').layers.find((layer) => layer.id === 'voices')?.gain, 0.496);
+  assert.equal(profileForType('POLICE_OR_FIGHT').layers.find((layer) => layer.id === 'voices'), undefined);
   assert.equal(ambienceTypeForIncident('other', { situation: 'Тонет человек в настоящее время' }), 'WATER_FLOOD');
   assert.equal(ambienceTypeForIncident('other', { situation: 'После взрыва в подъезде дым' }), 'EXPLOSION_AFTERMATH');
 });

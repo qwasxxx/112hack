@@ -140,7 +140,9 @@ function layersFor(type: AmbienceType, source: AmbienceScenarioInput): AmbienceL
     let kind = layer.kind;
     let asset = layer.asset;
     let fallbacks = layer.fallbacks;
-    if (type === 'FIRE' && layer.id === 'people' && ticket11) {
+    if (type === 'FIRE' && layer.id === 'people' && !panicVoices(type, source)) {
+      gain = 0;
+    } else if (type === 'FIRE' && layer.id === 'people' && ticket11) {
       gain = 0.12;
     } else if (type === 'FIRE' && layer.id === 'people' && !outdoor) {
       gain = 0.16;
@@ -166,18 +168,37 @@ function layersFor(type: AmbienceType, source: AmbienceScenarioInput): AmbienceL
       delaySec: layer.delaySec ?? 0,
     };
   });
-  if (type !== 'QUIET') {
+  if (panicVoices(type, source)) {
     layers.push({
       id: 'voices',
       kind: 'bystander',
       loop: true,
-      gain: ticket11 ? 0.62 : 0.496,
+      gain: 0.42,
       assetUrl: assetUrl('fireVoicesLoop'),
       fallbackUrls: [],
       delaySec: 0.9,
     });
   }
-  return layers;
+  return layers.filter((layer) => layer.gain > 0.001);
+}
+
+function panicVoices(type: AmbienceType, source: AmbienceScenarioInput): boolean {
+  const text = blobOf(source);
+  if (/пострадавших нет|без пострадавших|\bб\/п\b|пострадавших не/.test(text)) {
+    return false;
+  }
+  if (/мусорн\w*\s+контейнер|контейнер/.test(text) && !/пострадал|ранен|погиб|крич/.test(text)) {
+    return false;
+  }
+  const victims = /пострадал|ранен|погиб|крич|орут|паник|заживо|не могут выйти|люди внутри|дети внутри|много людей/.test(text);
+  const massCrash = /автобус|несколько машин|лоб в лоб|массов\w*\s+дтп|столкновение нескольких/.test(text);
+  if (type === 'FIRE' || type === 'EXPLOSION_AFTERMATH') {
+    return victims;
+  }
+  if (type === 'TRAFFIC_ACCIDENT') {
+    return victims && massCrash;
+  }
+  return false;
 }
 
 function isGarbageFireTicket(source: AmbienceScenarioInput): boolean {

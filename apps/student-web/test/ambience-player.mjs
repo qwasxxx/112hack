@@ -143,7 +143,7 @@ try {
   assert.equal(state.type, 'FIRE', 'D: fire type');
   assert.equal(state.instanceCount, 1, 'D: one ambience instance');
   assert.ok(state.sourceCount >= 1, 'D: at least one source');
-  assert.equal(state.sourceCount, 4, 'D: fire scene has fire, people, siren, and voices');
+  assert.equal(state.sourceCount, 2, 'D: fire scene without victims is crackle and a distant siren');
   assert.equal(harness.fake.sources.filter((item) => item.started && !item.stopped).length, state.sourceCount);
   assert.ok(harness.fake.sources.some((item) => item.loop), 'D: loop started');
   const fireBuffer = harness.fake.buffers.find((item) => rms(item.getChannelData(0)) > 0.03);
