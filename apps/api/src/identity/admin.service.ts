@@ -19,6 +19,9 @@ async function probe(url: string): Promise<Probe> {
     }
     const body = (await response.json().catch(() => ({}))) as { status?: string; model?: string };
     const status = typeof body.status === 'string' ? body.status : 'ok';
+    if (status === 'stopped') {
+      return { ok: false, ready: false, latencyMs, note: 'остановлен' };
+    }
     const ready = status === 'ok' || status === 'ready';
     const model = typeof body.model === 'string' ? body.model : '';
     const note = !ready

@@ -9,13 +9,14 @@ export type ControllableService = 'stt' | 'llm' | 'tts' | 'postgres' | 'api' | '
 
 const MAP: Record<
   ControllableService,
-  { names: string[]; compose: string[]; health?: string; stopHttp?: string; allowStop: boolean }
+  { names: string[]; compose: string[]; health?: string; stopHttp?: string; startHttp?: string; allowStop: boolean }
 > = {
   stt: {
     names: ['sys112-stt'],
     compose: ['stt'],
     health: process.env.STT_HEALTH_URL || 'http://127.0.0.1:8090/health',
     stopHttp: 'http://127.0.0.1:8090/control/stop',
+    startHttp: 'http://127.0.0.1:8090/control/start',
     allowStop: true,
   },
   llm: {
@@ -23,6 +24,7 @@ const MAP: Record<
     compose: ['llm'],
     health: process.env.LLM_HEALTH_URL || 'http://127.0.0.1:8091/health',
     stopHttp: 'http://127.0.0.1:8091/control/stop',
+    startHttp: 'http://127.0.0.1:8091/control/start',
     allowStop: true,
   },
   tts: {
@@ -30,6 +32,7 @@ const MAP: Record<
     compose: ['tts'],
     health: process.env.TTS_HEALTH_URL || 'http://127.0.0.1:8092/health',
     stopHttp: 'http://127.0.0.1:8092/control/stop',
+    startHttp: 'http://127.0.0.1:8092/control/start',
     allowStop: true,
   },
   postgres: {
@@ -112,8 +115,9 @@ async function engineAction(ids: string[], action: 'start' | 'stop'): Promise<bo
   let any = false;
   for (const id of ids) {
     try {
-      const { status } = await dockerRequest('POST', `/containers/${id}/${action}?t=8`);
-      if (status >= 200 && status < 300) {
+      const query = action === 'stop' ? '?t=8' : '';
+      const { status } = await dockerRequest('POST', `/containers/${id}/${action}${query}`);
+      if ((status >= 200 && status < 300) || status === 304) {
         any = true;
       }
     } catch {
@@ -165,6 +169,13 @@ export async function controlService(
     const ok = await httpStop(spec.stopHttp);
     if (ok) {
       return { ok: true, message: 'Процесс остановлен' };
+    }
+  }
+
+  if (action === 'start' && spec.startHttp) {
+    const ok = await httpStop(spec.startHttp);
+    if (ok) {
+      return { ok: true, message: 'Процесс запущен' };
     }
   }
 

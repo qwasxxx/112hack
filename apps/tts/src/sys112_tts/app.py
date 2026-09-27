@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import struct
 import time
 from contextlib import asynccontextmanager
@@ -18,6 +17,7 @@ from sys112_tts.voices import resolve_role
 
 logger = logging.getLogger("sys112_tts")
 logging.basicConfig(level=logging.INFO, format="%(message)s")
+paused = False
 
 
 @asynccontextmanager
@@ -67,12 +67,25 @@ class SynthesizeRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return engine.health()
+    payload = engine.health()
+    if paused:
+        payload = {**payload, "status": "stopped", "tts": "stopped"}
+    return payload
 
 
 @app.post("/control/stop")
 async def control_stop() -> dict[str, bool]:
-    asyncio.get_event_loop().call_later(0.2, lambda: os._exit(0))
+    global paused
+    paused = True
+    logger.info("tts paused")
+    return {"ok": True}
+
+
+@app.post("/control/start")
+async def control_start() -> dict[str, bool]:
+    global paused
+    paused = False
+    logger.info("tts resumed")
     return {"ok": True}
 
 
@@ -128,6 +141,8 @@ async def _streamed(body: SynthesizeRequest, role: str, voice_id: str | None, st
 
 @app.post("/api/v1/tts/synthesize")
 async def synthesize(body: SynthesizeRequest) -> StreamingResponse:
+    if paused:
+        raise HTTPException(status_code=503, detail="Синтез речи остановлен")
     started = time.perf_counter()
     voice_id = body.speaker or body.voice_id
     role = resolve_role(body.role, body.conversation_role, voice_id)

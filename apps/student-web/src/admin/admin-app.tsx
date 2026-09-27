@@ -410,7 +410,14 @@ export function AdminApp(props: Props) {
           if (!hit || item.id === 'sip') {
             return item;
           }
-          return { ...item, running: hit.running, lastChangeAt: status.at };
+          return {
+            ...item,
+            running: hit.running,
+            ready: hit.ready,
+            latencyMs: hit.latencyMs,
+            note: hit.note,
+            lastChangeAt: status.at,
+          };
         }),
       );
     });

@@ -4,7 +4,6 @@ import asyncio
 import inspect
 import json
 import logging
-import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any
@@ -29,6 +28,7 @@ logger = logging.getLogger("sys112_stt")
 
 recognizer = None
 stt_status = "not_ready"
+paused = False
 
 
 @asynccontextmanager
@@ -63,13 +63,13 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    ready = stt_status == "ready"
+    ready = stt_status == "ready" and not paused
     local_whisper = STT_ENGINE == "faster_whisper"
     remote = STT_ENGINE == "hf" or (STT_MODE in HF_STT_MODES and not local_whisper)
     model = STT_FW_MODEL if local_whisper else (STT_HF_MODEL if remote else "t-one")
     return {
-        "status": "ok" if ready else "degraded",
-        "stt": "ready" if ready else stt_status,
+        "status": "stopped" if paused else ("ok" if ready else "degraded"),
+        "stt": "stopped" if paused else ("ready" if ready else stt_status),
         "model": model,
         "engine": STT_ENGINE,
         "local": not remote,
@@ -80,13 +80,27 @@ def health() -> dict[str, Any]:
 
 @app.post("/control/stop")
 async def control_stop() -> dict[str, bool]:
-    asyncio.get_event_loop().call_later(0.2, lambda: os._exit(0))
+    global paused
+    paused = True
+    logger.info("stt paused")
+    return {"ok": True}
+
+
+@app.post("/control/start")
+async def control_start() -> dict[str, bool]:
+    global paused
+    paused = False
+    logger.info("stt resumed status=%s", stt_status)
     return {"ok": True}
 
 
 @app.websocket("/ws/stt")
 async def stt_socket(ws: WebSocket) -> None:
     await ws.accept()
+    if paused:
+        await ws.send_json({"type": "error", "message": "Распознавание остановлено.", "code": "stopped"})
+        await ws.close()
+        return
     session = create_session(recognizer, stt_status)
     if getattr(session, "remote", False):
         await _remote_stt(ws, session)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 import uuid
 from contextlib import asynccontextmanager
@@ -53,6 +52,7 @@ manager = ConversationManager()
 client = LlamaClient()
 boot_task: asyncio.Task[None] | None = None
 llm_status = "not_ready"
+paused = False
 
 
 @asynccontextmanager
@@ -104,7 +104,7 @@ app.add_middleware(
 
 
 def health_payload() -> dict[str, Any]:
-    status = "ready" if llm_status in {"ready", "mock"} else llm_status
+    status = "stopped" if paused else ("ready" if llm_status in {"ready", "mock"} else llm_status)
     return {
         "status": status,
         "provider": LLM_PROVIDER,
@@ -124,7 +124,18 @@ def health() -> dict[str, Any]:
 @app.post("/control/stop")
 @app.post("/api/llm/control/stop")
 async def control_stop() -> dict[str, bool]:
-    asyncio.get_event_loop().call_later(0.2, lambda: os._exit(0))
+    global paused
+    paused = True
+    logger.info("llm paused")
+    return {"ok": True}
+
+
+@app.post("/control/start")
+@app.post("/api/llm/control/start")
+async def control_start() -> dict[str, bool]:
+    global paused
+    paused = False
+    logger.info("llm resumed status=%s", llm_status)
     return {"ok": True}
 
 
@@ -226,6 +237,11 @@ async def llm_socket(ws: WebSocket) -> None:
         while True:
             payload = await ws.receive_json()
             kind = payload.get("type")
+            if paused:
+                await ws.send_json(
+                    {"type": "error", "message": "Диалоговый модуль остановлен.", "code": "stopped"}
+                )
+                continue
             if kind == "start":
                 call_id = str(payload.get("call_id") or uuid.uuid4())
                 role = payload.get("conversation_role") or "victim"

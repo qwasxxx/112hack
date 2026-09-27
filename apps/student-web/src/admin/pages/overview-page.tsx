@@ -40,15 +40,15 @@ export function OverviewPage(props: Props) {
   const blocked = props.users.filter((user) => user.status === 'blocked').length;
   const students = props.users.filter((user) => user.role === 'STUDENT');
   const teachers = props.users.filter((user) => user.role === 'TEACHER');
-  const required = props.services.filter((item) => item.id !== 'sip');
-  const running = required.filter((item) => item.running).length;
+  const monitored = props.services.filter((item) => item.id !== 'sip');
+  const running = props.services.filter((item) => item.running).length;
   const dbService = props.services.find((item) => item.id === 'postgres');
   const avg =
     props.progress.length === 0
       ? 0
       : Math.round(props.progress.reduce((sum, item) => sum + item.lastScore, 0) / props.progress.length);
   const contourOk =
-    running === required.length && props.apiStatus !== 'bad' && props.realtimeStatus !== 'bad';
+    monitored.every((item) => item.running) && props.apiStatus !== 'bad' && props.realtimeStatus !== 'bad';
   const recentUsers = [...props.users]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 5);
@@ -71,7 +71,7 @@ export function OverviewPage(props: Props) {
           <div>
             <strong>{contourOk ? 'Контур в штатном режиме' : 'Требует внимания'}</strong>
             <small>
-              {running}/{required.length} сервисов · API {liveLabel(props.apiStatus)}
+              {running}/{props.services.length} сервисов · API {liveLabel(props.apiStatus)}
             </small>
           </div>
         </div>
