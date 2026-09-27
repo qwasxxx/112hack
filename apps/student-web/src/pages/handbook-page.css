@@ -1,43 +1,50 @@
 .handbook-board {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   min-height: 0;
-  padding: 4px 2px 24px;
+  padding: 4px 2px 28px;
 }
 
-.handbook-grid {
+.handbook-sheet {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 28px 48px;
+  max-width: 920px;
 }
 
-.handbook-grid article {
-  padding: 16px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.82);
+.handbook-track h3 {
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(18, 38, 63, 0.16);
+  font-size: 18px;
+  font-weight: 650;
 }
 
-.handbook-grid h3 {
-  margin: 0 0 10px;
-  font-size: 15px;
+.handbook-track h4 {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(18, 38, 63, 0.55);
 }
 
-.handbook-grid ol {
+.handbook-track ol {
   margin: 0;
   padding-left: 18px;
   color: var(--catalog-navy);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.45;
 }
 
-.handbook-grid li + li {
+.handbook-track li + li {
   margin-top: 6px;
 }
 
-@media (max-width: 900px) {
-  .handbook-grid {
+@media (max-width: 800px) {
+  .handbook-sheet {
     grid-template-columns: 1fr;
+    gap: 28px;
   }
 }
