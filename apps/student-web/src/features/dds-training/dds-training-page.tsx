@@ -6,7 +6,18 @@ import { phonesMatch } from '../../progress/ticket-facts';
 import { CallPage } from '../../pages/call-page';
 import type { DdsFinish } from '../../pages/debrief-page';
 import { unlockTtsAudio } from '../../lib/tts-player';
-import { buildDdsCallbackPrompt, buildDdsServicePrompt, ddsCallbackOpening, ddsServiceOpening } from './callback-prompt';
+import {
+  buildDdsCallbackPrompt,
+  buildDdsChiefPrompt,
+  buildDdsCrewPrompt,
+  buildDdsReport112Prompt,
+  buildDdsServicePrompt,
+  ddsCallbackOpening,
+  ddsChiefOpening,
+  ddsCrewOpening,
+  ddsReport112Opening,
+  ddsServiceOpening,
+} from './callback-prompt';
 import { DdsCard } from './dds-card';
 import { DdsJournal } from './dds-journal';
 import { useDdsSession, type DdsCheckResult } from './use-dds-session';
@@ -46,8 +57,9 @@ export function DdsTrainingPage(props: Props) {
     scope: string;
     prompt?: string;
     opening?: string;
-    aiRole?: 'service';
+    aiRole?: 'service' | 'chief' | 'crew' | 'desk';
     service?: string;
+    counterparty?: string;
   } | null>(
     null,
   );
@@ -145,6 +157,12 @@ export function DdsTrainingPage(props: Props) {
         callback: item.callbackDone,
         contacts: item.contacts,
         history: item.history,
+        openMs: item.openMs,
+        firstRecordMs: item.firstRecordMs,
+        chiefCalled: item.chiefCalled,
+        crewCalled: item.crewCalled,
+        reportedTo112: item.reportedTo112,
+        dialogue: item.dialogue,
       })),
       clips: callAudio.current,
     };
@@ -221,6 +239,53 @@ export function DdsTrainingPage(props: Props) {
             onCancelStatus={session.cancelStatusEdit}
             onPatchStatus={session.patchStatusForm}
             onApplyStatus={session.applyStatus}
+            formError={session.formError}
+            routeHint={session.routeHint}
+            onCallChief={() => {
+              if (!active) {
+                return;
+              }
+              unlockTtsAudio();
+              setCallTarget({
+                title: 'Начальник',
+                scope: `call-${Date.now()}`,
+                service: 'Начальник',
+                counterparty: 'Начальник',
+                aiRole: 'chief',
+                prompt: buildDdsChiefPrompt(active.facts),
+                opening: ddsChiefOpening(),
+              });
+            }}
+            onCallCrew={() => {
+              if (!active) {
+                return;
+              }
+              unlockTtsAudio();
+              setCallTarget({
+                title: 'Бригада',
+                scope: `call-${Date.now()}`,
+                service: 'Бригада',
+                counterparty: 'Бригада',
+                aiRole: 'crew',
+                prompt: buildDdsCrewPrompt(active.facts, active.defects),
+                opening: ddsCrewOpening(),
+              });
+            }}
+            onReport112={() => {
+              if (!active) {
+                return;
+              }
+              unlockTtsAudio();
+              setCallTarget({
+                title: 'Сообщение в 112',
+                scope: `call-${Date.now()}`,
+                service: '112',
+                counterparty: 'Оператор 112',
+                aiRole: 'desk',
+                prompt: buildDdsReport112Prompt(active.facts, active.draft),
+                opening: ddsReport112Opening(),
+              });
+            }}
             onCallback={() => {
               if (!active) {
                 return;
@@ -229,6 +294,7 @@ export function DdsTrainingPage(props: Props) {
               setCallTarget({
                 title: 'Звонок заявителю',
                 scope: `call-${Date.now()}`,
+                counterparty: 'Заявитель',
                 prompt: buildDdsCallbackPrompt(active.scenario, active.facts),
                 opening: ddsCallbackOpening(),
               });
@@ -242,6 +308,7 @@ export function DdsTrainingPage(props: Props) {
                 title: `Связь · ${label}`,
                 scope: `call-${Date.now()}`,
                 service: label,
+                counterparty: label,
                 aiRole: 'service',
                 prompt: buildDdsServicePrompt(label, phone, active.number, active.facts),
                 opening: ddsServiceOpening(label),
@@ -260,9 +327,10 @@ export function DdsTrainingPage(props: Props) {
               operatorLogin={props.operatorLogin}
               systemPrompt={callTarget.prompt ?? buildDdsCallbackPrompt(active.scenario, active.facts)}
               opening={callTarget.opening ?? ddsCallbackOpening()}
-              hint="IP-телефон. Говорите как диспетчер ДДС."
+              hint="Говорите как диспетчер ДДС."
               panelTitle={callTarget.title}
               aiRole={callTarget.aiRole}
+              counterparty={callTarget.counterparty}
               transcriptScope={callTarget.scope}
               onLeave={() => {
                 if (callTarget.title === 'Звонок заявителю') {
@@ -280,12 +348,29 @@ export function DdsTrainingPage(props: Props) {
                 if (callTarget.title === 'Звонок заявителю') {
                   session.markCallback();
                 }
+                const other = callTarget.counterparty || 'Собеседник';
+                session.appendDialogue(
+                  payload.lines
+                    .filter((line) => line.text.trim())
+                    .map((line) => ({
+                      role: line.role === 'operator' ? 'operator' : 'caller',
+                      speaker: line.role === 'operator' ? 'Диспетчер' : other,
+                      text: line.text.trim(),
+                    })),
+                );
                 if (callTarget.service) {
                   const said = payload.lines
                     .filter((line) => line.role === 'operator')
                     .map((line) => line.text)
                     .join(' ');
                   session.recordContact(callTarget.service, said || 'разговор не распознан');
+                  if (callTarget.service === 'Начальник') {
+                    session.markRoute('chief');
+                  } else if (callTarget.service === 'Бригада') {
+                    session.markRoute('crew');
+                  } else if (callTarget.service === '112') {
+                    session.markRoute('112');
+                  }
                 }
                 setCallTarget(null);
               }}

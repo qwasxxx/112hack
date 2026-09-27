@@ -13,6 +13,7 @@ import { buildIncoming, cardFromDraft, incidentFromViewModel } from './adapter';
 import { journalIncidentLine } from './display';
 import { scoreDds, type DdsDraft, type TicketFacts } from './incoming-card';
 import {
+  ddsStatusNeedsText,
   isDdsTerminal,
   nextDdsStatuses,
   type DdsCardDecision,
@@ -54,14 +55,21 @@ export type DdsQueueCard = {
   number: string;
   createdAt: string;
   state: DdsQueueItemState;
+  queuedAt: string;
   openedAt: string | null;
+  openMs: number | null;
+  firstRecordMs: number | null;
   decision: DdsCardDecision | null;
   elapsedMs: number;
+  chiefCalled: boolean;
+  crewCalled: boolean;
+  reportedTo112: boolean;
   workplaceStatus: DdsServiceStatus;
   naryad: string;
   history: DdsStatusEvent[];
   callbackDone: boolean;
   contacts: { service: string; said: string }[];
+  dialogue: { speaker: string; role: 'operator' | 'caller'; text: string }[];
   editingStatus: boolean;
   statusForm: DdsStatusForm;
   chs: boolean;
@@ -132,9 +140,15 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
         number: incoming.card.number,
         createdAt: created,
         state: 'queued' as DdsQueueItemState,
+        queuedAt: startedAt,
         openedAt: null,
+        openMs: null,
+        firstRecordMs: null,
         decision: null,
         elapsedMs: 0,
+        chiefCalled: false,
+        crewCalled: false,
+        reportedTo112: false,
         workplaceStatus: 'Добавлена' as DdsServiceStatus,
         naryad: '',
         history: [
@@ -148,6 +162,7 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
         ],
         callbackDone: false,
         contacts: [],
+        dialogue: [],
         editingStatus: false,
         statusForm: emptyForm('Добавлена', ''),
         chs: false,
@@ -156,6 +171,8 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     });
   }, [lane, scenario]);
   const [cards, setCards] = useState<DdsQueueCard[]>(initial);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [routeHint, setRouteHint] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [actions, setActions] = useState<DdsLoggedAction[]>([]);
   const [result, setResult] = useState<DdsCheckResult | null>(null);
@@ -183,7 +200,15 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     if (!activeId) {
       return;
     }
-    patchQueue(activeId, (item) => ({ ...item, draft: { ...item.draft, ...next } }));
+    const own: Partial<DdsDraft> = {};
+    if (next.services) {
+      own.services = next.services;
+    }
+    if (!Object.keys(own).length) {
+      setRouteHint('Поля карточки 112 не правятся. Ошибку называет бригада, затем звонок в 112.');
+      return;
+    }
+    patchQueue(activeId, (item) => ({ ...item, draft: { ...item.draft, ...own } }));
   }
 
   function toggleService(kind: ServiceKind) {
@@ -209,6 +234,7 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
       patchQueue(target.id, (item) => ({
         ...item,
         openedAt: nowIso(),
+        openMs: Math.max(0, Date.now() - Date.parse(item.queuedAt)),
         state: 'selected',
         workplaceStatus: item.workplaceStatus === 'Добавлена' ? 'Получена службой' : item.workplaceStatus,
         history:
@@ -240,6 +266,16 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     }
     const current = cards.find((item) => item.id === activeId);
     if (current && isDdsTerminal(current.workplaceStatus) && !current.decision) {
+      if (current.role === 'own' && current.workplaceStatus === 'Работы завершены') {
+        if (!current.chiefCalled || !current.crewCalled) {
+          setRouteHint('Перед завершением позвоните начальнику и руководителю бригады.');
+          return;
+        }
+        if (current.defects.length > 0 && !current.reportedTo112) {
+          setRouteHint('В карточке ошибка. Её называет бригада, затем сообщите об этом в 112. Поля сами не правятся.');
+          return;
+        }
+      }
       finishCard(
         current.workplaceStatus === 'Не принято' ||
           (current.role === 'foreign' && current.workplaceStatus !== 'Работы завершены')
@@ -294,6 +330,7 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
       return;
     }
     let applied = '';
+    let missingText = false;
     patchQueue(activeId, (item) => {
       const allowed = nextDdsStatuses(item.workplaceStatus);
       const next = allowed.includes(item.statusForm.status) ? item.statusForm.status : allowed[0];
@@ -302,11 +339,18 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
       }
       const naryad = item.statusForm.naryad.trim();
       const comment = item.statusForm.comment.trim();
+      if (ddsStatusNeedsText(item.workplaceStatus, next) && comment.length < 4) {
+        missingText = true;
+        return item;
+      }
       applied = `${next}${naryad ? ` · наряд ${naryad}` : ''}${comment ? ` · ${comment}` : ''}`;
       return {
         ...item,
         workplaceStatus: next,
         naryad: naryad || item.naryad,
+        firstRecordMs:
+          item.firstRecordMs ??
+          (comment ? Math.max(0, Date.now() - Date.parse(item.queuedAt)) : null),
         editingStatus: false,
         state: 'selected',
         history: [
@@ -321,6 +365,11 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
         ],
       };
     });
+    setFormError(
+      missingText
+        ? 'Первая запись и отказ — это статус и текст. Напишите, что сделано или почему карточку не взяли.'
+        : null,
+    );
     if (applied) {
       log('confirm_status', applied);
     }
@@ -347,6 +396,29 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
       contacts: [...item.contacts, { service, said: text }],
     }));
     log('service_call', `${service}: ${text.slice(0, 180)}`);
+  }
+
+  function appendDialogue(lines: { speaker: string; role: 'operator' | 'caller'; text: string }[]) {
+    if (!activeId || !lines.length) {
+      return;
+    }
+    patchQueue(activeId, (item) => ({
+      ...item,
+      dialogue: [...item.dialogue, ...lines],
+    }));
+  }
+
+  function markRoute(kind: 'chief' | 'crew' | '112') {
+    if (!activeId) {
+      return;
+    }
+    patchQueue(activeId, (item) => ({
+      ...item,
+      chiefCalled: kind === 'chief' ? true : item.chiefCalled,
+      crewCalled: kind === 'crew' ? true : item.crewCalled,
+      reportedTo112: kind === '112' ? true : item.reportedTo112,
+    }));
+    log('service_call', kind === '112' ? 'сообщение в 112' : kind === 'crew' ? 'бригада' : 'начальник');
   }
 
   function markCallback() {
@@ -477,6 +549,9 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     statusForm: active?.statusForm ?? emptyForm('Добавлена', ''),
     statusOptions: nextDdsStatuses(active?.workplaceStatus ?? 'Добавлена'),
     callbackDone: active?.callbackDone ?? false,
+    formError,
+    routeHint,
+    markRoute,
     chs: active?.chs ?? false,
     chp: active?.chp ?? false,
     canComplete: canComplete(active),
@@ -492,6 +567,7 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     applyStatus,
     markCallback,
     recordContact,
+    appendDialogue,
     toggleMark,
     dispatchCard: () => finishCard('dispatch'),
     transferCard: () => finishCard('transfer'),

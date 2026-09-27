@@ -35,18 +35,25 @@ export function nextDdsStatuses(current: DdsServiceStatus): DdsServiceStatus[] {
     return [...DDS_FIRST_RESPONSE_STATUSES];
   }
   if (current === 'Принята') {
-    return ['Начало реагирования', 'Отказ от выполнения работ', 'Работы завершены'];
+    return ['Начало реагирования', 'Отказ от выполнения работ'];
   }
   if (current === 'Начало реагирования') {
-    return ['Прибытие', 'Проведение работ', 'Работы завершены', 'Отказ от выполнения работ'];
+    return ['Прибытие', 'Отказ от выполнения работ'];
   }
   if (current === 'Прибытие') {
-    return ['Проведение работ', 'Работы завершены'];
+    return ['Проведение работ'];
   }
   if (current === 'Проведение работ') {
     return ['Работы завершены'];
   }
   return [];
+}
+
+export function ddsStatusNeedsText(current: DdsServiceStatus, next: DdsServiceStatus): boolean {
+  if (next === 'Не принято' || next === 'Отказ от выполнения работ') {
+    return true;
+  }
+  return current === 'Добавлена' || current === 'Получена службой';
 }
 
 export function isDdsTerminal(status: DdsServiceStatus): boolean {

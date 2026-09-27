@@ -34,6 +34,11 @@ type Props = {
   onApplyStatus: () => void;
   onCallback: () => void;
   onContactService: (label: string, phone: string) => void;
+  onCallChief: () => void;
+  onCallCrew: () => void;
+  onReport112: () => void;
+  formError?: string | null;
+  routeHint?: string | null;
   onClose: () => void;
 };
 
@@ -67,21 +72,11 @@ export function DdsCard(props: Props) {
     window.setTimeout(() => setNotice(null), 3200);
   }
 
-  const locked = mode === 'view';
-
   function openOwn() {
     setHistoryOf('own');
     if (props.canEditStatus) {
       props.onStartStatus();
     }
-  }
-
-  function guardEdit(next: Partial<DdsDraft>) {
-    if (locked) {
-      flash('Сейчас «просмотр». Чтобы править карточку, нажмите «дополнение».');
-      return;
-    }
-    props.onPatch(next);
   }
 
   return (
@@ -101,12 +96,7 @@ export function DdsCard(props: Props) {
         <label className="dds-phone-cell">
           <span className="dds-phone-top">☎ АОН</span>
           <span className="dds-aon-row">
-            <input
-              value={props.draft.callerPhone}
-              readOnly={locked}
-              onChange={(event) => guardEdit({ callerPhone: event.target.value })}
-              aria-label="АОН"
-            />
+            <input value={props.draft.callerPhone} readOnly aria-label="АОН" />
             <button type="button" onClick={props.onCallback} title="Перезвонить по АОН">
               ☎
             </button>
@@ -115,12 +105,7 @@ export function DdsCard(props: Props) {
         <label className="dds-phone-cell">
           <span className="dds-phone-top">☎ предоставленный</span>
           <span className="dds-aon-row">
-            <input
-              value={props.draft.callerPhone}
-              readOnly={locked}
-              onChange={(event) => guardEdit({ callerPhone: event.target.value })}
-              aria-label="предоставленный"
-            />
+            <input value={props.draft.callerPhone} readOnly aria-label="предоставленный" />
             <button type="button" onClick={props.onCallback} title="Перезвонить заявителю">
               ☎
             </button>
@@ -128,12 +113,7 @@ export function DdsCard(props: Props) {
         </label>
         <label className="dds-phone-cell">
           <span className="dds-phone-top">☎ телефон на место</span>
-          <input
-            value={props.draft.callerPhone}
-            readOnly={locked}
-            onChange={(event) => guardEdit({ callerPhone: event.target.value })}
-            aria-label="телефон на место"
-          />
+          <input value={props.draft.callerPhone} readOnly aria-label="телефон на место" />
         </label>
         <div className="dds-id-block">
           <strong>Происшествие {props.card.number}</strong>
@@ -164,24 +144,15 @@ export function DdsCard(props: Props) {
       <div className="dds-idrow">
         <div className="dds-fio">
           <span>ФИО заявителя</span>
-          <input
-            value={props.draft.callerName}
-            readOnly={locked}
-            onChange={(event) => guardEdit({ callerName: event.target.value })}
-            aria-label="ФИО заявителя"
-          />
+          <input value={props.draft.callerName} readOnly aria-label="ФИО заявителя" />
         </div>
         <div className="dds-flags">
           <button
             type="button"
             className="dds-flag-text"
-            onClick={() => {
-              if (locked) {
-                flash('Сейчас «просмотр». Пострадавших правят в «дополнении».');
-                return;
-              }
-              setModal('injured');
-            }}
+            onClick={() =>
+              flash('Пострадавших в карточке 112 не правят. Если ошибка — звонок бригаде, затем сообщение в 112.')
+            }
           >
             Пострадавшие {injuredYes ? 'есть' : 'нет'}
           </button>
@@ -346,6 +317,7 @@ export function DdsCard(props: Props) {
               aria-label="Комментарий"
             />
           </label>
+          {props.formError ? <p className="dds-notice">{props.formError}</p> : null}
           <button type="submit" className="dds-ok" aria-label="Подтвердить статус">
             ✓
           </button>
@@ -407,7 +379,18 @@ export function DdsCard(props: Props) {
           ×
         </button>
       </footer>
-      {notice ? <p className="dds-notice">{notice}</p> : null}
+      <div className="dds-routes">
+        <button type="button" onClick={props.onCallChief}>
+          Начальник
+        </button>
+        <button type="button" onClick={props.onCallCrew}>
+          Бригада
+        </button>
+        <button type="button" onClick={props.onReport112}>
+          Сообщить в 112
+        </button>
+      </div>
+      {notice || props.routeHint ? <p className="dds-notice">{notice || props.routeHint}</p> : null}
 
       {modal === 'services' ? (
         <div className="dds-modal-backdrop">

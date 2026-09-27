@@ -93,10 +93,96 @@ test('skipping the service call costs most of the DDS score', () => {
   const silent = scoreDdsCard(base);
   assert.equal(silent.parts.call, 0);
   assert.ok(silent.points < 70);
-  const called = scoreDdsCard({
+  const calledInput = {
     ...base,
     contacts: [{ service: 'Служба 102', said: 'направьте наряд в лес за Барыкино' }],
-  });
+  };
+  const called = scoreDdsCard(calledInput);
   assert.equal(called.parts.call, 55);
   assert.ok(called.points - silent.points >= 40);
+  const routed = scoreDdsCard({ ...calledInput, chiefCalled: true, crewCalled: true });
+  assert.equal(routed.parts.call, 55);
+  const noRoute = scoreDdsCard({ ...calledInput, chiefCalled: false, crewCalled: false });
+  assert.equal(noRoute.parts.call, 40);
+  assert.ok(noRoute.findings.some((item) => item.code === 'dds-chief'));
+  assert.ok(noRoute.findings.some((item) => item.code === 'dds-crew'));
+});
+
+test('DDS time limits are open and first record, not the whole card', () => {
+  const facts = {
+    callerName: 'Тимофеева Маргарита',
+    callerPhone: '9168963254',
+    address: 'Барыкино',
+    description: 'заблудилась',
+    injured: 'Нет',
+    services: ['police' as const],
+  };
+  const base = {
+    scenario: { id: 'b72', code: 'Б7.2' } as TrainingScenario,
+    draft: { ...facts },
+    facts,
+    role: 'own' as const,
+    decision: 'dispatch' as const,
+    elapsedMs: 4 * 60 * 60 * 1000,
+    naryad: '12',
+    workplaceStatus: 'Работы завершены',
+    contacts: [{ service: 'Служба 102', said: 'направьте наряд в лес за Барыкино' }],
+    openMs: 12_000,
+    firstRecordMs: 40_000,
+  };
+  const within = scoreDdsCard(base);
+  assert.equal(within.parts.timer, 8);
+  const lateOpen = scoreDdsCard({ ...base, openMs: 45_000 });
+  assert.equal(lateOpen.parts.timer, 4);
+  const lateRecord = scoreDdsCard({ ...base, firstRecordMs: 200_000 });
+  assert.equal(lateRecord.parts.timer, 4);
+});
+
+test('a wrong 112 field is settled by the crew and a call to 112, not by editing it', () => {
+  const facts = {
+    callerName: 'Тимофеева Маргарита',
+    callerPhone: '9168963254',
+    address: 'Барыкино',
+    description: 'заблудилась',
+    injured: 'Есть',
+    services: ['police' as const],
+  };
+  const draft = { ...facts, injured: 'Нет' };
+  const base = {
+    scenario: { id: 'b72', code: 'Б7.2' } as TrainingScenario,
+    draft,
+    facts,
+    role: 'own' as const,
+    decision: 'dispatch' as const,
+    elapsedMs: 20_000,
+    naryad: '12',
+    workplaceStatus: 'Работы завершены',
+  };
+  assert.equal(scoreDdsCard(base).parts.facts, 7);
+  const told = scoreDdsCard({ ...base, crewCalled: true, reportedTo112: true });
+  assert.equal(told.parts.facts, 15);
+});
+
+test('closing DDS without the status cycle does not count as finished', () => {
+  const facts = {
+    callerName: 'Тимофеева Маргарита',
+    callerPhone: '9168963254',
+    address: 'Барыкино',
+    description: 'заблудилась',
+    injured: 'Нет',
+    services: ['police' as const],
+  };
+  const skipped = scoreDdsCard({
+    scenario: { id: 'b72', code: 'Б7.2' } as TrainingScenario,
+    draft: { ...facts },
+    facts,
+    role: 'own' as const,
+    decision: 'dispatch' as const,
+    elapsedMs: 20_000,
+    naryad: '12',
+    workplaceStatus: 'Работы завершены',
+    history: [{ status: 'Принята', comment: 'взяли' }, { status: 'Работы завершены', comment: '' }],
+  });
+  assert.ok(skipped.findings.some((item) => item.code === 'dds-close'));
+  assert.equal(skipped.parts.card < 22, true);
 });

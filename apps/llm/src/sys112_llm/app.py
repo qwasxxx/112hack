@@ -147,7 +147,7 @@ async def warmup_prompt(payload: dict[str, Any]) -> dict[str, str]:
     if llm_status != "ready":
         return {"status": llm_status}
     role = payload.get("conversation_role") or "victim"
-    if role not in {"victim", "operator", "service"}:
+    if role not in {"victim", "operator", "service", "chief", "crew", "desk"}:
         role = "victim"
     extra = payload.get("system_prompt")
     opening = payload.get("opening")
@@ -245,7 +245,7 @@ async def llm_socket(ws: WebSocket) -> None:
             if kind == "start":
                 call_id = str(payload.get("call_id") or uuid.uuid4())
                 role = payload.get("conversation_role") or "victim"
-                if role not in {"victim", "operator", "service"}:
+                if role not in {"victim", "operator", "service", "chief", "crew", "desk"}:
                     role = "victim"
                 if llm_status == "loading":
                     await ws.send_json(
@@ -347,7 +347,7 @@ async def llm_socket(ws: WebSocket) -> None:
                         "detail": detail,
                     }
                 )
-                if current.conversation_role in {"victim", "service"} and should_speak_intervention(command):
+                if current.conversation_role in {"victim", "service", "chief", "crew", "desk"} and should_speak_intervention(command):
                     nudge_id = f"nudge-{uuid.uuid4()}"
                     if current.busy:
                         current.pending = [(nudge_id, TEACHER_NUDGE_TEXT)]
@@ -429,6 +429,18 @@ async def _warmup(call_id: str) -> None:
         logger.exception("[LLM] Prompt warmup failed")
 
 
+def _with_extra_instruction(messages: list[dict[str, str]], extra: str) -> list[dict[str, str]]:
+    note = " ".join(extra.split()).strip()
+    copied = [dict(item) for item in messages]
+    if not note:
+        return copied
+    if copied and copied[0].get("role") == "system":
+        copied[0]["content"] = f"{copied[0].get('content') or ''}\n\n{note}"
+        return copied
+    copied.append({"role": "user", "content": note})
+    return copied
+
+
 async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
     while True:
         session = manager.get(call_id)
@@ -444,20 +456,16 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
         try:
             messages = generation_messages(session)
             if session.presence and messages:
-                cue = presence_cue(session.presence_intent, session.conversation_role)
-                messages.append({"role": "system", "content": cue})
+                messages = _with_extra_instruction(
+                    messages,
+                    presence_cue(session.presence_intent, session.conversation_role),
+                )
             full = await _generate(messages, ws, session=session, gen_id=gen_id)
             if session.conversation_role == "victim" and full and leaves_role(full) and not session.presence:
-                nudged = generation_messages(session)
-                nudged.insert(
-                    1,
-                    {
-                        "role": "system",
-                        "content": (
-                            "Предыдущая попытка была не голосом заявителя. "
-                            "Скажи одну короткую фразу человека, который сам звонит за помощью."
-                        ),
-                    },
+                nudged = _with_extra_instruction(
+                    generation_messages(session),
+                    "Предыдущая попытка была не голосом заявителя. "
+                    "Скажи одну короткую фразу человека, который сам звонит за помощью.",
                 )
                 full = await _generate(nudged, ws, session=session, gen_id=gen_id)
         except WebSocketDisconnect:
@@ -502,6 +510,12 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
         if full:
             if session.conversation_role == "service" and breaks_character(full):
                 full = "Повторите адрес и суть."
+            elif session.conversation_role == "chief" and breaks_character(full):
+                full = "Доклад принял."
+            elif session.conversation_role == "crew" and breaks_character(full):
+                full = "Бригада на месте. Докладываю по карточке."
+            elif session.conversation_role == "desk" and breaks_character(full):
+                full = "Карточка у нас. Сообщение об ошибке принял, поправим."
             elif breaks_character(full) and session.conversation_role != "victim":
                 full = "Назовите адрес, где это происходит."
             elif session.conversation_role == "victim" and not session.presence:

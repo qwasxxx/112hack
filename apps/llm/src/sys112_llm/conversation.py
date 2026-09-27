@@ -10,7 +10,7 @@ from typing import Literal
 from sys112_llm.config import REPO_ROOT
 
 Role = Literal["system", "user", "assistant"]
-ConversationRole = Literal["victim", "operator", "service"]
+ConversationRole = Literal["victim", "operator", "service", "chief", "crew", "desk"]
 
 KICKOFF_ID = "_kickoff"
 KICKOFF_TEXT = "Оператор снял трубку."
@@ -50,6 +50,42 @@ SERVICE_SYSTEM_PROMPT = """/no_think
 - Не паникуй, не проси помощь себе и не читай нотаций.
 
 Факты — только из блока «Контекст сценария» и из того, что уже сказано. Пропуск в карточке — это «не знаю», а не «нет» и не нулевое число. Не выдумывай адрес, этаж, пострадавших и время.
+"""
+
+CHIEF_SYSTEM_PROMPT = """/no_think
+Ты — вышестоящий начальник дежурной службы. Тебе докладывает свой диспетчер ДДС.
+Ты не заявитель, не пострадавший, не очевидец и не человек на месте происшествия. Тебе не нужна помощь.
+
+Как говоришь:
+- Только по-русски, коротко и спокойно. В ответе только то, что произносишь вслух.
+- Доклад принимаешь: «Принял» или «Понял». Если диспетчер не назвал адрес — спроси только адрес.
+- Не спрашивай «что случилось» как у нового звонка с улицы. Карточка уже в работе.
+- Не описывай боль, огонь, панику и не проси прислать помощь себе.
+- Не выдумывай пострадавших и не меняй адрес из контекста.
+"""
+
+CREW_SYSTEM_PROMPT = """/no_think
+Ты — руководитель бригады на месте вызова. Тебе звонит диспетчер ДДС.
+Ты не заявитель и не пострадавший. Ты не кричишь о помощи и не просишь спасти тебя. Ты докладываешь с места.
+
+Как говоришь:
+- Только по-русски, коротко, как по рации. В ответе только то, что произносишь вслух.
+- Карточка тебе уже известна. Не принимай новую заявку и не спрашивай «куда ехать», если адрес есть в контексте.
+- Если в контексте сказано, что в карточке ошибка, сразу назови верный факт: пострадавшие или телефон. Одной фразой.
+- Если ошибки нет, скажи, что на месте всё как в карточке. Новых жертв и пожара не выдумывай.
+- Не обещай минуты прибытия: ты уже на месте или докладываешь, что видишь.
+"""
+
+DESK_SYSTEM_PROMPT = """/no_think
+Ты — оператор службы 112. Эту карточку твоя служба уже приняла и передала в ДДС. Сейчас диспетчер ДДС звонит по телефону и сообщает об ошибке в ней.
+Ты не заявитель и не пострадавший. Это не новый звонок с улицы.
+
+Как говоришь:
+- Только по-русски, спокойно. В ответе только то, что произносишь вслух.
+- Адрес и суть уже есть в контексте. Не переспрашивай с нуля «что случилось» и «где вы».
+- Если диспетчер называет расхождение, подтверди, что 112 поправит карточку. Не проси его самого переписывать поля.
+- Если расхождения нет, скажи, что карточка подтверждена без правок.
+- Не описывай своё состояние и не проси помощь себе.
 """
 
 OPERATOR_SYSTEM_PROMPT = """/no_think
@@ -107,6 +143,9 @@ DEFAULT_PROMPTS: dict[ConversationRole, str] = {
     "operator": OPERATOR_SYSTEM_PROMPT.strip(),
     "victim": VICTIM_SYSTEM_PROMPT.strip(),
     "service": SERVICE_SYSTEM_PROMPT.strip(),
+    "chief": CHIEF_SYSTEM_PROMPT.strip(),
+    "crew": CREW_SYSTEM_PROMPT.strip(),
+    "desk": DESK_SYSTEM_PROMPT.strip(),
 }
 
 _BLANK_SIGHT = re.compile(
@@ -811,7 +850,11 @@ def should_speak_intervention(command: str) -> bool:
 
 
 def apply_teacher_intervention(session: CallSession, command: str, note: str = "") -> str:
-    hints = _SERVICE_HINTS if session.conversation_role == "service" else _INTERVENTION_HINTS
+    hints = (
+        _SERVICE_HINTS
+        if session.conversation_role in {"service", "chief", "crew", "desk"}
+        else _INTERVENTION_HINTS
+    )
     hint = hints.get(command, "Следуй указанию преподавателя.")
     extra_note = " ".join((note or "").split()).strip()
     marker = f"УКАЗАНИЕ ПРЕПОДАВАТЕЛЯ [{command}]: {extra_note}" if extra_note else f"УКАЗАНИЕ ПРЕПОДАВАТЕЛЯ [{command}]"
@@ -970,6 +1013,9 @@ def presence_cue(intent: str, role: ConversationRole) -> str:
         "victim": "Ты звонишь как заявитель. Не становись оператором.",
         "service": "Ты диспетчер службы. Не становись пострадавшим и не обещай выезд или минуты.",
         "operator": "Ты диспетчер 112. Не становись заявителем.",
+        "chief": "Ты начальник дежурной службы. Не становись пострадавшим.",
+        "crew": "Ты руководитель бригады на месте. Не становись пострадавшим и не проси помощь себе.",
+        "desk": "Ты оператор 112, карточка уже у тебя. Не становись заявителем.",
     }[role]
     lines = {
         "hear": "Собеседник молчит. Не отвечай на прошлый вопрос и событие не пересказывай. Проверь связь одной фразой: «Вы меня слышите?»",
@@ -1051,7 +1097,7 @@ class ConversationManager:
         session = CallSession(call_id=call_id, conversation_role=conversation_role)
         session.messages.append(ChatMessage(role="system", content=prompt))
         spoken = " ".join((opening or "").split()).strip()
-        if conversation_role in {"victim", "service"} and spoken:
+        if conversation_role != "operator" and spoken:
             session.messages.append(ChatMessage(role="assistant", content=spoken))
         self._sessions[call_id] = session
         return session

@@ -46,7 +46,13 @@ export type DdsFinishCard = {
   workplaceStatus?: string;
   callback?: boolean;
   contacts?: { service: string; said: string }[];
+  dialogue?: { speaker: string; role: 'operator' | 'caller'; text: string }[];
   history?: { status: string; naryad?: string; comment?: string }[];
+  openMs?: number | null;
+  firstRecordMs?: number | null;
+  chiefCalled?: boolean;
+  crewCalled?: boolean;
+  reportedTo112?: boolean;
 };
 
 export type DdsFinish = {
@@ -643,6 +649,12 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
         callback: item.callback,
         contacts: item.contacts,
         history: item.history,
+        openMs: item.openMs,
+        firstRecordMs: item.firstRecordMs,
+        chiefCalled: item.chiefCalled,
+        crewCalled: item.crewCalled,
+        reportedTo112: item.reportedTo112,
+        dialogue: item.dialogue,
       })),
     });
   }, [finish, props.operatorLogin]);
@@ -923,6 +935,11 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
       callback: item.callback,
       contacts: item.contacts,
       history: item.history,
+      openMs: item.openMs,
+      firstRecordMs: item.firstRecordMs,
+      chiefCalled: item.chiefCalled,
+      crewCalled: item.crewCalled,
+      reportedTo112: item.reportedTo112,
     }),
   );
   const avg = (values: number[]) => (values.length ? Math.round(values.reduce((sum, item) => sum + item, 0) / values.length) : 0);
@@ -930,10 +947,10 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
     ? Math.round((foreign.filter((item) => item.decision === 'transfer' || item.workplaceStatus === 'Не принято').length / foreign.length) * 100)
     : 100;
   return [
-    { label: 'Связь со службой', value: avg(scored.map((item) => item.parts.call)), max: 55, hint: 'Нужная служба, адрес и просьба направить наряд' },
+    { label: 'Связь со службой', value: avg(scored.map((item) => item.parts.call)), max: 55, hint: 'Служба: адрес и наряд. Ещё доклад начальнику и связь с бригадой' },
     { label: 'Карточка', value: avg(scored.map((item) => item.parts.card)), max: 22, hint: 'Приём, ФИО, номер наряда, закрытие' },
     { label: 'Факты', value: avg(scored.map((item) => item.parts.facts)), max: 15, hint: 'Пострадавшие и телефон' },
-    { label: 'Норматив', value: avg(scored.map((item) => item.parts.timer)), max: 8, hint: '30 секунд на карточку' },
+    { label: 'Норматив', value: avg(scored.map((item) => item.parts.timer)), max: 8, hint: '30 с до открытия, 3 мин на первую запись' },
     { label: 'Чужие карточки', value: transfer, max: 100, hint: 'Чужой профиль — «Не принято», без своей бригады' },
   ].filter((row) => row.label !== 'Чужие карточки' || foreign.length > 0);
 }
@@ -953,9 +970,15 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
       callback: card.callback,
       contacts: card.contacts,
       history: card.history,
+      openMs: card.openMs,
+      firstRecordMs: card.firstRecordMs,
+      chiefCalled: card.chiefCalled,
+      crewCalled: card.crewCalled,
+      reportedTo112: card.reportedTo112,
     });
-    const injuredOk = card.draft.injured === card.facts.injured;
-    const phoneOk = phonesMatch(card.facts.callerPhone, card.draft.callerPhone);
+    const told112 = Boolean(card.crewCalled && card.reportedTo112);
+    const injuredOk = card.draft.injured === card.facts.injured || told112;
+    const phoneOk = phonesMatch(card.facts.callerPhone, card.draft.callerPhone) || told112;
     const profileOk = own ? card.decision === 'dispatch' : card.decision === 'transfer';
     const cardReady =
       card.workplaceStatus === 'Работы завершены' && Boolean(card.naryad) && card.draft.callerName.trim().length >= 5;
@@ -993,7 +1016,7 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
               id: `${card.id}-inj`,
               label: `${card.scenario.code} · пострадавшие`,
               expected: card.facts.injured,
-              got: card.draft.injured,
+              got: card.draft.injured === card.facts.injured ? card.draft.injured : told112 ? 'сообщено в 112' : card.draft.injured,
               state: injuredOk ? 'match' : 'miss',
               points: injuredOk ? 8 : 0,
               max: 8,

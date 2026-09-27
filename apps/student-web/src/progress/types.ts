@@ -58,3 +58,5 @@ export type LessonReviewLine = {
 export const PASS_SCORE = 70;
 export const PASS_SCORE_EXAM = 80;
 export const CARD_TIMER_LIMIT_SEC = 30;
+export const DDS_OPEN_LIMIT_SEC = 30;
+export const DDS_FIRST_RECORD_LIMIT_SEC = 180;
