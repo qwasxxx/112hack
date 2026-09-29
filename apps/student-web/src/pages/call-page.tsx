@@ -201,7 +201,12 @@ export function CallPage(props: Props) {
     if (spokenRef.current && state.generation !== spokenRef.current.generation()) {
       return;
     }
-    setLines((current) => upsertSpokenCaption(current, aiRoleRef.current, state.visibleText, state.speaking));
+    setLines((current) => {
+      if (!state.visibleText.trim() && current.some((line) => line.role === aiRoleRef.current && line.text.trim())) {
+        return current;
+      }
+      return upsertSpokenCaption(current, aiRoleRef.current, state.visibleText, state.speaking);
+    });
   };
 
   useEffect(() => {
@@ -534,26 +539,35 @@ export function CallPage(props: Props) {
       spokenTtsRef.current = opening;
       ensureSpoken().beginTurn();
       const openingTurn = aiTurnRef.current;
+      const role = aiRole;
+      setLines([
+        {
+          id: `opening-${Date.now()}`,
+          role,
+          text: opening,
+          live: false,
+          speaking: false,
+          source: 'llm',
+          at: Date.now(),
+        },
+      ]);
       holdMicForTts();
-      void enqueueTtsAudio(
-        opening,
-        deskSide ? 'service' : aiVoiceId,
-        callerVoice(),
-        attachCaptionHooks(),
-      ).finally(() => {
+      const releaseOpeningMic = () => {
         if (leavingRef.current) {
           return;
         }
         if (aiTurnRef.current !== openingTurn && (awaitingReplyRef.current || isTtsBusy())) {
           return;
         }
-        commitSpokenLine();
-        lastHumanAtRef.current = performance.now();
         ttsHoldRef.current = false;
+        lastHumanAtRef.current = performance.now();
         if (!mutedRef.current) {
           streamRef.current?.setCaptureEnabled(true);
         }
-      });
+      };
+      void enqueueTtsAudio(opening, deskSide ? 'service' : aiVoiceId, callerVoice(), {
+        onChunkPlaybackEnd: releaseOpeningMic,
+      }).finally(releaseOpeningMic);
     }
     const callId = crypto.randomUUID();
     const llm = createLlmStream({
@@ -793,10 +807,13 @@ export function CallPage(props: Props) {
           recorderRef.current = undefined;
         }
       }
-      if (ttsHoldRef.current) {
+      if (ttsHoldRef.current && isTtsBusy()) {
         stream.setCaptureEnabled(false);
       } else if (mutedRef.current) {
         stream.setCaptureEnabled(false);
+      } else {
+        ttsHoldRef.current = false;
+        stream.setCaptureEnabled(true);
       }
     } catch (error: unknown) {
       if (!live()) {
