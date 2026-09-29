@@ -227,7 +227,7 @@ class LlamaClient:
         prompt_tokens = "-"
         completion_tokens = "-"
         try:
-            for attempt in (1, 2):
+            for attempt in (1, 2, 3, 4):
                 try:
                     async with self._http.stream(
                         "POST",
@@ -235,8 +235,12 @@ class LlamaClient:
                         json=payload,
                         headers=self._headers(),
                     ) as response:
-                        if attempt == 1 and response.status_code in (429, 502, 503, 504):
-                            logger.warning("[LLM] chat status=%s, one retry", response.status_code)
+                        if response.status_code in (429, 502, 503, 504) and attempt < 4:
+                            logger.warning(
+                                "[LLM] chat status=%s, retry %s",
+                                response.status_code,
+                                attempt,
+                            )
                             await response.aread()
                         else:
                             response.raise_for_status()
@@ -281,11 +285,16 @@ class LlamaClient:
                                         first_at = time.perf_counter()
                                     yield piece
                             return
-                except (httpx.TransportError, httpx.RemoteProtocolError):
-                    if attempt == 2:
+                except httpx.HTTPStatusError as exc:
+                    code = exc.response.status_code
+                    if attempt == 4 or code not in (429, 502, 503, 504):
                         raise
-                    logger.warning("[LLM] chat connection failed, one retry")
-                await asyncio.sleep(0.8)
+                    logger.warning("[LLM] chat status=%s, retry %s", code, attempt)
+                except (httpx.TransportError, httpx.RemoteProtocolError):
+                    if attempt == 4:
+                        raise
+                    logger.warning("[LLM] chat connection failed, retry %s", attempt)
+                await asyncio.sleep((0.7, 1.6, 3.2)[attempt - 1])
         finally:
             total_ms = int((time.perf_counter() - started) * 1000)
             ttft_ms = int((first_at - started) * 1000) if first_at is not None else -1

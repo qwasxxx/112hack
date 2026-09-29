@@ -636,6 +636,7 @@ export function CallPage(props: Props) {
             return;
           }
           replyShownRef.current = true;
+          setMicError(undefined);
           if (!speechRef.current?.isGenerationOpen() && !speechRef.current?.getSpoken()) {
             speechRef.current?.beginTurn();
             ensureSpoken().beginTurn();
