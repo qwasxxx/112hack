@@ -138,6 +138,7 @@ export type DdsLoggedAction = {
     | 'complete_card'
     | 'transfer_card'
     | 'callback'
+    | 'service_call'
     | 'close_to_112';
   detail: string;
 };

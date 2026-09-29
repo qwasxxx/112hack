@@ -1,6 +1,34 @@
 import type { TrainingScenario } from '../../data/scenarios';
 import { promptCallerIdentity } from '../../data/caller-truth';
+import type { ServiceKind } from '../../data/scenarios';
 import type { TicketFacts } from './incoming-card';
+
+const SERVICE_MARK: Record<ServiceKind, string[]> = {
+  fire: ['101', 'пожар'],
+  police: ['102', 'полиц'],
+  ambulance: ['103', 'скор'],
+  gas: ['104', 'газ'],
+};
+
+export function crewDepartureReady(card: {
+  role: string;
+  workplaceStatus: string;
+  naryad: string;
+  crewInbound?: string;
+  facts: TicketFacts;
+  contacts: { service: string }[];
+}): boolean {
+  if (card.role !== 'own' || card.crewInbound) {
+    return false;
+  }
+  if (card.workplaceStatus !== 'Принята' || !card.naryad.trim()) {
+    return false;
+  }
+  return card.contacts.some((item) => {
+    const text = item.service.toLowerCase().replace(/ё/g, 'е');
+    return card.facts.services.some((kind) => SERVICE_MARK[kind].some((mark) => text.includes(mark)));
+  });
+}
 
 export function buildDdsServicePrompt(
   label: string,
@@ -54,6 +82,35 @@ export function buildDdsCrewPrompt(facts: TicketFacts, defects: Array<'service' 
 
 export function ddsCrewOpening(): string {
   return 'Бригада на месте, слушаю.';
+}
+
+export function crewEtaMinutes(seed: string): number {
+  let hash = 0;
+  for (const char of seed) {
+    hash = (hash + char.charCodeAt(0)) % 8;
+  }
+  return 8 + hash;
+}
+
+export function ddsCrewInboundOpening(naryad: string, address: string, eta: number): string {
+  const crew = naryad.trim() || 'без номера';
+  const place = address.trim() || 'адрес из карточки';
+  return `Диспетчер, наряд ${crew} выехал на ${place}. Будем примерно через ${eta} минут.`;
+}
+
+export function buildDdsCrewInboundPrompt(facts: TicketFacts, naryad: string, eta: number): string {
+  return [
+    'Этот звонок начал ты. Ты ещё не на месте, только выехал.',
+    `НАРЯД: ${naryad.trim()}.`,
+    facts.address ? `АДРЕС: ${facts.address}.` : 'АДРЕС в карточке не указан. Так и скажи, улицу не выдумывай.',
+    facts.description ? `СУТЬ, уже известная по карточке: ${facts.description}.` : '',
+    `Пострадавшие по карточке: ${facts.injured}. На этом звонке место ты не видел, ошибку карточки не обсуждай.`,
+    `МИНУТЫ В ПУТИ: ${eta}. Другое число не называй.`,
+    'Если диспетчер переспрашивает номер, адрес или срок — повтори только строки выше.',
+    'Не говори, что уже прибыл. Не представляйся заявителем и не проси помощь.',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 export function buildDdsChiefPrompt(facts: TicketFacts): string {

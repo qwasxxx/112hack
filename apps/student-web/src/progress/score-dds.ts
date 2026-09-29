@@ -27,6 +27,7 @@ export type DdsShiftCardInput = {
   firstRecordMs?: number | null;
   chiefCalled?: boolean;
   crewCalled?: boolean;
+  crewInbound?: 'accepted' | 'declined' | 'missed';
   reportedTo112?: boolean;
 };
 
@@ -314,15 +315,45 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       severity: 'error',
     });
   }
-  if (input.crewCalled === true) {
-    routePoints += 7;
-  } else if (input.crewCalled === false) {
-    findings.push({
-      code: 'dds-crew',
-      field: 'Бригада',
-      message: 'Не было связи с руководителем бригады',
-      severity: 'error',
-    });
+  const inbound = input.crewInbound;
+  const departureRecorded = Boolean(input.history?.some((item) => item.status === 'Начало реагирования'));
+  if (inbound == null) {
+    if (input.crewCalled === true) {
+      routePoints += 7;
+    } else if (input.crewCalled === false) {
+      findings.push({
+        code: 'dds-crew',
+        field: 'Бригада',
+        message: 'Не было связи с руководителем бригады',
+        severity: 'error',
+      });
+    }
+  } else {
+    if (input.crewCalled === true) {
+      routePoints += 4;
+    } else if (input.crewCalled === false) {
+      findings.push({
+        code: 'dds-crew',
+        field: 'Бригада',
+        message: 'Не было связи с руководителем бригады',
+        severity: 'error',
+      });
+    }
+    if (inbound === 'accepted' && departureRecorded) {
+      routePoints += 3;
+    } else {
+      findings.push({
+        code: 'dds-crew-report',
+        field: 'Доклад о выезде',
+        message:
+          inbound === 'declined'
+            ? 'Доклад бригады о выезде сброшен'
+            : inbound === 'missed'
+              ? 'Бригада звонила о выезде, вызов не принят'
+              : 'Доклад о выезде принят, статус «Начало реагирования» не поставлен',
+        severity: 'error',
+      });
+    }
   }
 
   findings.push(...inspectOperatorText('Описание', input.draft.description, { minChars: 8 }));
@@ -404,6 +435,9 @@ export function scoreDdsLesson(input: {
   }
   if (findings.some((item) => item.code === 'dds-chief' || item.code === 'dds-crew')) {
     recs.push('Кроме службы, нужен доклад начальнику и связь с руководителем бригады.');
+  }
+  if (findings.some((item) => item.code === 'dds-crew-report')) {
+    recs.push('Когда бригада звонит о выезде, примите вызов и поставьте «Начало реагирования».');
   }
   if (scored.some((item) => item.findings.some((finding) => finding.code === 'dds-fio' || finding.code === 'dds-naryad'))) {
     recs.push('ФИО заявителя и номер наряда должны быть в карточке, одних статусов мало.');
@@ -512,14 +546,47 @@ export function scoreDdsLesson(input: {
                 points: item.chiefCalled ? 8 : 0,
                 max: 8,
               },
-              {
-                label: `${prefix} · бригада`,
-                expected: 'связь',
-                got: item.crewCalled ? 'была' : 'не было',
-                state: item.crewCalled ? ('match' as const) : ('miss' as const),
-                points: item.crewCalled ? 7 : 0,
-                max: 7,
-              },
+              ...(item.crewInbound != null
+                ? [
+                    {
+                      label: `${prefix} · бригада`,
+                      expected: 'связь',
+                      got: item.crewCalled ? 'была' : 'не было',
+                      state: item.crewCalled ? ('match' as const) : ('miss' as const),
+                      points: item.crewCalled ? 4 : 0,
+                      max: 4,
+                    },
+                    {
+                      label: `${prefix} · доклад о выезде`,
+                      expected: 'принят и записан',
+                      got:
+                        item.crewInbound === 'accepted' &&
+                        (item.history ?? []).some((event) => event.status === 'Начало реагирования')
+                          ? 'записан'
+                          : 'не записан',
+                      state:
+                        item.crewInbound === 'accepted' &&
+                        (item.history ?? []).some((event) => event.status === 'Начало реагирования')
+                          ? ('match' as const)
+                          : ('miss' as const),
+                      points:
+                        item.crewInbound === 'accepted' &&
+                        (item.history ?? []).some((event) => event.status === 'Начало реагирования')
+                          ? 3
+                          : 0,
+                      max: 3,
+                    },
+                  ]
+                : [
+                    {
+                      label: `${prefix} · бригада`,
+                      expected: 'связь',
+                      got: item.crewCalled ? 'была' : 'не было',
+                      state: item.crewCalled ? ('match' as const) : ('miss' as const),
+                      points: item.crewCalled ? 7 : 0,
+                      max: 7,
+                    },
+                  ]),
             ]
           : []),
       ];

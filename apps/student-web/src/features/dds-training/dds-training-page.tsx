@@ -9,11 +9,15 @@ import { unlockTtsAudio } from '../../lib/tts-player';
 import {
   buildDdsCallbackPrompt,
   buildDdsChiefPrompt,
+  buildDdsCrewInboundPrompt,
   buildDdsCrewPrompt,
   buildDdsReport112Prompt,
   buildDdsServicePrompt,
+  crewDepartureReady,
+  crewEtaMinutes,
   ddsCallbackOpening,
   ddsChiefOpening,
+  ddsCrewInboundOpening,
   ddsCrewOpening,
   ddsReport112Opening,
   ddsServiceOpening,
@@ -57,13 +61,17 @@ export function DdsTrainingPage(props: Props) {
     scope: string;
     prompt?: string;
     opening?: string;
-    aiRole?: 'service' | 'chief' | 'crew' | 'desk';
+    aiRole?: 'service' | 'chief' | 'crew' | 'enroute' | 'desk';
     service?: string;
     counterparty?: string;
   } | null>(
     null,
   );
+  const [ringingId, setRingingId] = useState<string | null>(null);
   const closing = useRef(false);
+  const markInboundRef = useRef(session.markCrewInbound);
+  markInboundRef.current = session.markCrewInbound;
+  const keepCallRef = useRef<string | null>(null);
   const callAudio = useRef<{ title: string; audio: Promise<Blob | null>; seconds: number }[]>([]);
   const statusMarks = useRef(new Set<string>());
 
@@ -73,8 +81,44 @@ export function DdsTrainingPage(props: Props) {
   }, []);
 
   useEffect(() => {
+    if (keepCallRef.current && keepCallRef.current === session.activeId) {
+      keepCallRef.current = null;
+      return;
+    }
     setCallTarget(null);
   }, [session.activeId]);
+
+  const inboundReadyId =
+    session.queue.find((item) => crewDepartureReady(item) && item.id !== ringingId)?.id ?? null;
+
+  useEffect(() => {
+    if (!inboundReadyId || callTarget || ringingId) {
+      return;
+    }
+    const timer = window.setTimeout(() => setRingingId(inboundReadyId), 12_000);
+    return () => window.clearTimeout(timer);
+  }, [inboundReadyId, callTarget, ringingId]);
+
+  useEffect(() => {
+    if (!ringingId || callTarget) {
+      return;
+    }
+    const card = session.queue.find((item) => item.id === ringingId);
+    if (!card || card.crewInbound) {
+      setRingingId(null);
+      return;
+    }
+    if (card.workplaceStatus !== 'Принята') {
+      markInboundRef.current(ringingId, 'missed');
+      setRingingId(null);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      markInboundRef.current(ringingId, 'missed');
+      setRingingId(null);
+    }, 45_000);
+    return () => window.clearTimeout(timer);
+  }, [ringingId, callTarget, session.queue]);
 
   useEffect(() => {
     const done = session.queue.filter((item) => item.decision).length;
@@ -161,6 +205,7 @@ export function DdsTrainingPage(props: Props) {
         firstRecordMs: item.firstRecordMs,
         chiefCalled: item.chiefCalled,
         crewCalled: item.crewCalled,
+        crewInbound: item.crewInbound,
         reportedTo112: item.reportedTo112,
         dialogue: item.dialogue,
       })),
@@ -185,6 +230,36 @@ export function DdsTrainingPage(props: Props) {
     props.onFinished(finish);
   }
 
+  const ringingCard = session.queue.find((item) => item.id === ringingId) ?? null;
+
+  function acceptInbound() {
+    if (!ringingCard) {
+      return;
+    }
+    const eta = crewEtaMinutes(ringingCard.number);
+    keepCallRef.current = ringingCard.id;
+    session.markCrewInbound(ringingCard.id, 'accepted');
+    setRingingId(null);
+    session.openCard(ringingCard.id);
+    unlockTtsAudio();
+    setCallTarget({
+      title: 'Доклад бригады',
+      scope: `call-${Date.now()}`,
+      counterparty: 'Бригада',
+      aiRole: 'enroute',
+      prompt: buildDdsCrewInboundPrompt(ringingCard.facts, ringingCard.naryad, eta),
+      opening: ddsCrewInboundOpening(ringingCard.naryad, ringingCard.facts.address, eta),
+    });
+  }
+
+  function declineInbound() {
+    if (!ringingId) {
+      return;
+    }
+    session.markCrewInbound(ringingId, 'declined');
+    setRingingId(null);
+  }
+
   const clock = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const seconds = String(now.getSeconds()).padStart(2, '0');
   const weekday = `${WEEKDAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
@@ -203,6 +278,19 @@ export function DdsTrainingPage(props: Props) {
           </button>
         </header>
       )}
+      {ringingCard && !callTarget ? (
+        <div className="dds-incoming" role="dialog" aria-label="Входящий звонок бригады">
+          <p>
+            <b>Входящий звонок.</b> Наряд {ringingCard.naryad} докладывает о выезде.
+          </p>
+          <button type="button" onClick={acceptInbound}>
+            Принять
+          </button>
+          <button type="button" className="is-drop" onClick={declineInbound}>
+            Сбросить
+          </button>
+        </div>
+      ) : null}
       <div className={`dds-shell${callTarget ? ' is-call' : ''}`}>
         {session.view === 'journal' ? (
           <DdsJournal
@@ -327,7 +415,11 @@ export function DdsTrainingPage(props: Props) {
               operatorLogin={props.operatorLogin}
               systemPrompt={callTarget.prompt ?? buildDdsCallbackPrompt(active.scenario, active.facts)}
               opening={callTarget.opening ?? ddsCallbackOpening()}
-              hint="Говорите как диспетчер ДДС."
+              hint={
+                callTarget.title === 'Доклад бригады'
+                  ? 'Бригада докладывает о выезде. После звонка поставьте «Начало реагирования».'
+                  : 'Говорите как диспетчер ДДС.'
+              }
               panelTitle={callTarget.title}
               aiRole={callTarget.aiRole}
               counterparty={callTarget.counterparty}

@@ -423,6 +423,34 @@
   background: #c5c5c5;
 }
 
+.dds-incoming {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #1d4e89;
+  color: #fff;
+}
+
+.dds-incoming p {
+  margin: 0;
+  flex: 1;
+}
+
+.dds-incoming button {
+  border: 0;
+  background: #fff;
+  color: #1d4e89;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.dds-incoming button.is-drop {
+  background: transparent;
+  color: #fff;
+  border: 1px solid #fff;
+}
+
 .dds-routes {
   display: flex;
   gap: 8px;
@@ -876,6 +904,16 @@
   border: 1px solid #ccc;
   background: #fff;
   padding: 0 8px;
+}
+
+.dds-form input.dds-field-bad {
+  border-color: #a33;
+}
+
+.dds-field-hint {
+  color: #a33;
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .dds-form button {

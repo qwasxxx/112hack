@@ -106,6 +106,23 @@ test('skipping the service call costs most of the DDS score', () => {
   assert.equal(noRoute.parts.call, 40);
   assert.ok(noRoute.findings.some((item) => item.code === 'dds-chief'));
   assert.ok(noRoute.findings.some((item) => item.code === 'dds-crew'));
+  const heard = scoreDdsCard({
+    ...calledInput,
+    chiefCalled: true,
+    crewCalled: true,
+    crewInbound: 'accepted',
+    history: [{ status: 'Начало реагирования' }],
+  });
+  assert.equal(heard.parts.call, 55);
+  const dropped = scoreDdsCard({
+    ...calledInput,
+    chiefCalled: true,
+    crewCalled: true,
+    crewInbound: 'declined',
+    history: [{ status: 'Начало реагирования' }],
+  });
+  assert.equal(dropped.parts.call, 52);
+  assert.ok(dropped.findings.some((item) => item.code === 'dds-crew-report'));
 });
 
 test('DDS time limits are open and first record, not the whole card', () => {

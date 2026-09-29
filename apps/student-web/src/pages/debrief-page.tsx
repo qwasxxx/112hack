@@ -52,6 +52,7 @@ export type DdsFinishCard = {
   firstRecordMs?: number | null;
   chiefCalled?: boolean;
   crewCalled?: boolean;
+  crewInbound?: 'accepted' | 'declined' | 'missed';
   reportedTo112?: boolean;
 };
 
@@ -653,6 +654,7 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
         firstRecordMs: item.firstRecordMs,
         chiefCalled: item.chiefCalled,
         crewCalled: item.crewCalled,
+        crewInbound: item.crewInbound,
         reportedTo112: item.reportedTo112,
         dialogue: item.dialogue,
       })),
@@ -939,6 +941,7 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
       firstRecordMs: item.firstRecordMs,
       chiefCalled: item.chiefCalled,
       crewCalled: item.crewCalled,
+      crewInbound: item.crewInbound,
       reportedTo112: item.reportedTo112,
     }),
   );
@@ -947,7 +950,7 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
     ? Math.round((foreign.filter((item) => item.decision === 'transfer' || item.workplaceStatus === 'Не принято').length / foreign.length) * 100)
     : 100;
   return [
-    { label: 'Связь со службой', value: avg(scored.map((item) => item.parts.call)), max: 55, hint: 'Служба: адрес и наряд. Ещё доклад начальнику и связь с бригадой' },
+    { label: 'Связь со службой', value: avg(scored.map((item) => item.parts.call)), max: 55, hint: 'Служба, начальник, бригада и доклад о выезде' },
     { label: 'Карточка', value: avg(scored.map((item) => item.parts.card)), max: 22, hint: 'Приём, ФИО, номер наряда, закрытие' },
     { label: 'Факты', value: avg(scored.map((item) => item.parts.facts)), max: 15, hint: 'Пострадавшие и телефон' },
     { label: 'Норматив', value: avg(scored.map((item) => item.parts.timer)), max: 8, hint: '30 с до открытия, 3 мин на первую запись' },
@@ -974,6 +977,7 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
       firstRecordMs: card.firstRecordMs,
       chiefCalled: card.chiefCalled,
       crewCalled: card.crewCalled,
+      crewInbound: card.crewInbound,
       reportedTo112: card.reportedTo112,
     });
     const told112 = Boolean(card.crewCalled && card.reportedTo112);

@@ -63,6 +63,7 @@ export type DdsQueueCard = {
   elapsedMs: number;
   chiefCalled: boolean;
   crewCalled: boolean;
+  crewInbound?: 'accepted' | 'declined' | 'missed';
   reportedTo112: boolean;
   workplaceStatus: DdsServiceStatus;
   naryad: string;
@@ -323,6 +324,9 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
       return;
     }
     patchQueue(activeId, (item) => ({ ...item, statusForm: { ...item.statusForm, ...next } }));
+    if (typeof next.comment === 'string' && next.comment.trim().length >= 4) {
+      setFormError(null);
+    }
   }
 
   function applyStatus() {
@@ -367,7 +371,7 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     });
     setFormError(
       missingText
-        ? 'Первая запись и отказ — это статус и текст. Напишите, что сделано или почему карточку не взяли.'
+        ? 'Нужно указать комментарий.'
         : null,
     );
     if (applied) {
@@ -406,6 +410,18 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
       ...item,
       dialogue: [...item.dialogue, ...lines],
     }));
+  }
+
+  function markCrewInbound(id: string, outcome: 'accepted' | 'declined' | 'missed') {
+    const current = cards.find((item) => item.id === id);
+    if (!current || current.crewInbound) {
+      return;
+    }
+    patchQueue(id, (item) => ({ ...item, crewInbound: outcome }));
+    if (outcome === 'accepted') {
+      setRouteHint('Бригада доложила о выезде. Поставьте статус «Начало реагирования».');
+    }
+    log('service_call', `входящий доклад бригады: ${outcome}`);
   }
 
   function markRoute(kind: 'chief' | 'crew' | '112') {
@@ -552,6 +568,7 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     formError,
     routeHint,
     markRoute,
+    markCrewInbound,
     chs: active?.chs ?? false,
     chp: active?.chp ?? false,
     canComplete: canComplete(active),

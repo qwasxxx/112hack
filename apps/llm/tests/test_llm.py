@@ -436,6 +436,14 @@ def test_repair_victim_does_not_play_blind_on_dispatch():
     assert "языков" not in leaked.lower()
     assert "запрос" not in leaked.lower()
     assert "контейнер" in leaked.lower()
+    hello = repair_victim_reply(
+        "Алло, да, я слышу. Я Сидоров Иван Сергеевич, звоню с телефона 9161263471. Здесь загорелся контейнер. Пострадавших нет.",
+        "Алло.",
+        "victim",
+        "ЧТО СЛУЧИЛОСЬ: Горит мусорный контейнер.",
+    )
+    assert hello == "Алло, да, слышу."
+    assert "Сидоров" not in hello
     lecture = repair_victim_reply(
         "Извините, я не могу продолжать этот разговор в таком тоне. Я здесь, чтобы помочь вам конструктивно.",
         "алло",

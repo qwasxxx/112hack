@@ -59,7 +59,7 @@ type Props = {
   panelTitle?: string;
   onCallEnded?: (payload: { lines: TranscriptTurn[]; seconds: number; audio?: Promise<Blob | null> }) => void;
   operatorLogin?: string;
-  aiRole?: 'service' | 'chief' | 'crew' | 'desk';
+  aiRole?: 'service' | 'chief' | 'crew' | 'enroute' | 'desk';
   counterparty?: string;
   transcriptScope?: string;
 };
@@ -161,13 +161,14 @@ export function CallPage(props: Props) {
     conversationRole === 'service' ||
     conversationRole === 'chief' ||
     conversationRole === 'crew' ||
+    conversationRole === 'enroute' ||
     conversationRole === 'desk';
   const youAre = deskSide ? 'Вы — диспетчер ДДС' : conversationRole === 'victim' ? 'Вы — оператор' : 'Вы — заявитель';
   const otherSpeaker =
     props.counterparty ||
     (conversationRole === 'chief'
       ? 'Начальник'
-      : conversationRole === 'crew'
+      : conversationRole === 'crew' || conversationRole === 'enroute'
         ? 'Бригада'
         : conversationRole === 'desk'
           ? 'Оператор 112'

@@ -18,7 +18,7 @@ function llmSocketUrl(): string {
 
 export function createLlmStream(options: {
   callId: string;
-  conversationRole: 'victim' | 'operator' | 'service' | 'chief' | 'crew' | 'desk';
+  conversationRole: 'victim' | 'operator' | 'service' | 'chief' | 'crew' | 'enroute' | 'desk';
   systemPrompt?: string;
   opening?: string;
   lessonId?: string;
@@ -260,7 +260,7 @@ export function createLlmStream(options: {
 }
 
 export function warmupLesson(options: {
-  conversationRole: 'victim' | 'operator' | 'service' | 'chief' | 'crew' | 'desk';
+  conversationRole: 'victim' | 'operator' | 'service' | 'chief' | 'crew' | 'enroute' | 'desk';
   systemPrompt?: string;
   opening?: string;
 }): void {

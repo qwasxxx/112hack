@@ -39,6 +39,7 @@ from sys112_llm.conversation import (
     remembered_reply,
     repair_victim_reply,
     speaks_as_dispatcher,
+    bare_greeting,
     session_scenario_extra,
     should_speak_intervention,
 )
@@ -148,7 +149,7 @@ async def warmup_prompt(payload: dict[str, Any]) -> dict[str, str]:
     if llm_status != "ready":
         return {"status": llm_status}
     role = payload.get("conversation_role") or "victim"
-    if role not in {"victim", "operator", "service", "chief", "crew", "desk"}:
+    if role not in {"victim", "operator", "service", "chief", "crew", "enroute", "desk"}:
         role = "victim"
     extra = payload.get("system_prompt")
     opening = payload.get("opening")
@@ -246,7 +247,7 @@ async def llm_socket(ws: WebSocket) -> None:
             if kind == "start":
                 call_id = str(payload.get("call_id") or uuid.uuid4())
                 role = payload.get("conversation_role") or "victim"
-                if role not in {"victim", "operator", "service", "chief", "crew", "desk"}:
+                if role not in {"victim", "operator", "service", "chief", "crew", "enroute", "desk"}:
                     role = "victim"
                 if llm_status == "loading":
                     await ws.send_json(
@@ -348,7 +349,7 @@ async def llm_socket(ws: WebSocket) -> None:
                         "detail": detail,
                     }
                 )
-                if current.conversation_role in {"victim", "service", "chief", "crew", "desk"} and should_speak_intervention(command):
+                if current.conversation_role in {"victim", "service", "chief", "crew", "enroute", "desk"} and should_speak_intervention(command):
                     nudge_id = f"nudge-{uuid.uuid4()}"
                     if current.busy:
                         current.pending = [(nudge_id, TEACHER_NUDGE_TEXT)]
@@ -518,6 +519,8 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
                 full = "Доклад принял."
             elif session.conversation_role == "crew" and breaks_character(full):
                 full = "Бригада на месте. Докладываю по карточке."
+            elif session.conversation_role == "enroute" and breaks_character(full):
+                full = "Наряд выехал. Повторите, что уточнить: номер, адрес или время."
             elif session.conversation_role == "desk" and breaks_character(full):
                 full = "Карточка у нас. Сообщение об ошибке принял, поправим."
             elif breaks_character(full) and session.conversation_role != "victim":
@@ -530,7 +533,7 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
                     session.conversation_role,
                     session_scenario_extra(session),
                 )
-                if speaks_as_dispatcher(raw):
+                if speaks_as_dispatcher(raw) or (bare_greeting(last_user_text(session)) and full != raw):
                     session.streamed = ""
             if session.presence:
                 full = presence_spoken(session.presence_intent, full)

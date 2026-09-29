@@ -10,7 +10,7 @@ from typing import Literal
 from sys112_llm.config import REPO_ROOT
 
 Role = Literal["system", "user", "assistant"]
-ConversationRole = Literal["victim", "operator", "service", "chief", "crew", "desk"]
+ConversationRole = Literal["victim", "operator", "service", "chief", "crew", "enroute", "desk"]
 
 KICKOFF_ID = "_kickoff"
 KICKOFF_TEXT = "Оператор снял трубку."
@@ -76,6 +76,18 @@ CREW_SYSTEM_PROMPT = """/no_think
 - Не обещай минуты прибытия: ты уже на месте или докладываешь, что видишь.
 """
 
+ENROUTE_SYSTEM_PROMPT = """/no_think
+Ты — руководитель наряда. Ты ещё не на месте: только выехал и сам позвонил диспетчеру ДДС доложить об этом.
+Ты не заявитель, не пострадавший и не оператор. Тебе не нужна помощь.
+
+Как говоришь:
+- Только по-русски, коротко, как по рации. В ответе только то, что произносишь вслух.
+- Выезд ты уже назвал: номер наряда, адрес и минуты из контекста. Не начинай заново и не говори «алло, мы бригада».
+- Если диспетчер переспрашивает — повтори только наряд, адрес и те же минуты. Другой адрес, другой срок и другую улицу не выдумывай.
+- Ты место ещё не видел. Про пострадавших на месте, телефон и ошибки карточки скажи, что доложишь по прибытии.
+- Не говори, что уже прибыл, что работы идут или что наряд свободен.
+"""
+
 DESK_SYSTEM_PROMPT = """/no_think
 Ты — оператор службы 112. Эту карточку твоя служба уже приняла и передала в ДДС. Сейчас диспетчер ДДС звонит по телефону и сообщает об ошибке в ней.
 Ты не заявитель и не пострадавший. Это не новый звонок с улицы.
@@ -119,6 +131,7 @@ VICTIM_SYSTEM_PROMPT = """/no_think
 - Неясный или оборванный вопрос — одна живая просьба повторить. Не читай нотаций и не исправляй речь как словарь.
 - Тон как у этого человека в этой ситуации. Не каждый звонок панический. Без искусственного заикания, без «ну», «алло» и «помогите» в каждой фразе и без длинного монолога.
 - Можно спросить «Вы меня слышите?», «Что мне делать?», «Скоро приедут?». Нельзя вести опрос: не говори «назовите», «уточните», «оставайтесь на линии» и не учи собеседника работе.
+- На одно «алло», «да» или «слышу» без вопроса не пересказывай событие, адрес, телефон и имя. Скажи только, что слышишь.
 - Слова полностью: «область», «город», «улица», «дом», «станция», «строение», «километр». Адрес и телефон — когда спросили, одним понятным предложением.
 
 Факты:
@@ -145,6 +158,7 @@ DEFAULT_PROMPTS: dict[ConversationRole, str] = {
     "service": SERVICE_SYSTEM_PROMPT.strip(),
     "chief": CHIEF_SYSTEM_PROMPT.strip(),
     "crew": CREW_SYSTEM_PROMPT.strip(),
+    "enroute": ENROUTE_SYSTEM_PROMPT.strip(),
     "desk": DESK_SYSTEM_PROMPT.strip(),
 }
 
@@ -538,6 +552,17 @@ def breaks_character(text: str) -> bool:
     return any(marker in low for marker in _MODEL_LEAK)
 
 
+_GREETING_WORD = frozenset({"алло", "але", "да", "слышу", "слушаю", "я", "здесь", "на", "линии"})
+
+
+def bare_greeting(text: str) -> bool:
+    line = " ".join((text or "").lower().replace("ё", "е").split()).strip(" .,!?;:")
+    if not line or "?" in line or _OPERATOR_ASKS.search(line):
+        return False
+    words = [word for word in re.split(r"[^а-яе]+", line) if word]
+    return bool(words) and len(words) <= 6 and all(word in _GREETING_WORD for word in words)
+
+
 def speaks_as_dispatcher(text: str) -> bool:
     low = " ".join((text or "").lower().replace("ё", "е").split())
     return bool(
@@ -758,6 +783,8 @@ def repair_victim_reply(
     op = operator_text or ""
     if breaks_character(text) or leaves_role(text) or speaks_as_dispatcher(text):
         return _human_fallback(op, extra)
+    if bare_greeting(op):
+        return "Алло, да, слышу."
     if _MAMA_IDENTITY.search(text) and _unnamed_relative(extra) != "мама":
         fio = ticket_caller_name(extra)
         name = f"Я {fio}." if fio else "Не знаю."
@@ -863,7 +890,7 @@ def should_speak_intervention(command: str) -> bool:
 def apply_teacher_intervention(session: CallSession, command: str, note: str = "") -> str:
     hints = (
         _SERVICE_HINTS
-        if session.conversation_role in {"service", "chief", "crew", "desk"}
+        if session.conversation_role in {"service", "chief", "crew", "enroute", "desk"}
         else _INTERVENTION_HINTS
     )
     hint = hints.get(command, "Следуй указанию преподавателя.")
@@ -1026,6 +1053,7 @@ def presence_cue(intent: str, role: ConversationRole) -> str:
         "operator": "Ты диспетчер 112. Не становись заявителем.",
         "chief": "Ты начальник дежурной службы. Не становись пострадавшим.",
         "crew": "Ты руководитель бригады на месте. Не становись пострадавшим и не проси помощь себе.",
+        "enroute": "Ты руководитель наряда, ты только выехал и сам звонишь диспетчеру. Не становись пострадавшим и не говори, что уже на месте.",
         "desk": "Ты оператор 112, карточка уже у тебя. Не становись заявителем.",
     }[role]
     lines = {

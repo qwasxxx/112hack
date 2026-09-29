@@ -273,7 +273,7 @@ export function DdsCard(props: Props) {
               Связаться {historyChip.phone}
             </button>
           ) : (
-            <p className="dds-hist-none">Номера нет — службу видно, связаться нельзя.</p>
+            <p className="dds-hist-none">Номера нет</p>
           )}
         </div>
       ) : null}
@@ -315,9 +315,11 @@ export function DdsCard(props: Props) {
               value={props.statusForm.comment}
               onChange={(event) => props.onPatchStatus({ comment: event.target.value })}
               aria-label="Комментарий"
+              aria-invalid={props.formError ? true : undefined}
+              className={props.formError ? 'dds-field-bad' : undefined}
             />
+            {props.formError ? <span className="dds-field-hint">{props.formError}</span> : null}
           </label>
-          {props.formError ? <p className="dds-notice">{props.formError}</p> : null}
           <button type="submit" className="dds-ok" aria-label="Подтвердить статус">
             ✓
           </button>
