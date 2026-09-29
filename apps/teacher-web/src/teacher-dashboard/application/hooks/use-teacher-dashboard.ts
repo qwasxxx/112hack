@@ -130,6 +130,22 @@ export function useTeacherDashboard(repository: TeacherDashboardRepository, poll
           setNotice(error instanceof Error ? error.message : 'Не удалось импортировать файл');
         }
       },
+      deleteScenario: async (id: string) => {
+        await repository.deleteScenario(id);
+        setState((current) => ({
+          ...current,
+          scenarios: current.scenarios.filter((item) => item.id !== id),
+        }));
+        setNotice('Билет удалён');
+      },
+      deleteResult: async (id: string) => {
+        await repository.deleteResult(id);
+        setState((current) => ({
+          ...current,
+          results: current.results.filter((item) => item.id !== id),
+        }));
+        setNotice('Попытка удалена из списка');
+      },
       toggleArchive: async (id: string, archived: boolean) => {
         const saved = await repository.setScenarioArchived(id, archived);
         setState((current) => ({

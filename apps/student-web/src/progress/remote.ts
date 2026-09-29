@@ -112,6 +112,10 @@ export function forgetLessonOutbox(): void {
   writeOutbox(readOutbox().filter((item) => !item.path.startsWith('/lessons/')));
 }
 
+export function deleteLessonRemote(id: string): void {
+  void request(`/lessons/${encodeURIComponent(id)}`, { method: 'DELETE', body: '{}' });
+}
+
 export function pushLesson(record: LessonRecord): void {
   void request(`/lessons/${record.id}`, {
     method: 'PUT',
@@ -211,6 +215,7 @@ export async function pullCues(login?: string): Promise<RemoteCue[]> {
 export type CatalogPayload = {
   overlays?: Record<string, unknown>;
   custom?: unknown[];
+  hidden?: string[];
   updatedAt?: string | null;
 };
 

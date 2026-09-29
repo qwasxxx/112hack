@@ -991,6 +991,19 @@ def test_locked_prompts_allow_natural_caller_speech():
     assert "Билет 3, ситуация 3" not in combined
 
 
+def test_service_asks_address_then_names_one_crew():
+    from sys112_llm.conversation import repair_chief_reply, repair_service_reply
+
+    extra = "АДРЕС В КАРТОЧКЕ: деревня Барыкино\nНОМЕР НАРЯДА: 23. Это единственный номер."
+    assert repair_service_reply("Заявку принял. Наряд 23.", "направьте наряд", extra) == "Куда направлять наряд? Назовите адрес."
+    assert repair_service_reply("Заявку принял.", "пожар в Барыкино", extra) == "Направить наряд?"
+    assert repair_service_reply("Выезжаем.", "направьте наряд в Барыкино", extra) == "Заявку принял. Наряд 23."
+    assert repair_service_reply("Заявку принял. Наряд 23.", "направьте наряд в Барыкино", extra) == "Заявку принял. Наряд 23."
+    assert repair_chief_reply("Принял.", "пожар в Барыкино, дом 11", extra) == "Какой номер наряда?"
+    assert repair_chief_reply("Хорошо.", "наряд 23, пожар в Барыкино", extra) == "Принял."
+    assert repair_chief_reply("Принял.", "Оператор снял трубку.", extra) == "Докладывайте."
+
+
 def test_teacher_nudge_not_in_transcript():
     from sys112_llm.conversation import (
         ConversationManager,

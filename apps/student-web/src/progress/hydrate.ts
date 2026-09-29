@@ -45,8 +45,9 @@ export async function hydrateFromApi(scope?: { login: string; role: string }): P
   }
   const overlays = catalog?.overlays && typeof catalog.overlays === 'object' ? catalog.overlays : {};
   const custom = Array.isArray(catalog?.custom) ? catalog.custom : [];
-  if (Object.keys(overlays).length || custom.length) {
-    replaceCatalogStore({ overlays, custom });
+  const hidden = Array.isArray(catalog?.hidden) ? catalog.hidden.filter((item) => typeof item === 'string') : [];
+  if (catalog && (catalog.updatedAt || Object.keys(overlays).length || custom.length || hidden.length)) {
+    replaceCatalogStore({ overlays, custom, hidden });
     refreshScenarioCatalog();
   }
   mergeRemoteCues(cues);

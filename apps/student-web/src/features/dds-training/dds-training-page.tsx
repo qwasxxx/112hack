@@ -12,6 +12,7 @@ import {
   buildDdsCrewInboundPrompt,
   buildDdsCrewPrompt,
   buildDdsReport112Prompt,
+  assignedCrewNumber,
   buildDdsServicePrompt,
   crewDepartureReady,
   crewEtaMinutes,
@@ -196,6 +197,7 @@ export function DdsTrainingPage(props: Props) {
         decision: item.decision ?? 'dispatch',
         elapsedMs: item.elapsedMs,
         defects: item.defects,
+        expectedNaryad: item.role === 'own' ? assignedCrewNumber(item.number) : undefined,
         naryad: item.naryad,
         workplaceStatus: item.workplaceStatus,
         callback: item.callbackDone,
@@ -340,7 +342,7 @@ export function DdsTrainingPage(props: Props) {
                 service: 'Начальник',
                 counterparty: 'Начальник',
                 aiRole: 'chief',
-                prompt: buildDdsChiefPrompt(active.facts),
+                prompt: buildDdsChiefPrompt(active.facts, assignedCrewNumber(active.number)),
                 opening: ddsChiefOpening(),
               });
             }}
@@ -356,7 +358,7 @@ export function DdsTrainingPage(props: Props) {
                 counterparty: 'Бригада',
                 aiRole: 'crew',
                 prompt: buildDdsCrewPrompt(active.facts, active.defects),
-                opening: ddsCrewOpening(),
+                opening: ddsCrewOpening(active.facts, active.defects),
               });
             }}
             onReport112={() => {
@@ -418,7 +420,13 @@ export function DdsTrainingPage(props: Props) {
               hint={
                 callTarget.title === 'Доклад бригады'
                   ? 'Бригада докладывает о выезде. После звонка поставьте «Начало реагирования».'
-                  : 'Говорите как диспетчер ДДС.'
+                  : callTarget.title === 'Бригада'
+                    ? 'Бригада на месте и говорит, как идут работы. Ошибку карточки потом сообщите в 112.'
+                    : callTarget.title === 'Начальник'
+                      ? 'Доложите суть, адрес и номер наряда. Без номера начальник его спросит.'
+                      : callTarget.aiRole === 'service'
+                        ? 'Назовите адрес и попросите направить наряд. В карточку пишите номер, который назовут.'
+                        : 'Говорите как диспетчер ДДС.'
               }
               panelTitle={callTarget.title}
               aiRole={callTarget.aiRole}

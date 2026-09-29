@@ -1,4 +1,4 @@
-export { appendLesson, absorbLessons, lessonsNewestFirst, listLessonLogins, patchLesson, readAllLessons, readLessons } from './store';
+export { appendLesson, absorbLessons, lessonsNewestFirst, listLessonLogins, patchLesson, readAllLessons, readLessons, removeLesson } from './store';
 export { assignedScenarioIds, assignScenario, isScenarioAssigned, replaceAssignments, unassignScenario } from './assignments';
 export { clearLive, mergeRemoteLive, patchLive, readLiveSessions, subscribeLive, upsertLive } from './live-presence';
 export type { LivePresence } from './live-presence';

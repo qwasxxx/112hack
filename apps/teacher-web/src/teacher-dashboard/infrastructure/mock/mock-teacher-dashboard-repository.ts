@@ -115,6 +115,16 @@ export class MockTeacherDashboardRepository implements TeacherDashboardRepositor
     return { added, updated: 0 };
   }
 
+  async deleteScenario(id: string): Promise<void> {
+    await this.ready();
+    this.scenarios = this.scenarios.filter((item) => item.id !== id);
+  }
+
+  async deleteResult(id: string): Promise<void> {
+    await this.ready();
+    this.results = this.results.filter((item) => item.id !== id);
+  }
+
   async setScenarioArchived(id: string, archived: boolean) {
     await this.ready();
     const current = this.scenarios.find((item) => item.id === id);

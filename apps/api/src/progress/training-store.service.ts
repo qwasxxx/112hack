@@ -54,6 +54,14 @@ export class TrainingStoreService {
     return { ok: true, id };
   }
 
+  async deleteLesson(id: string) {
+    const sql = this.database.requireSql();
+    await sql`DELETE FROM call_recordings WHERE lesson_id = ${id}`;
+    await sql`DELETE FROM teacher_overlays WHERE lesson_id = ${id}`;
+    await sql`DELETE FROM lesson_records WHERE id::text = ${id}`;
+    return { ok: true, id };
+  }
+
   async getAssignments() {
     const sql = this.database.requireSql();
     const [row] = await sql<{
@@ -234,20 +242,26 @@ export class TrainingStoreService {
     `;
     const payload =
       row?.payload && typeof row.payload === 'object'
-        ? (row.payload as { overlays?: unknown; custom?: unknown })
-        : { overlays: {}, custom: [] };
+        ? (row.payload as { overlays?: unknown; custom?: unknown; hidden?: unknown })
+        : { overlays: {}, custom: [], hidden: [] };
     return {
       overlays: payload.overlays && typeof payload.overlays === 'object' ? payload.overlays : {},
       custom: Array.isArray(payload.custom) ? payload.custom : [],
+      hidden: Array.isArray(payload.hidden)
+        ? payload.hidden.filter((item): item is string => typeof item === 'string')
+        : [],
       updatedAt: toIso(row?.updated_at) || null,
     };
   }
 
-  async putCatalog(payload: { overlays?: unknown; custom?: unknown }) {
+  async putCatalog(payload: { overlays?: unknown; custom?: unknown; hidden?: unknown }) {
     const sql = this.database.requireSql();
     const next = {
       overlays: payload.overlays && typeof payload.overlays === 'object' ? payload.overlays : {},
       custom: Array.isArray(payload.custom) ? payload.custom : [],
+      hidden: Array.isArray(payload.hidden)
+        ? payload.hidden.filter((item): item is string => typeof item === 'string')
+        : [],
     };
     await sql`
       INSERT INTO ticket_catalog (id, payload, updated_at)

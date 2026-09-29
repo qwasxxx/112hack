@@ -29,7 +29,22 @@ export type DdsShiftCardInput = {
   crewCalled?: boolean;
   crewInbound?: 'accepted' | 'declined' | 'missed';
   reportedTo112?: boolean;
+  expectedNaryad?: string;
+  defects?: Array<'service' | 'injured' | 'phone'>;
 };
+
+function naryadNumbers(value: string): string[] {
+  return [...value.matchAll(/\d+/g)].map((item) => String(Number(item[0])));
+}
+
+function sameNaryad(got: string, expected?: string): boolean {
+  if (!expected?.trim()) {
+    return Boolean(got.trim());
+  }
+  const want = naryadNumbers(expected);
+  const wrote = naryadNumbers(got);
+  return want.length > 0 && want.every((item) => wrote.includes(item));
+}
 
 type DdsParts = {
   call: number;
@@ -153,32 +168,32 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
       severity: 'error',
     });
   } else {
-    servicePoints = 40;
+    servicePoints = 20;
     const place = input.facts.address
       .toLowerCase()
       .replace(/ё/g, 'е')
       .split(/[^а-я0-9]+/u)
-      .filter((word) => word.length >= 5 && !['москва', 'область', 'напротив', 'большой', 'большого'].includes(word));
+      .filter((word) => word.length >= 4 && !['москва', 'область', 'город', 'улица', 'напротив', 'большой', 'большого'].includes(word));
     const namedPlace = place.filter((word) => said.includes(word.slice(0, 5))).length;
-    if (place.length > 0 && namedPlace < Math.min(2, place.length)) {
+    if (place.length > 0 && namedPlace < 1) {
       findings.push({
         code: 'dds-service-address',
         field: 'Связь со службой',
-        message: `В разговоре со службой не назвали адрес`,
-        severity: 'warning',
+        message: 'В разговоре со службой не назвали адрес. Без адреса наряд не направляют',
+        severity: 'error',
       });
     } else {
-      servicePoints += 8;
+      servicePoints += 12;
     }
     if (!/наряд|бригад|выез|направ|отправ/.test(said)) {
       findings.push({
         code: 'dds-service-crew',
         field: 'Связь со службой',
         message: 'Службе не сказали направить наряд или бригаду',
-        severity: 'warning',
+        severity: 'error',
       });
     } else {
-      servicePoints += 7;
+      servicePoints += 8;
     }
   }
 
@@ -231,32 +246,35 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
     });
   }
   let naryadPoints = 0;
-  if (!(input.naryad ?? '').trim()) {
+  const writtenNaryad = (input.naryad ?? '').trim();
+  if (!sameNaryad(writtenNaryad, input.expectedNaryad)) {
     findings.push({
       code: 'dds-naryad',
       field: 'Наряд',
-      message: 'Не указан номер наряда',
+      message:
+        writtenNaryad && input.expectedNaryad
+          ? `В карточке другой номер наряда. Служба назвала ${input.expectedNaryad}`
+          : 'Не указан номер наряда',
       severity: 'error',
     });
   } else {
-    naryadPoints = 6;
-  }
-  let fioPoints = 0;
-  const fio = input.draft.callerName.trim();
-  if (fio.length < 5) {
-    findings.push({
-      code: 'dds-fio',
-      field: 'ФИО заявителя',
-      message: 'ФИО заявителя не заполнено',
-      severity: 'error',
-    });
-  } else {
-    fioPoints = 6;
+    naryadPoints = 12;
   }
 
   const told112 = Boolean(input.crewCalled && input.reportedTo112);
   let injuredPoints = 0;
-  if (check.injuredOk || told112) {
+  if (input.defects?.includes('injured')) {
+    if (told112) {
+      injuredPoints = 8;
+    } else {
+      findings.push({
+        code: 'dds-injured',
+        field: 'Пострадавшие',
+        message: `В карточке «${input.draft.injured || 'пусто'}», по месту «${input.facts.injured}». Поле 112 не правится: бригада называет расхождение, затем сообщите о нём в 112`,
+        severity: 'error',
+      });
+    }
+  } else if (check.injuredOk || told112) {
     injuredPoints = 8;
   } else {
     findings.push({
@@ -268,7 +286,18 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
   }
 
   let phonePoints = 0;
-  if (check.phoneOk || told112) {
+  if (input.defects?.includes('phone')) {
+    if (told112) {
+      phonePoints = 7;
+    } else {
+      findings.push({
+        code: 'dds-phone',
+        field: 'Телефон',
+        message: 'Телефон в карточке 112 пустой или неверный. Его называет бригада, затем диспетчер сообщает об ошибке в 112. Само поле не правят',
+        severity: 'error',
+      });
+    }
+  } else if (check.phoneOk || told112) {
     phonePoints = 7;
   } else {
     findings.push({
@@ -301,9 +330,6 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
   timerPoints = Math.max(0, timerPoints);
 
   const routeTracked = input.chiefCalled != null || input.crewCalled != null;
-  if (routeTracked) {
-    servicePoints = Math.min(servicePoints, 40);
-  }
   let routePoints = 0;
   if (input.chiefCalled === true) {
     routePoints += 8;
@@ -359,22 +385,21 @@ export function scoreDdsCard(input: DdsShiftCardInput): ScoredCard {
   findings.push(...inspectOperatorText('Описание', input.draft.description, { minChars: 8 }));
   const parts: DdsParts = {
     call: servicePoints + routePoints,
-    card: acceptPoints + closePoints + naryadPoints + fioPoints,
+    card: acceptPoints + closePoints + naryadPoints,
     facts: injuredPoints + phonePoints,
     timer: timerPoints,
   };
   const raw = parts.call + parts.card + parts.facts + parts.timer;
   const decisionOk = input.decision === 'dispatch';
   const points = decisionOk ? Math.max(0, Math.min(100, raw)) : Math.min(40, Math.round(raw / 2));
-  const callReady = routeTracked ? servicePoints === 40 && routePoints === 15 : servicePoints === 55;
+  const callReady = routeTracked ? servicePoints === 40 && routePoints === 15 : servicePoints === 40;
   const factsReady = injuredPoints === 8 && phonePoints === 7;
   const ok =
     decisionOk &&
     callReady &&
     factsReady &&
-    fioPoints > 0 &&
+    naryadPoints > 0 &&
     acceptedStatus(status) &&
-    Boolean((input.naryad ?? '').trim()) &&
     status === 'Работы завершены';
 
   return {
@@ -424,11 +449,8 @@ export function scoreDdsLesson(input: {
   if (scored.some((item) => item.role === 'own' && item.decision !== 'dispatch')) {
     recs.push('Карточку своего профиля нужно принять и направить, а не отдавать соседям.');
   }
-  if (scored.some((item) => item.role === 'own' && !item.injuredOk)) {
-    recs.push('Если в описании есть пострадавший, признак «пострадавшие» не может быть «нет».');
-  }
-  if (scored.some((item) => item.role === 'own' && !item.phoneOk)) {
-    recs.push('Ошибку телефона или пострадавших сообщает бригада с места. Затем звонок в 112. Поля карточки 112 сами не правятся.');
+  if (findings.some((item) => item.code === 'dds-injured' || item.code === 'dds-phone')) {
+    recs.push('Ошибку пострадавших или телефона называет бригада с места. Затем сообщите о ней в 112. Поля карточки 112 не правьте.');
   }
   if (scored.some((item) => item.findings.some((finding) => finding.code === 'dds-service-call'))) {
     recs.push('По своей карточке нужно позвонить в нужную службу, назвать адрес и попросить направить наряд.');
@@ -439,8 +461,11 @@ export function scoreDdsLesson(input: {
   if (findings.some((item) => item.code === 'dds-crew-report')) {
     recs.push('Когда бригада звонит о выезде, примите вызов и поставьте «Начало реагирования».');
   }
-  if (scored.some((item) => item.findings.some((finding) => finding.code === 'dds-fio' || finding.code === 'dds-naryad'))) {
-    recs.push('ФИО заявителя и номер наряда должны быть в карточке, одних статусов мало.');
+  if (findings.some((item) => item.code === 'dds-naryad')) {
+    recs.push('В карточку пишите тот номер наряда, который назвала служба.');
+  }
+  if (findings.some((item) => item.code === 'dds-service-address')) {
+    recs.push('Службе нужно назвать адрес. Без адреса наряд не направляют.');
   }
   if (findings.some((item) => item.code === 'dds-accept' || item.code === 'dds-close')) {
     recs.push('Сначала «Принята», затем наряд и статусы реагирования, в конце «Работы завершены».');
@@ -530,9 +555,14 @@ export function scoreDdsLesson(input: {
         },
         {
           label: `${prefix} · наряд`,
-          expected: item.role === 'foreign' ? 'не нужен' : 'номер бригады',
+          expected: item.role === 'foreign' ? 'не нужен' : item.expectedNaryad || 'номер бригады',
           got: item.naryad ?? '',
-          state: item.role === 'foreign' || Boolean(item.naryad?.trim()) ? 'match' : 'empty',
+          state:
+            item.role === 'foreign' || sameNaryad(item.naryad ?? '', item.expectedNaryad)
+              ? 'match'
+              : item.naryad?.trim()
+                ? 'miss'
+                : 'empty',
           points: 0,
           max: 0,
         },

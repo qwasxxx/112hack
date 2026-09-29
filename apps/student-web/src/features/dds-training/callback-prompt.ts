@@ -30,11 +30,20 @@ export function crewDepartureReady(card: {
   });
 }
 
+export function assignedCrewNumber(seed: string): string {
+  let hash = 0;
+  for (const char of seed) {
+    hash = (hash + char.charCodeAt(0) * 17) % 70;
+  }
+  return String(21 + hash);
+}
+
 export function buildDdsServicePrompt(
   label: string,
   phone: string,
   cardNumber: string,
   facts: TicketFacts,
+  naryad = assignedCrewNumber(cardNumber),
 ): string {
   return [
     `Служба: ${label}, номер ${phone}.`,
@@ -42,8 +51,10 @@ export function buildDdsServicePrompt(
     facts.address ? `АДРЕС В КАРТОЧКЕ: ${facts.address}` : '',
     facts.description ? `СУТЬ: ${facts.description}` : '',
     `Пострадавшие в карточке: ${facts.injured}`,
-    'Диспетчер ДДС сам называет адрес и суть. Если не назвал — спроси только это.',
-    'Если адрес и суть названы — подтверди, что заявка принята. Не обещай время прибытия и не говори, что наряд уже выехал, если этого нет в карточке.',
+    `НОМЕР НАРЯДА: ${naryad}. Это единственный номер. Другой не называй.`,
+    'Пока диспетчер не назвал адрес — спроси только адрес. Заявку не подтверждай и номер наряда не говори.',
+    'Если адрес есть, а направить наряд не просили — спроси, направлять ли наряд. Номер ещё не говори.',
+    'Когда названы адрес и просьба направить наряд — подтверди заявку и назови этот номер наряда. Минуты прибытия не обещай.',
   ]
     .filter(Boolean)
     .join('\n');
@@ -76,12 +87,20 @@ export function buildDdsCrewPrompt(facts: TicketFacts, defects: Array<'service' 
   if (!defects.includes('injured') && !defects.includes('phone')) {
     lines.push('Коротко доложи, что на месте всё как в карточке. Новых пострадавших не выдумывай.');
   }
+  lines.push('Ты уже на месте, работы ещё идут. Скажи это, чтобы диспетчер поставил статус. Новое событие не выдумывай.');
   lines.push('Ты не заявитель и не оператор 112.');
   return lines.filter(Boolean).join('\n');
 }
 
-export function ddsCrewOpening(): string {
-  return 'Бригада на месте, слушаю.';
+export function ddsCrewOpening(facts?: TicketFacts, defects: Array<'service' | 'injured' | 'phone'> = []): string {
+  if (facts && defects.includes('injured')) {
+    const seen = facts.injured === 'Есть' ? 'пострадавшие есть' : 'пострадавших нет';
+    return `Бригада на месте. В карточке пострадавшие указаны неверно: ${seen}. Работы идут.`;
+  }
+  if (facts && defects.includes('phone') && facts.callerPhone) {
+    return `Бригада на месте. В карточке нет телефона. Телефон ${facts.callerPhone}. Работы идут.`;
+  }
+  return 'Бригада на месте. Всё как в карточке. Работы идут.';
 }
 
 export function crewEtaMinutes(seed: string): number {
@@ -113,19 +132,21 @@ export function buildDdsCrewInboundPrompt(facts: TicketFacts, naryad: string, et
     .join('\n');
 }
 
-export function buildDdsChiefPrompt(facts: TicketFacts): string {
+export function buildDdsChiefPrompt(facts: TicketFacts, naryad?: string): string {
   return [
     'РОЛЬ: вышестоящий начальник. Не заявитель и не пострадавший.',
     'Диспетчер ДДС докладывает по уже открытой карточке.',
     facts.address ? `Адрес в карточке: ${facts.address}` : '',
-    'Подтверди, что доклад принят. Адрес и число пострадавших не меняй и не выдумывай.',
+    naryad ? `НОМЕР НАРЯДА: ${naryad}.` : '',
+    'Если в докладе нет номера наряда — спроси только: «Какой номер наряда?» Не говори, что доклад принят.',
+    'Когда названы суть, адрес и номер наряда — скажи: «Принял.» Адрес и число пострадавших не меняй и не выдумывай.',
   ]
     .filter(Boolean)
     .join('\n');
 }
 
 export function ddsChiefOpening(): string {
-  return 'Слушаю доклад.';
+  return 'Докладывайте.';
 }
 
 export function buildDdsReport112Prompt(facts: TicketFacts, draft: { injured: string; callerPhone: string }): string {

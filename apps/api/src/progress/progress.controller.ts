@@ -36,6 +36,11 @@ export class ProgressController {
     return this.store.upsertLesson(id, String(body.login || ''), body.payload);
   }
 
+  @Delete('lessons/:id')
+  deleteLesson(@Param('id') id: string) {
+    return this.store.deleteLesson(id);
+  }
+
   @Get('assignments')
   assignments() {
     return this.store.getAssignments();

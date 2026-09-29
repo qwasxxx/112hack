@@ -37,6 +37,8 @@ from sys112_llm.conversation import (
     presence_cue,
     presence_spoken,
     remembered_reply,
+    repair_chief_reply,
+    repair_service_reply,
     repair_victim_reply,
     speaks_as_dispatcher,
     bare_greeting,
@@ -513,10 +515,20 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
                 return
             continue
         if full:
-            if session.conversation_role == "service" and breaks_character(full):
-                full = "Повторите адрес и суть."
-            elif session.conversation_role == "chief" and breaks_character(full):
-                full = "Доклад принял."
+            if session.conversation_role == "service" and not session.presence:
+                raw = full
+                if breaks_character(full):
+                    full = "Куда направлять наряд? Назовите адрес."
+                full = repair_service_reply(full, last_user_text(session), session_scenario_extra(session))
+                if full != raw:
+                    session.streamed = ""
+            elif session.conversation_role == "chief" and not session.presence:
+                raw = full
+                if breaks_character(full):
+                    full = "Какой номер наряда?"
+                full = repair_chief_reply(full, last_user_text(session), session_scenario_extra(session))
+                if full != raw:
+                    session.streamed = ""
             elif session.conversation_role == "crew" and breaks_character(full):
                 full = "Бригада на месте. Докладываю по карточке."
             elif session.conversation_role == "enroute" and breaks_character(full):

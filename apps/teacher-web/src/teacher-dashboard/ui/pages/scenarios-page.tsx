@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { InterventionType, ScenarioDifficulty } from '@sys112/shared-types';
 import type { Scenario, ScenarioDraft, TrainingMaterial } from '../../domain/entities';
 import { difficultyLabels, formatDateTime } from '../../domain/value-objects';
@@ -426,14 +426,24 @@ export function ScenariosPage({
   scenarios,
   materials,
   onSave,
+  onDelete,
   onImport,
 }: {
   scenarios: Scenario[];
   materials: TrainingMaterial[];
   onSave: (draft: ScenarioDraft) => Promise<{ id: string } | void>;
+  onDelete: (id: string) => Promise<void>;
   onImport?: (raw: string) => Promise<{ added: number; updated: number } | void>;
 }) {
   const [editing, setEditing] = useState<Scenario | 'new' | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+  const editingKey = editing === 'new' ? 'new' : editing?.id ?? '';
+  useEffect(() => {
+    if (!editingKey) {
+      return;
+    }
+    formRef.current?.scrollIntoView({ block: 'start' });
+  }, [editingKey]);
   const [query, setQuery] = useState('');
   const [importing, setImporting] = useState(false);
   const visible = useMemo(() => {
@@ -500,11 +510,14 @@ export function ScenariosPage({
         </div>
       </header>
       {editing && (
-        <ScenarioForm
-          scenario={editing === 'new' ? undefined : editing}
-          onSave={onSave}
-          onCancel={() => setEditing(null)}
-        />
+        <div ref={formRef}>
+          <ScenarioForm
+            key={editingKey}
+            scenario={editing === 'new' ? undefined : editing}
+            onSave={onSave}
+            onCancel={() => setEditing(null)}
+          />
+        </div>
       )}
       <section className="td-panel">
         <div className="td-section-title">
@@ -551,7 +564,18 @@ export function ScenariosPage({
                   </div>
                 </dl>
                 <div className="td-card-actions">
-                  <button className="td-btn td-btn--secondary" onClick={() => setEditing(scenario)}>
+                  <button className="td-btn td-btn--ghost" type="button" onClick={() => {
+                    if (!window.confirm(`Удалить билет «${scenario.title}»? Ученики его больше не увидят.`)) {
+                      return;
+                    }
+                    if (editing !== 'new' && editing?.id === scenario.id) {
+                      setEditing(null);
+                    }
+                    void onDelete(scenario.id);
+                  }}>
+                    Удалить
+                  </button>
+                  <button className="td-btn td-btn--secondary" type="button" onClick={() => setEditing(scenario)}>
                     Открыть
                   </button>
                 </div>

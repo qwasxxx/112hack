@@ -98,8 +98,14 @@ test('skipping the service call costs most of the DDS score', () => {
     contacts: [{ service: 'Служба 102', said: 'направьте наряд в лес за Барыкино' }],
   };
   const called = scoreDdsCard(calledInput);
-  assert.equal(called.parts.call, 55);
+  assert.equal(called.parts.call, 40);
   assert.ok(called.points - silent.points >= 40);
+  const noAddress = scoreDdsCard({
+    ...base,
+    contacts: [{ service: 'Служба 102', said: 'направьте наряд' }],
+  });
+  assert.equal(noAddress.parts.call, 28);
+  assert.ok(noAddress.findings.some((item) => item.code === 'dds-service-address'));
   const routed = scoreDdsCard({ ...calledInput, chiefCalled: true, crewCalled: true });
   assert.equal(routed.parts.call, 55);
   const noRoute = scoreDdsCard({ ...calledInput, chiefCalled: false, crewCalled: false });
@@ -178,6 +184,25 @@ test('a wrong 112 field is settled by the crew and a call to 112, not by editing
   assert.equal(scoreDdsCard(base).parts.facts, 7);
   const told = scoreDdsCard({ ...base, crewCalled: true, reportedTo112: true });
   assert.equal(told.parts.facts, 15);
+  const edited = scoreDdsCard({
+    ...base,
+    draft: { ...draft, injured: 'Есть' },
+    defects: ['injured'],
+  });
+  assert.equal(edited.parts.facts, 7);
+  const reported = scoreDdsCard({
+    ...base,
+    draft: { ...draft, injured: 'Есть' },
+    defects: ['injured'],
+    crewCalled: true,
+    reportedTo112: true,
+  });
+  assert.equal(reported.parts.facts, 15);
+  const wrongNumber = scoreDdsCard({ ...base, naryad: '99', expectedNaryad: '12' });
+  assert.equal(wrongNumber.parts.card, 10);
+  assert.ok(wrongNumber.findings.some((item) => item.code === 'dds-naryad'));
+  const rightNumber = scoreDdsCard({ ...base, naryad: 'наряд 12', expectedNaryad: '12' });
+  assert.equal(rightNumber.parts.card, 22);
 });
 
 test('closing DDS without the status cycle does not count as finished', () => {

@@ -44,8 +44,9 @@ SERVICE_SYSTEM_PROMPT = """/no_think
 
 Как говоришь:
 - Только по-русски, делово и понятно. В ответе только то, что произносишь вслух.
-- Если не названы адрес или суть — спроси именно это. Такой вопрос службе можно.
-- Если адрес и суть названы — подтверди, что заявка принята. Не обещай выезд, минуты прибытия и итог, если этого нет в карточке.
+- Если не назван адрес — спроси только адрес. Заявку не подтверждай и номер наряда не говори.
+- Если адрес есть, а направить наряд не просили — спроси, направлять ли наряд. Номер ещё не говори.
+- Когда названы адрес и просьба направить наряд — подтверди заявку и назови номер наряда из контекста. Минуты прибытия не обещай. Другой номер не выдумывай.
 - Если это не твоя зона — коротко скажи об этом, без новой легенды.
 - Не паникуй, не проси помощь себе и не читай нотаций.
 
@@ -58,7 +59,8 @@ CHIEF_SYSTEM_PROMPT = """/no_think
 
 Как говоришь:
 - Только по-русски, коротко и спокойно. В ответе только то, что произносишь вслух.
-- Доклад принимаешь: «Принял» или «Понял». Если диспетчер не назвал адрес — спроси только адрес.
+- Сначала слушаешь доклад. Если нет номера наряда — спроси только: «Какой номер наряда?» Пока номера нет, не говори «принял».
+- Когда есть суть, адрес и номер наряда — скажи «Принял». Если диспетчер не назвал адрес — спроси только адрес.
 - Не спрашивай «что случилось» как у нового звонка с улицы. Карточка уже в работе.
 - Не описывай боль, огонь, панику и не проси прислать помощь себе.
 - Не выдумывай пострадавших и не меняй адрес из контекста.
@@ -545,6 +547,66 @@ def model_facing_user(text: str) -> str:
 def leaves_role(text: str) -> bool:
     low = " ".join((text or "").lower().replace("ё", "е").split())
     return bool(_HELPER.search(low))
+
+
+def _context_line(extra: str, label: str) -> str:
+    for line in (extra or "").splitlines():
+        if line.upper().startswith(label):
+            return line.split(":", 1)[-1].strip()
+    return ""
+
+
+def _address_named(operator: str, address: str) -> bool:
+    words = [
+        word
+        for word in re.split(r"[^а-яё0-9]+", address.lower().replace("ё", "е"))
+        if len(word) >= 4 and word not in {"город", "улица", "дом", "область", "москва"}
+    ]
+    if not words:
+        return True
+    said = operator.lower().replace("ё", "е")
+    return any(word[:5] in said for word in words)
+
+
+_SEND = re.compile(r"наряд|бригад|выез|направ|отправ", re.IGNORECASE)
+
+
+def repair_service_reply(text: str, operator: str, extra: str) -> str:
+    address = _context_line(extra, "АДРЕС")
+    raw_number = _context_line(extra, "НОМЕР НАРЯДА")
+    number = raw_number.split()[0].strip(".,") if raw_number else ""
+    said = (operator or "").lower().replace("ё", "е")
+    if address and not _address_named(operator, address):
+        return "Куда направлять наряд? Назовите адрес."
+    if not _SEND.search(said):
+        return "Направить наряд?"
+    if number and number not in (text or ""):
+        return f"Заявку принял. Наряд {number}."
+    return text
+
+
+def repair_chief_reply(text: str, operator: str, extra: str = "") -> str:
+    said = " ".join((operator or "").lower().replace("ё", "е").split())
+    reply = " ".join((text or "").lower().replace("ё", "е").split())
+    if not said or "снял трубку" in said:
+        if re.search(r"принял|понял|наряд", reply):
+            return "Докладывайте."
+        return text
+    number = ""
+    raw_number = _context_line(extra, "НОМЕР НАРЯДА")
+    if raw_number:
+        number = raw_number.split()[0].strip(".,")
+    named = bool(number and re.search(rf"(?<!\d){re.escape(number)}(?!\d)", said))
+    named = named or ("наряд" in said and bool(re.search(r"\d", said)))
+    if not named:
+        if "наряд" in reply and "?" in (text or ""):
+            return text
+        return "Какой номер наряда?"
+    if re.search(r"принял|понял", reply):
+        return text
+    if "?" in (text or ""):
+        return text
+    return "Принял."
 
 
 def breaks_character(text: str) -> bool:

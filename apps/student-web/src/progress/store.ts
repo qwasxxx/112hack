@@ -63,6 +63,22 @@ export function patchLesson(login: string, id: string, patch: Partial<Omit<Lesso
   return next;
 }
 
+export function removeLesson(id: string): void {
+  if (!canUseStorage() || !id) {
+    return;
+  }
+  for (const login of listLessonLogins()) {
+    const current = readLessons(login);
+    if (!current.some((item) => item.id === id)) {
+      continue;
+    }
+    writeLessons(
+      login,
+      current.filter((item) => item.id !== id),
+    );
+  }
+}
+
 export function lessonsNewestFirst(login: string): LessonRecord[] {
   return [...readLessons(login)].sort((a, b) => b.completedAt.localeCompare(a.completedAt));
 }

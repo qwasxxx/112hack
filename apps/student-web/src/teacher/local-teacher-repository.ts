@@ -15,7 +15,7 @@ import type { Account } from '../auth/accounts';
 import { loadAccounts } from '../auth/accounts';
 import { SCENARIOS, SERVICE_LABEL, refreshScenarioCatalog } from '../data/scenarios';
 import type { ServiceKind } from '../data/scenarios';
-import { createCustomTicket, saveTicketPatch, applyCatalogImport } from '../data/ticket-catalog';
+import { createCustomTicket, deleteTicket, saveTicketPatch, applyCatalogImport } from '../data/ticket-catalog';
 import {
   assignScenario,
   assignedScenarioIds,
@@ -24,6 +24,7 @@ import {
   patchLive,
   pushTeacherCue,
   readAllLessons,
+  removeLesson,
   readClassSession,
   readLiveSessions,
   subscribeLive,
@@ -32,7 +33,7 @@ import {
 } from '../progress';
 import { ticketFactsFrom, serviceLabels } from '../progress/ticket-facts';
 import { hydrateFromApi } from '../progress/hydrate';
-import { pushAudit, pushOverlay, pullCues, pullLive } from '../progress/remote';
+import { deleteLessonRemote, pushAudit, pushOverlay, pullCues, pullLive } from '../progress/remote';
 import { mergeRemoteLive } from '../progress/live-presence';
 import { CUE_LABEL, latestCue, mergeRemoteCues } from '../progress/teacher-cues';
 
@@ -431,6 +432,22 @@ export class LocalTeacherDashboardRepository implements TeacherDashboardReposito
       throw new Error('Билет не сохранён');
     }
     return saved;
+  }
+
+  async deleteScenario(id: string): Promise<void> {
+    deleteTicket(id);
+    unassignScenario(id);
+    refreshScenarioCatalog();
+  }
+
+  async deleteResult(id: string): Promise<void> {
+    removeLesson(id);
+    deleteLessonRemote(id);
+    const comments = readJson<CommentMap>(COMMENTS_KEY, {});
+    if (comments[id]) {
+      delete comments[id];
+      writeJson(COMMENTS_KEY, comments);
+    }
   }
 
   async importCatalog(raw: string): Promise<{ added: number; updated: number }> {

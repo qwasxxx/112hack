@@ -55,7 +55,7 @@ export function TeacherDashboard({
     () => repository ?? new MockTeacherDashboardRepository(),
     [repository],
   );
-  const { state, notice, retry, saveScenario, importCatalog, toggleArchive, intervene, saveComment, adjustScore } =
+  const { state, notice, retry, saveScenario, deleteScenario, deleteResult, importCatalog, toggleArchive, intervene, saveComment, adjustScore } =
     useTeacherDashboard(resolvedRepository, pollMs);
   const [section, setSection] = useState<Section>('overview');
   const [observedId, setObservedId] = useState<string | null>(null);
@@ -257,6 +257,7 @@ export function TeacherDashboard({
               scenarios={state.scenarios}
               materials={state.materials}
               onSave={saveScenario}
+              onDelete={deleteScenario}
               onImport={importCatalog}
             />
           ) : (
@@ -268,6 +269,7 @@ export function TeacherDashboard({
               systemStatus={legacyStatus}
               onSaveComment={saveComment}
               onAdjustScore={adjustScore}
+              onDelete={deleteResult}
             />
           )}
         </main>

@@ -42,6 +42,7 @@ export type DdsFinishCard = {
   decision: 'dispatch' | 'transfer';
   elapsedMs: number;
   defects: DdsDefect[];
+  expectedNaryad?: string;
   naryad?: string;
   workplaceStatus?: string;
   callback?: boolean;
@@ -656,6 +657,8 @@ export function DdsDebriefPage(props: DdsDebriefProps) {
         crewCalled: item.crewCalled,
         crewInbound: item.crewInbound,
         reportedTo112: item.reportedTo112,
+        expectedNaryad: item.expectedNaryad,
+        defects: item.defects,
         dialogue: item.dialogue,
       })),
     });
@@ -943,6 +946,8 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
       crewCalled: item.crewCalled,
       crewInbound: item.crewInbound,
       reportedTo112: item.reportedTo112,
+      expectedNaryad: item.expectedNaryad,
+      defects: item.defects,
     }),
   );
   const avg = (values: number[]) => (values.length ? Math.round(values.reduce((sum, item) => sum + item, 0) / values.length) : 0);
@@ -950,8 +955,8 @@ function ddsScoreRows(cards: DdsFinishCard[]) {
     ? Math.round((foreign.filter((item) => item.decision === 'transfer' || item.workplaceStatus === 'Не принято').length / foreign.length) * 100)
     : 100;
   return [
-    { label: 'Связь со службой', value: avg(scored.map((item) => item.parts.call)), max: 55, hint: 'Служба, начальник, бригада и доклад о выезде' },
-    { label: 'Карточка', value: avg(scored.map((item) => item.parts.card)), max: 22, hint: 'Приём, ФИО, номер наряда, закрытие' },
+    { label: 'Связь со службой', value: avg(scored.map((item) => item.parts.call)), max: 55, hint: 'Адрес и наряд службе, начальник, бригада и доклад о выезде' },
+    { label: 'Карточка', value: avg(scored.map((item) => item.parts.card)), max: 22, hint: 'Приём, номер наряда со службы, закрытие' },
     { label: 'Факты', value: avg(scored.map((item) => item.parts.facts)), max: 15, hint: 'Пострадавшие и телефон' },
     { label: 'Норматив', value: avg(scored.map((item) => item.parts.timer)), max: 8, hint: '30 с до открытия, 3 мин на первую запись' },
     { label: 'Чужие карточки', value: transfer, max: 100, hint: 'Чужой профиль — «Не принято», без своей бригады' },
@@ -979,13 +984,14 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
       crewCalled: card.crewCalled,
       crewInbound: card.crewInbound,
       reportedTo112: card.reportedTo112,
+      expectedNaryad: card.expectedNaryad,
+      defects: card.defects,
     });
     const told112 = Boolean(card.crewCalled && card.reportedTo112);
     const injuredOk = card.draft.injured === card.facts.injured || told112;
     const phoneOk = phonesMatch(card.facts.callerPhone, card.draft.callerPhone) || told112;
     const profileOk = own ? card.decision === 'dispatch' : card.decision === 'transfer';
-    const cardReady =
-      card.workplaceStatus === 'Работы завершены' && Boolean(card.naryad) && card.draft.callerName.trim().length >= 5;
+    const cardReady = card.workplaceStatus === 'Работы завершены' && scored.parts.card >= 22;
     return [
       {
         id: `${card.id}-profile`,
@@ -1010,8 +1016,8 @@ function ddsFieldChecks(cards: DdsFinishCard[]): FieldCheck[] {
             {
               id: `${card.id}-flow`,
               label: `${card.scenario.code} · карточка`,
-              expected: 'ФИО, наряд, Принята и Работы завершены',
-              got: `${card.draft.callerName || 'ФИО пусто'} · ${card.workplaceStatus ?? 'нет статуса'}${card.naryad ? ` · наряд ${card.naryad}` : ' · наряд пусто'}`,
+              expected: 'Наряд со службы, Принята и Работы завершены',
+              got: `${card.workplaceStatus ?? 'нет статуса'}${card.naryad ? ` · наряд ${card.naryad}` : ' · наряд пусто'}`,
               state: cardReady ? 'match' : scored.parts.card > 0 ? 'partial' : 'miss',
               points: scored.parts.card,
               max: 22,

@@ -17,6 +17,7 @@ export type TicketPatch = {
 type CatalogStore = {
   overlays: Record<string, TicketPatch>;
   custom: TrainingScenario[];
+  hidden: string[];
 };
 
 export type CatalogImportResult = {
@@ -26,7 +27,7 @@ export type CatalogImportResult = {
 
 const KEY = 'sys112.tickets.v1';
 
-const emptyStore = (): CatalogStore => ({ overlays: {}, custom: [] });
+const emptyStore = (): CatalogStore => ({ overlays: {}, custom: [], hidden: [] });
 
 function readStore(): CatalogStore {
   if (typeof localStorage === 'undefined') {
@@ -41,6 +42,7 @@ function readStore(): CatalogStore {
     return {
       overlays: parsed.overlays && typeof parsed.overlays === 'object' ? parsed.overlays : {},
       custom: Array.isArray(parsed.custom) ? parsed.custom : [],
+      hidden: Array.isArray(parsed.hidden) ? parsed.hidden.filter((item) => typeof item === 'string') : [],
     };
   } catch {
     return emptyStore();
@@ -57,12 +59,13 @@ function writeStore(store: CatalogStore, sync = true): void {
   }
 }
 
-export function replaceCatalogStore(store: { overlays?: unknown; custom?: unknown }): void {
+export function replaceCatalogStore(store: { overlays?: unknown; custom?: unknown; hidden?: unknown }): void {
   writeStore(
     {
       overlays:
         store.overlays && typeof store.overlays === 'object' ? (store.overlays as CatalogStore['overlays']) : {},
       custom: Array.isArray(store.custom) ? (store.custom as TrainingScenario[]) : [],
+      hidden: Array.isArray(store.hidden) ? store.hidden.filter((item) => typeof item === 'string') : [],
     },
     false,
   );
@@ -97,11 +100,12 @@ export function applyTicketPatch(base: TrainingScenario, patch: TicketPatch): Tr
 
 export function buildCatalog(): TrainingScenario[] {
   const store = readStore();
+  const hidden = new Set(store.hidden);
   const ags = AGS_SCENARIOS.map((item) => {
     const patch = store.overlays[item.id];
     return patch ? applyTicketPatch(item, patch) : { ...item };
   });
-  return [...ags, ...store.custom];
+  return [...ags, ...store.custom].filter((item) => !hidden.has(item.id));
 }
 
 export function saveTicketPatch(id: string, patch: TicketPatch): TrainingScenario {
@@ -120,6 +124,16 @@ export function saveTicketPatch(id: string, patch: TicketPatch): TrainingScenari
   }
   writeStore(store);
   return next;
+}
+
+export function deleteTicket(id: string): void {
+  const store = readStore();
+  store.custom = store.custom.filter((item) => item.id !== id);
+  delete store.overlays[id];
+  if (!store.hidden.includes(id)) {
+    store.hidden = [...store.hidden, id];
+  }
+  writeStore(store);
 }
 
 export function createCustomTicket(patch: TicketPatch): TrainingScenario {

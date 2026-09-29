@@ -16,6 +16,8 @@ export interface TeacherDashboardRepository {
   getScenarios(): Promise<Scenario[]>;
   getMaterials(): Promise<TrainingMaterial[]>;
   saveScenario(draft: ScenarioDraft): Promise<Scenario>;
+  deleteScenario(id: string): Promise<void>;
+  deleteResult(id: string): Promise<void>;
   importCatalog?(raw: string): Promise<{ added: number; updated: number }>;
   setScenarioArchived(id: string, archived: boolean): Promise<Scenario>;
   getResults(): Promise<CompletedResult[]>;

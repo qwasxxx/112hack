@@ -428,12 +428,20 @@ export function useDdsSession(scenario: TrainingScenario, lane: DdsLaneId) {
     if (!activeId) {
       return;
     }
+    const current = cards.find((item) => item.id === activeId);
     patchQueue(activeId, (item) => ({
       ...item,
       chiefCalled: kind === 'chief' ? true : item.chiefCalled,
       crewCalled: kind === 'crew' ? true : item.crewCalled,
       reportedTo112: kind === '112' ? true : item.reportedTo112,
     }));
+    if (kind === 'crew') {
+      setRouteHint(
+        current && current.defects.length > 0
+          ? 'Бригада на месте. Если назвала ошибку в карточке — сообщите о ней в 112. Затем «Прибытие» и «Проведение работ».'
+          : 'Бригада на месте, работы идут. Поставьте «Прибытие», затем «Проведение работ».',
+      );
+    }
     log('service_call', kind === '112' ? 'сообщение в 112' : kind === 'crew' ? 'бригада' : 'начальник');
   }
 
