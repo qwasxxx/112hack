@@ -475,6 +475,15 @@ def last_user_text(session: CallSession) -> str:
     return ""
 
 
+def operator_transcript(session: CallSession) -> str:
+    parts = [
+        item.content
+        for item in session.messages
+        if item.role == "user" and item.content != TEACHER_NUDGE_TEXT
+    ]
+    return " ".join(parts)
+
+
 _DISPATCH_ACKS = (
     "Хорошо, жду.",
     "Да, скорее приезжайте.",
@@ -580,18 +589,17 @@ def repair_service_reply(text: str, operator: str, extra: str) -> str:
         return "Куда направлять наряд? Назовите адрес."
     if not _SEND.search(said):
         return "Направить наряд?"
-    if number and number not in (text or ""):
+    if number:
         return f"Заявку принял. Наряд {number}."
-    return text
+    return "Заявку принял."
 
 
 def repair_chief_reply(text: str, operator: str, extra: str = "") -> str:
     said = " ".join((operator or "").lower().replace("ё", "е").split())
-    reply = " ".join((text or "").lower().replace("ё", "е").split())
-    if not said or "снял трубку" in said:
-        if re.search(r"принял|понял|наряд", reply):
-            return "Докладывайте."
-        return text
+    plain = said.strip(" .")
+    if not plain or plain == "оператор снял трубку":
+        return "Докладывайте."
+    address = _context_line(extra, "АДРЕС")
     number = ""
     raw_number = _context_line(extra, "НОМЕР НАРЯДА")
     if raw_number:
@@ -599,13 +607,9 @@ def repair_chief_reply(text: str, operator: str, extra: str = "") -> str:
     named = bool(number and re.search(rf"(?<!\d){re.escape(number)}(?!\d)", said))
     named = named or ("наряд" in said and bool(re.search(r"\d", said)))
     if not named:
-        if "наряд" in reply and "?" in (text or ""):
-            return text
         return "Какой номер наряда?"
-    if re.search(r"принял|понял", reply):
-        return text
-    if "?" in (text or ""):
-        return text
+    if address and not _address_named(operator, address):
+        return "Назовите адрес."
     return "Принял."
 
 

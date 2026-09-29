@@ -1000,6 +1000,16 @@ def test_service_asks_address_then_names_one_crew():
     assert repair_chief_reply("Принял.", "пожар в Барыкино, дом 11", extra) == "Какой номер наряда?"
     assert repair_chief_reply("Хорошо.", "наряд 23, пожар в Барыкино", extra) == "Принял."
     assert repair_chief_reply("Принял.", "Оператор снял трубку.", extra) == "Докладывайте."
+    assert repair_chief_reply("Принял. Какой номер наряда?", "23", extra) == "Назовите адрес."
+    assert repair_chief_reply("Принял. Какой номер наряда?", "99", extra) == "Какой номер наряда?"
+    assert (
+        repair_service_reply(
+            "Заявка принята. Номер наряда 23. Назовите адрес.",
+            "Пункта полиции. Да, направьте наряд в Барыкино",
+            extra,
+        )
+        == "Заявку принял. Наряд 23."
+    )
 
 
 def test_teacher_nudge_not_in_transcript():

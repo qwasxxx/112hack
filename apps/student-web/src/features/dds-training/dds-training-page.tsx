@@ -331,8 +331,9 @@ export function DdsTrainingPage(props: Props) {
             onApplyStatus={session.applyStatus}
             formError={session.formError}
             routeHint={session.routeHint}
+            callBusy={callTarget !== null}
             onCallChief={() => {
-              if (!active) {
+              if (!active || callTarget) {
                 return;
               }
               unlockTtsAudio();
@@ -347,7 +348,7 @@ export function DdsTrainingPage(props: Props) {
               });
             }}
             onCallCrew={() => {
-              if (!active) {
+              if (!active || callTarget) {
                 return;
               }
               unlockTtsAudio();
@@ -362,7 +363,7 @@ export function DdsTrainingPage(props: Props) {
               });
             }}
             onReport112={() => {
-              if (!active) {
+              if (!active || callTarget) {
                 return;
               }
               unlockTtsAudio();
@@ -377,7 +378,7 @@ export function DdsTrainingPage(props: Props) {
               });
             }}
             onCallback={() => {
-              if (!active) {
+              if (!active || callTarget) {
                 return;
               }
               unlockTtsAudio();
@@ -390,7 +391,7 @@ export function DdsTrainingPage(props: Props) {
               });
             }}
             onContactService={(label, phone) => {
-              if (!active) {
+              if (!active || callTarget) {
                 return;
               }
               unlockTtsAudio();

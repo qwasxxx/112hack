@@ -476,6 +476,12 @@
   cursor: pointer;
 }
 
+.dds-routes button:disabled,
+.dds-hist-call:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .dds-phone-bar {
   display: grid;
   grid-template-columns: 168px minmax(140px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) 210px 92px;

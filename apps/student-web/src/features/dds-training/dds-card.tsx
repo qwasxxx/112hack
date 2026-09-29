@@ -37,6 +37,7 @@ type Props = {
   onCallChief: () => void;
   onCallCrew: () => void;
   onReport112: () => void;
+  callBusy?: boolean;
   formError?: string | null;
   routeHint?: string | null;
   onClose: () => void;
@@ -97,7 +98,7 @@ export function DdsCard(props: Props) {
           <span className="dds-phone-top">☎ АОН</span>
           <span className="dds-aon-row">
             <input value={props.draft.callerPhone} readOnly aria-label="АОН" />
-            <button type="button" onClick={props.onCallback} title="Перезвонить по АОН">
+            <button type="button" disabled={props.callBusy} onClick={props.onCallback} title="Перезвонить по АОН">
               ☎
             </button>
           </span>
@@ -106,7 +107,7 @@ export function DdsCard(props: Props) {
           <span className="dds-phone-top">☎ предоставленный</span>
           <span className="dds-aon-row">
             <input value={props.draft.callerPhone} readOnly aria-label="предоставленный" />
-            <button type="button" onClick={props.onCallback} title="Перезвонить заявителю">
+            <button type="button" disabled={props.callBusy} onClick={props.onCallback} title="Перезвонить заявителю">
               ☎
             </button>
           </span>
@@ -265,6 +266,7 @@ export function DdsCard(props: Props) {
             <button
               type="button"
               className="dds-hist-call"
+              disabled={props.callBusy}
               onClick={() => {
                 setHistoryOf(null);
                 props.onContactService(historyChip.shortLabel, historyChip.phone ?? '');
@@ -382,13 +384,13 @@ export function DdsCard(props: Props) {
         </button>
       </footer>
       <div className="dds-routes">
-        <button type="button" onClick={props.onCallChief}>
+        <button type="button" disabled={props.callBusy} onClick={props.onCallChief}>
           Начальник
         </button>
-        <button type="button" onClick={props.onCallCrew}>
+        <button type="button" disabled={props.callBusy} onClick={props.onCallCrew}>
           Бригада
         </button>
-        <button type="button" onClick={props.onReport112}>
+        <button type="button" disabled={props.callBusy} onClick={props.onReport112}>
           Сообщить в 112
         </button>
       </div>

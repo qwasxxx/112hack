@@ -32,6 +32,7 @@ from sys112_llm.conversation import (
     generation_messages,
     TEACHER_NUDGE_TEXT,
     last_user_text,
+    operator_transcript,
     breaks_character,
     leaves_role,
     presence_cue,
@@ -519,14 +520,14 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
                 raw = full
                 if breaks_character(full):
                     full = "Куда направлять наряд? Назовите адрес."
-                full = repair_service_reply(full, last_user_text(session), session_scenario_extra(session))
+                full = repair_service_reply(full, operator_transcript(session), session_scenario_extra(session))
                 if full != raw:
                     session.streamed = ""
             elif session.conversation_role == "chief" and not session.presence:
                 raw = full
                 if breaks_character(full):
                     full = "Какой номер наряда?"
-                full = repair_chief_reply(full, last_user_text(session), session_scenario_extra(session))
+                full = repair_chief_reply(full, operator_transcript(session), session_scenario_extra(session))
                 if full != raw:
                     session.streamed = ""
             elif session.conversation_role == "crew" and breaks_character(full):
@@ -632,6 +633,8 @@ async def _generate(
             )
             if fixed != spoken:
                 continue
+        if live is not None and live.conversation_role in {"service", "chief"}:
+            continue
         if live is not None and live.presence and partial_type == "assistant_partial":
             continue
         if live is not None and partial_type == "assistant_partial":
