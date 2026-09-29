@@ -23,6 +23,32 @@ def _finals(events: list[dict]) -> list[str]:
     return [item["text"] for item in events if item.get("type") == "final"]
 
 
+def test_quiet_speech_opens_the_gate():
+    async def fake(_wav: bytes) -> str:
+        return "Да."
+
+    async def run():
+        session = HuggingFaceSttSession(transcribe=fake, sample_rate=16000)
+        await session.accept_pcm(_tone(0.4, amplitude=260))
+        return session.in_speech or bool(_finals(session.emitted))
+
+    assert asyncio.run(run()) is True
+
+
+def test_room_hum_does_not_open_the_gate():
+    async def fake(_wav: bytes) -> str:
+        return "Да."
+
+    async def run():
+        session = HuggingFaceSttSession(transcribe=fake, sample_rate=16000)
+        await session.accept_pcm(_tone(1.2, amplitude=40))
+        return session.in_speech, _finals(session.emitted)
+
+    speaking, finals = asyncio.run(run())
+    assert speaking is False
+    assert finals == []
+
+
 def test_16k_short_answers_finalize():
     async def fake(_wav: bytes) -> str:
         return "Да."

@@ -7,6 +7,7 @@ export const STT_WIRE_RATE = STT_CAPTURE_RATE;
 export const STT_FRAME_SAMPLES = 320;
 const FRAME_SAMPLES = STT_FRAME_SAMPLES;
 const ECHO_TAIL_MS = 320;
+const MIC_GAIN = 2.6;
 const PROCESSOR_BUFFER = 1024;
 const MAX_RECONNECT = 5;
 
@@ -160,12 +161,16 @@ export function createSttStream(handlers: {
         if (stopped || !captureEnabled || performance.now() < resumeAt) {
           return;
         }
-        const input = mixToMono(event.inputBuffer);
+        const raw = mixToMono(event.inputBuffer);
+        const input = new Float32Array(raw.length);
         let energy = 0;
-        for (let index = 0; index < input.length; index += 1) {
-          energy += input[index] * input[index];
+        for (let index = 0; index < raw.length; index += 1) {
+          const sample = (raw[index] ?? 0) * MIC_GAIN;
+          const clipped = sample > 1 ? 1 : sample < -1 ? -1 : sample;
+          input[index] = clipped;
+          energy += clipped * clipped;
         }
-        if (input.length > 0 && Math.sqrt(energy / input.length) > 0.02) {
+        if (input.length > 0 && Math.sqrt(energy / input.length) > 0.012) {
           handlers.onActivity?.();
         }
         const pcm = resampler.push(input, context?.sampleRate ?? 48000);

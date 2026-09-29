@@ -43,7 +43,7 @@ _FORCE_MIN_SPEECH_SEC = 0.10
 _PARTIAL_TIMEOUT_SEC = 8.0
 _FINAL_TIMEOUT_SEC = 15.0
 _NOISE_WINDOW_SEC = 2.0
-_START_MIN_RMS = 480.0
+_START_MIN_RMS = 140.0
 _START_HOLD_SEC = 0.06
 _NOISE_EMA = 0.08
 _JUNK = (
@@ -657,7 +657,9 @@ class HuggingFaceSttSession:
         return (len(self._voiced()) / 2) / self.sample_rate
 
     def _update_noise(self, level: float) -> None:
-        self.noise_rms = (1.0 - _NOISE_EMA) * self.noise_rms + _NOISE_EMA * level
+        ceiling = max(48.0, self.noise_rms * 3.0)
+        sample = min(level, ceiling)
+        self.noise_rms = (1.0 - _NOISE_EMA) * self.noise_rms + _NOISE_EMA * sample
 
     def _track_level(self, level: float, duration: float) -> None:
         self._levels.append((level, duration))
