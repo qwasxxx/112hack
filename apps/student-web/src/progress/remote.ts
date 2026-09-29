@@ -108,6 +108,10 @@ if (typeof window !== 'undefined') {
   }, 4000);
 }
 
+export function forgetLessonOutbox(): void {
+  writeOutbox(readOutbox().filter((item) => !item.path.startsWith('/lessons/')));
+}
+
 export function pushLesson(record: LessonRecord): void {
   void request(`/lessons/${record.id}`, {
     method: 'PUT',

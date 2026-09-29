@@ -1,4 +1,4 @@
-import { absorbLessons, readAllLessons, readLessons } from './store';
+import { replaceLessonsFromServer } from './store';
 import { replaceAssignments } from './assignments';
 import { replaceClassSession } from './class-session';
 import { mergeRemoteLive } from './live-presence';
@@ -9,10 +9,10 @@ import {
   pullCatalog,
   pullClass,
   pullCues,
+  forgetLessonOutbox,
   pullLessons,
   pullLive,
   pullOverlays,
-  pushLesson,
 } from './remote';
 import { replaceCatalogStore } from '../data/ticket-catalog';
 import { refreshScenarioCatalog } from '../data/scenarios';
@@ -29,17 +29,9 @@ export async function hydrateFromApi(scope?: { login: string; role: string }): P
     pullCatalog(),
     pullCues(staff ? undefined : scope?.login),
   ]);
-  if (lessons?.length) {
-    absorbLessons(lessons);
-  }
   if (lessons) {
-    const known = new Set(lessons.map((item) => item.id));
-    const local = staff ? readAllLessons() : scope?.login ? readLessons(scope.login) : [];
-    for (const record of local) {
-      if (record.id && !known.has(record.id)) {
-        pushLesson(record);
-      }
-    }
+    replaceLessonsFromServer(lessons, staff ? undefined : scope?.login);
+    forgetLessonOutbox();
   }
   if (assignments?.configured) {
     replaceAssignments({

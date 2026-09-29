@@ -86,6 +86,32 @@ export function readAllLessons(): LessonRecord[] {
   return listLessonLogins().flatMap((login) => readLessons(login));
 }
 
+export function replaceLessonsFromServer(records: LessonRecord[], login?: string): void {
+  if (!canUseStorage()) {
+    return;
+  }
+  if (login) {
+    writeLessons(
+      login,
+      records.filter((item) => !item.operatorLogin || item.operatorLogin === login),
+    );
+    return;
+  }
+  const grouped = new Map<string, LessonRecord[]>();
+  for (const record of records) {
+    if (!record.operatorLogin) {
+      continue;
+    }
+    const list = grouped.get(record.operatorLogin) ?? [];
+    list.push(record);
+    grouped.set(record.operatorLogin, list);
+  }
+  const logins = new Set([...listLessonLogins(), ...grouped.keys()]);
+  for (const name of logins) {
+    writeLessons(name, grouped.get(name) ?? []);
+  }
+}
+
 export function absorbLessons(records: LessonRecord[]): void {
   const grouped = new Map<string, LessonRecord[]>();
   for (const record of records) {
