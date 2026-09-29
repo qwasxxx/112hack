@@ -410,6 +410,7 @@ export function DdsTrainingPage(props: Props) {
         {callTarget && active ? (
           <aside className="dds-call" aria-label={callTarget.title}>
             <CallPage
+              key={callTarget.scope}
               scenario={active.scenario}
               section="training"
               variant="panel"

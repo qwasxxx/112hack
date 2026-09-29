@@ -227,53 +227,65 @@ class LlamaClient:
         prompt_tokens = "-"
         completion_tokens = "-"
         try:
-            async with self._http.stream(
-                "POST",
-                f"{self.base_url}/v1/chat/completions",
-                json=payload,
-                headers=self._headers(),
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if should_stop and should_stop():
-                        finish = finish or "cancelled"
-                        return
-                    if not line:
-                        continue
-                    if line.startswith("data:"):
-                        data = line[5:].strip()
-                    else:
-                        data = line.strip()
-                    if not data or data == "[DONE]":
-                        continue
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    timings = chunk.get("timings")
-                    if timings:
-                        logger.info(
-                            "[LLM] prompt %sms / %s tok, decode %sms / %s tok",
-                            round(float(timings.get("prompt_ms") or 0)),
-                            timings.get("prompt_n"),
-                            round(float(timings.get("predicted_ms") or 0)),
-                            timings.get("predicted_n"),
-                        )
-                    usage = chunk.get("usage") or {}
-                    if usage.get("prompt_tokens") is not None:
-                        prompt_tokens = str(usage.get("prompt_tokens"))
-                    if usage.get("completion_tokens") is not None:
-                        completion_tokens = str(usage.get("completion_tokens"))
-                    choice = (chunk.get("choices") or [{}])[0]
-                    reason = choice.get("finish_reason")
-                    if reason:
-                        finish = str(reason)
-                    delta = choice.get("delta") or {}
-                    piece = delta.get("content") or ""
-                    if piece:
-                        if first_at is None:
-                            first_at = time.perf_counter()
-                        yield piece
+            for attempt in (1, 2):
+                try:
+                    async with self._http.stream(
+                        "POST",
+                        f"{self.base_url}/v1/chat/completions",
+                        json=payload,
+                        headers=self._headers(),
+                    ) as response:
+                        if attempt == 1 and response.status_code in (429, 502, 503, 504):
+                            logger.warning("[LLM] chat status=%s, one retry", response.status_code)
+                            await response.aread()
+                        else:
+                            response.raise_for_status()
+                            async for line in response.aiter_lines():
+                                if should_stop and should_stop():
+                                    finish = finish or "cancelled"
+                                    return
+                                if not line:
+                                    continue
+                                if line.startswith("data:"):
+                                    data = line[5:].strip()
+                                else:
+                                    data = line.strip()
+                                if not data or data == "[DONE]":
+                                    continue
+                                try:
+                                    chunk = json.loads(data)
+                                except json.JSONDecodeError:
+                                    continue
+                                timings = chunk.get("timings")
+                                if timings:
+                                    logger.info(
+                                        "[LLM] prompt %sms / %s tok, decode %sms / %s tok",
+                                        round(float(timings.get("prompt_ms") or 0)),
+                                        timings.get("prompt_n"),
+                                        round(float(timings.get("predicted_ms") or 0)),
+                                        timings.get("predicted_n"),
+                                    )
+                                usage = chunk.get("usage") or {}
+                                if usage.get("prompt_tokens") is not None:
+                                    prompt_tokens = str(usage.get("prompt_tokens"))
+                                if usage.get("completion_tokens") is not None:
+                                    completion_tokens = str(usage.get("completion_tokens"))
+                                choice = (chunk.get("choices") or [{}])[0]
+                                reason = choice.get("finish_reason")
+                                if reason:
+                                    finish = str(reason)
+                                delta = choice.get("delta") or {}
+                                piece = delta.get("content") or ""
+                                if piece:
+                                    if first_at is None:
+                                        first_at = time.perf_counter()
+                                    yield piece
+                            return
+                except (httpx.TransportError, httpx.RemoteProtocolError):
+                    if attempt == 2:
+                        raise
+                    logger.warning("[LLM] chat connection failed, one retry")
+                await asyncio.sleep(0.8)
         finally:
             total_ms = int((time.perf_counter() - started) * 1000)
             ttft_ms = int((first_at - started) * 1000) if first_at is not None else -1

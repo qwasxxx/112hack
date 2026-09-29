@@ -121,9 +121,7 @@ def test_remembered_reply_keeps_heard_text_and_correction():
 
     heard = "Мы стоим около большого дома на Тверской."
     fixed = "Мы стоим около большого дома на Волжском бульваре."
-    both = remembered_reply(heard, fixed)
-    assert heard in both
-    assert "Волжском" in both
+    assert remembered_reply(heard, fixed) == fixed
     assert remembered_reply(heard, heard + " Дым виден.") == heard + " Дым виден."
     session = ConversationManager().create("presence", "victim", opening="Алло, здесь пожар!")
     before = len(session.messages)

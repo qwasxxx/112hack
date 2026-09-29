@@ -136,8 +136,8 @@ def _http_client() -> httpx.AsyncClient:
     global _http
     if _http is None or _http.is_closed:
         _http = httpx.AsyncClient(
-            timeout=httpx.Timeout(15.0, connect=5.0, pool=5.0),
-            limits=httpx.Limits(max_keepalive_connections=8, max_connections=8, keepalive_expiry=120.0),
+            timeout=httpx.Timeout(12.0, connect=5.0, pool=2.0),
+            limits=httpx.Limits(max_keepalive_connections=0, max_connections=4),
             trust_env=False,
         )
     return _http
@@ -638,8 +638,20 @@ class HuggingFaceSttSession:
 
         try:
             return await asyncio.wait_for(invoke(), timeout)
+        except asyncio.TimeoutError:
+            await close_http_client()
+            logger.warning("stt attempt timed out, opening a new connection")
+        except asyncio.CancelledError:
+            await close_http_client()
+            raise
+        try:
+            return await asyncio.wait_for(invoke(), timeout)
         except asyncio.TimeoutError as exc:
+            await close_http_client()
             raise HfSttError(504, "stt timeout") from exc
+        except asyncio.CancelledError:
+            await close_http_client()
+            raise
 
     def _emit(self, event: dict[str, Any]) -> None:
         self.emitted.append(event)

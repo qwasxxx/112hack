@@ -1,12 +1,16 @@
 .dds-page {
   display: grid;
-  grid-template-rows: 28px 1fr;
+  grid-template-rows: 28px minmax(0, 1fr);
   height: 100vh;
   height: 100dvh;
   background: #c5c5c5;
   color: #212121;
   overflow: hidden;
   font: 12px/1.25 Arial, Helvetica, sans-serif;
+}
+
+.dds-page:has(.dds-incoming) {
+  grid-template-rows: 28px auto minmax(0, 1fr);
 }
 
 .dds-page.is-journal {
@@ -55,7 +59,13 @@
 
 .dds-shell.is-call {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 440px);
+  overflow: hidden;
+}
+
+.dds-shell.is-call > .dds-card {
+  min-width: 0;
+  overflow: auto;
 }
 
 .dds-journal {
@@ -1073,15 +1083,22 @@
 }
 
 .dds-call {
+  position: relative;
+  z-index: 2;
   min-width: 0;
   min-height: 0;
   background: #1b1d20;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .dds-call .call {
   height: 100%;
   min-height: 0;
+}
+
+.dds-call .call.call-panel .line p {
+  min-width: 0;
+  max-width: 100%;
 }
 
 @media (max-width: 1279px) {

@@ -1102,6 +1102,9 @@ def remembered_reply(streamed: str, repaired: str) -> str:
     right_letters = _letters(right)
     if right_letters and right_letters in _letters(left):
         return left
+    # Две полные формулировки одного ответа не склеивать: адрес звучал дважды.
+    if len(_letters(left)) >= 24 and len(right_letters) >= 24:
+        return right
     return f"{left} {right}"
 
 
