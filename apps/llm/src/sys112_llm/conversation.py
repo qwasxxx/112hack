@@ -538,6 +538,17 @@ def breaks_character(text: str) -> bool:
     return any(marker in low for marker in _MODEL_LEAK)
 
 
+def speaks_as_dispatcher(text: str) -> bool:
+    low = " ".join((text or "").lower().replace("ё", "е").split())
+    return bool(
+        re.search(
+            r"скажите|назовите|уточните|вы сейчас находитесь|оператор уже|"
+            r"понял,?\s*что|по адресу|оставайтесь на линии|связывается с|подтвердите",
+            low,
+        )
+    )
+
+
 def _human_fallback(operator_text: str, extra: str) -> str:
     fact = fact_for_question(operator_text, extra)
     if fact:
@@ -745,7 +756,7 @@ def repair_victim_reply(
     if role != "victim" or not text:
         return text
     op = operator_text or ""
-    if breaks_character(text) or leaves_role(text):
+    if breaks_character(text) or leaves_role(text) or speaks_as_dispatcher(text):
         return _human_fallback(op, extra)
     if _MAMA_IDENTITY.search(text) and _unnamed_relative(extra) != "мама":
         fio = ticket_caller_name(extra)
@@ -1045,6 +1056,12 @@ def presence_spoken(intent: str, text: str) -> str:
         if re.search(r"жду|на линии", low) and "?" not in body:
             return body
         return "Я на линии, жду."
+    if intent == "urgent":
+        if body and "?" not in body and not speaks_as_dispatcher(body) and len(body) < 90:
+            return body
+        return "Алло, вы меня слышите?"
+    if intent not in {"eta", "stay"} and speaks_as_dispatcher(body):
+        return "Вы меня слышите?"
     return body
 
 

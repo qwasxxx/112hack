@@ -38,6 +38,7 @@ from sys112_llm.conversation import (
     presence_spoken,
     remembered_reply,
     repair_victim_reply,
+    speaks_as_dispatcher,
     session_scenario_extra,
     should_speak_intervention,
 )
@@ -454,13 +455,16 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
         gen_id = session.generation
         logger.info("[LLM] Generating response presence=%s", int(session.presence))
         try:
-            messages = generation_messages(session)
-            if session.presence and messages:
-                messages = _with_extra_instruction(
-                    messages,
-                    presence_cue(session.presence_intent, session.conversation_role),
-                )
-            full = await _generate(messages, ws, session=session, gen_id=gen_id)
+            if session.presence and session.conversation_role == "victim":
+                full = presence_spoken(session.presence_intent, "")
+            else:
+                messages = generation_messages(session)
+                if session.presence and messages:
+                    messages = _with_extra_instruction(
+                        messages,
+                        presence_cue(session.presence_intent, session.conversation_role),
+                    )
+                full = await _generate(messages, ws, session=session, gen_id=gen_id)
             if session.conversation_role == "victim" and full and leaves_role(full) and not session.presence:
                 nudged = _with_extra_instruction(
                     generation_messages(session),
@@ -519,12 +523,15 @@ async def _reply_until_idle(call_id: str, ws: WebSocket) -> None:
             elif breaks_character(full) and session.conversation_role != "victim":
                 full = "Назовите адрес, где это происходит."
             elif session.conversation_role == "victim" and not session.presence:
+                raw = full
                 full = repair_victim_reply(
-                    full,
+                    raw,
                     last_user_text(session),
                     session.conversation_role,
                     session_scenario_extra(session),
                 )
+                if speaks_as_dispatcher(raw):
+                    session.streamed = ""
             if session.presence:
                 full = presence_spoken(session.presence_intent, full)
             full = remembered_reply(session.streamed, full)

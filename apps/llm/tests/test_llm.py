@@ -143,6 +143,11 @@ def test_presence_spoken_replaces_a_missed_probe():
     assert presence_spoken("farewell", "До свидания.") == "До свидания."
     assert presence_spoken("wait", "Я на линии, жду.") == "Я на линии, жду."
     assert "через сколько" in presence_spoken("eta", "Скажите, примерно через сколько приедут?")
+    assert presence_spoken("urgent", "") == "Алло, вы меня слышите?"
+    assert "скажите" not in presence_spoken(
+        "urgent",
+        "Скажите, пожалуйста, вы сейчас находитесь по адресу Москва, Депо?",
+    ).lower()
 
 
 def test_unnamed_caller_does_not_keep_the_victim_name():
