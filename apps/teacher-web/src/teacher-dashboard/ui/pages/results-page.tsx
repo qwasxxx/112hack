@@ -333,7 +333,6 @@ export function ResultsPage({
   systemStatus,
   onSaveComment,
   onAdjustScore,
-  onDelete,
 }: {
   results: CompletedResult[];
   groups: TrainingGroup[];
@@ -342,7 +341,6 @@ export function ResultsPage({
   systemStatus: ReactNode;
   onSaveComment: (id: string, value: string) => Promise<void>;
   onAdjustScore: (id: string, score: number, reason: string) => Promise<void>;
-  onDelete: (id: string) => Promise<void>;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [group, setGroup] = useState('');
@@ -504,26 +502,11 @@ export function ResultsPage({
                   <td>{formatDuration(result.durationSec)}</td>
                   <td>
                     <button
-                      className="td-btn td-btn--ghost"
-                      type="button"
-                      onClick={() => {
-                        if (!window.confirm('Удалить эту попытку из списка?')) {
-                          return;
-                        }
-                        if (selectedId === result.id) {
-                          setSelectedId(null);
-                        }
-                        void onDelete(result.id);
-                      }}
-                    >
-                      Удалить
-                    </button>
-                    <button
                       className="td-btn td-btn--secondary"
                       type="button"
                       onClick={() => setSelectedId(result.id)}
                     >
-                      {result.confirmed ? 'Подробнее' : 'Подтвердить'}
+                      Открыть
                     </button>
                   </td>
                 </tr>
