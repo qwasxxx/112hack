@@ -42,5 +42,5 @@ export function coachPromptLine(id: string): string {
   if (!note) {
     return '';
   }
-  return `Указание преподавателя: ${note.slice(0, 240)}`;
+  return `КАК ВЕСТИ СЕБЯ НА ЛИНИИ. Это тон и то, что видно, если спросят. Не добавляй отсюда адрес, телефон и имя: ${note.slice(0, 240)}`;
 }

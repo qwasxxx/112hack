@@ -147,10 +147,9 @@ function ScenarioForm({
     setGenerating(true);
     setGenError('');
     setGenOk('');
-    const inferred = inferServices(draft.title, draft.description, draft.callerOpening, coach.note);
+    const inferred = inferServices(draft.title, draft.description, draft.callerOpening);
     const result = await generateTicket({
       services: inferred.length ? inferred : services.length ? services : [],
-      note: coach.note,
       title: draft.title,
       situation: draft.description,
       address: draft.location,
@@ -239,22 +238,12 @@ function ScenarioForm({
             </button>
           </div>
           <p className="td-ticket-help">
-            Напишите название — или любое уже известное поле — и нажмите «Дописать билет». Модель заполнит
-            пустое: суть, адрес, первую фразу, службы. То, что вы уже ввели, она не затирает.
+            Пустые поля карточки можно дописать по названию. Уже вписанное не затирается.
           </p>
-          <label>
-            Подсказка нейросети
-            <textarea
-              rows={2}
-              value={coach.note}
-              placeholder="Необязательно: без пострадавших, звонит сосед, ночь…"
-              onChange={(e) => setCoach((current) => ({ ...current, note: e.target.value }))}
-            />
-          </label>
           {genError ? <p className="td-ticket-alert">{genError}</p> : null}
           {genOk ? <p className="td-ticket-ok">{genOk}</p> : null}
 
-          <h4 className="td-ticket-h">Что знает заявитель</h4>
+          <h4 className="td-ticket-h">Карточка</h4>
           <div className="td-form-grid">
             <label>
               Сложность
@@ -316,6 +305,17 @@ function ScenarioForm({
               </label>
             ))}
           </div>
+
+          <h4 className="td-ticket-h">Как ведёт себя заявитель</h4>
+          <label>
+            Не входит в сверку карточки
+            <textarea
+              rows={3}
+              value={coach.note}
+              placeholder="Напуган, говорит коротко. Пострадавший без сознания, дышит. Адрес и телефон сюда не пишите."
+              onChange={(e) => setCoach((current) => ({ ...current, note: e.target.value }))}
+            />
+          </label>
 
           <details className="td-ticket-more">
             <summary>Нормативы и вмешательства</summary>
@@ -379,17 +379,16 @@ function ScenarioForm({
           </details>
         </div>
 
-        <aside className="td-ticket-preview" aria-label="Эталон для сверки">
-          <p className="td-kicker">Эталон карточки</p>
-          <h4>Собирается сама</h4>
+        <aside className="td-ticket-preview" aria-label="Сверка оценки">
+          <p className="td-kicker">Сверка оценки</p>
           <p className="td-ticket-help">
-            Это не отдельная форма. После «Дописать билет» сюда попадают суть, адрес, ФИО, телефон и
-            службы — то, с чем потом сверяется карточка ученика. Вам нужно только проверить и утвердить.
+            Карточка ученика сравнивается с этими строками. Они читаются из полей слева, отдельно их не
+            заполняют.
           </p>
           <dl>
             <div>
               <dt>Суть</dt>
-              <dd>{preview.what || 'Появится из текста билета'}</dd>
+              <dd>{preview.what || 'Появится из «Что случилось»'}</dd>
             </div>
             <div>
               <dt>Адрес</dt>
@@ -397,25 +396,17 @@ function ScenarioForm({
             </div>
             <div>
               <dt>Заявитель</dt>
-              <dd>{preview.callerFio || preview.callerRole || 'ФИО подставит модель'}</dd>
+              <dd>{preview.callerFio || preview.callerRole || 'ФИО должно быть в тексте «Что случилось»'}</dd>
             </div>
             <div>
               <dt>Телефон</dt>
-              <dd>{preview.phone || 'Телефон подставит модель'}</dd>
+              <dd>{preview.phone || 'Номер должен быть в тексте «Что случилось»'}</dd>
             </div>
             <div>
               <dt>Службы</dt>
               <dd>{serviceLabels(preview.services) || '—'}</dd>
             </div>
           </dl>
-          <label className="td-ticket-approve">
-            <input
-              type="checkbox"
-              checked={coach.approved}
-              onChange={(e) => setCoach((current) => ({ ...current, approved: e.target.checked }))}
-            />
-            Эталон проверен, можно давать ученикам
-          </label>
         </aside>
       </div>
 
@@ -528,7 +519,6 @@ export function ScenariosPage({
         </label>
         <div className="td-card-list">
           {visible.map((scenario) => {
-            const note = readCoachNote(scenario.id);
             return (
               <article className="td-scenario-card" key={scenario.id}>
                 <div>
@@ -541,7 +531,6 @@ export function ScenariosPage({
                       {scenario.status === 'active' ? 'Назначен' : scenario.status === 'archived' ? 'Снят' : 'Черновик'}
                     </StatusBadge>
                     <span>{scenario.category}</span>
-                    {note.approved ? <span className="td-ticket-chip">Эталон ок</span> : null}
                   </div>
                   <h4>{scenario.title}</h4>
                   <p>{scenario.location || 'Адрес не указан'}</p>

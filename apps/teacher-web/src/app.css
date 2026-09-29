@@ -1232,6 +1232,23 @@
   gap: 18px;
   align-items: start;
 }
+.td-ticket-builder .td-ticket-main {
+  gap: 14px;
+}
+.td-ticket-builder .td-ticket-help,
+.td-ticket-builder .td-form-grid,
+.td-ticket-builder .td-ticket-h {
+  margin: 0;
+}
+.td-ticket-builder textarea {
+  min-height: 0;
+}
+.td-ticket-builder .td-ticket-more {
+  margin-top: 0;
+}
+.td-ticket-builder .td-ticket-more .td-form-grid {
+  margin-top: 12px;
+}
 .td-ticket-main {
   display: grid;
   gap: 10px;
@@ -1262,8 +1279,10 @@
   color: #b7e7c8;
 }
 .td-ticket-preview {
+  position: sticky;
+  top: 12px;
   margin: 0;
-  padding: 16px;
+  padding: 14px 14px 6px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #151d26;
