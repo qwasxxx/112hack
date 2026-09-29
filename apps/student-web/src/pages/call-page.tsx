@@ -541,7 +541,10 @@ export function CallPage(props: Props) {
         callerVoice(),
         attachCaptionHooks(),
       ).finally(() => {
-        if (leavingRef.current || awaitingReplyRef.current || aiTurnRef.current !== openingTurn) {
+        if (leavingRef.current) {
+          return;
+        }
+        if (aiTurnRef.current !== openingTurn && (awaitingReplyRef.current || isTtsBusy())) {
           return;
         }
         commitSpokenLine();
@@ -698,6 +701,9 @@ export function CallPage(props: Props) {
     };
 
     const stream = createSttStream({
+      onActivity: () => {
+        lastHumanAtRef.current = performance.now();
+      },
       onEvent: (event) => {
         if (ttsHoldRef.current || mutedRef.current) {
           return;
@@ -945,6 +951,19 @@ export function CallPage(props: Props) {
     const timer = window.setInterval(() => {
       if (leavingRef.current) {
         return;
+      }
+      if (
+        ttsHoldRef.current &&
+        !isTtsBusy() &&
+        !awaitingReplyRef.current &&
+        !speechRef.current?.isGenerationOpen()
+      ) {
+        probeTurnRef.current = false;
+        ttsHoldRef.current = false;
+        lastHumanAtRef.current = performance.now();
+        if (!mutedRef.current) {
+          streamRef.current?.setCaptureEnabled(true);
+        }
       }
       const linesNow = linesRef.current;
       const operator = [...linesNow].reverse().find((line) => line.role === userRole && !line.live)?.text ?? '';

@@ -33,6 +33,7 @@ function logMicDiagnostics(track: MediaStreamTrack, contextRate: number, wireRat
 export function createSttStream(handlers: {
   onEvent: (event: SttEvent) => void;
   onError: (message: string) => void;
+  onActivity?: () => void;
 }): SttStream {
   let socket: WebSocket | undefined;
   let media: MediaStream | undefined;
@@ -160,6 +161,13 @@ export function createSttStream(handlers: {
           return;
         }
         const input = mixToMono(event.inputBuffer);
+        let energy = 0;
+        for (let index = 0; index < input.length; index += 1) {
+          energy += input[index] * input[index];
+        }
+        if (input.length > 0 && Math.sqrt(energy / input.length) > 0.02) {
+          handlers.onActivity?.();
+        }
         const pcm = resampler.push(input, context?.sampleRate ?? 48000);
         if (pcm.length === 0) {
           return;

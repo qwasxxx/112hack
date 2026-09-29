@@ -54,10 +54,6 @@ _MOODS = {
 }
 _TAG = re.compile(r"\[[^\[\]]{0,80}\]")
 _SPACES = re.compile(r"\s+")
-_SEVERE = re.compile(
-    r"пожар|взрыв|горит|пламя|\bгаз\b|задых|без сознан|не могу дышать|умира|зажат",
-    re.IGNORECASE,
-)
 
 
 def _mood(role: str, emotion: str | None) -> str:
@@ -99,8 +95,6 @@ def apply_fish_prosody(
         tags = ["[serious]", "[professional broadcast tone]", "[clear speech]"]
     else:
         tags = list(_MOODS[_mood(role, emotion)])
-        if _SEVERE.search(body) and "[breathing heavily]" not in tags:
-            tags.insert(0, "[breathing heavily]")
     seen: list[str] = []
     for tag in tags:
         if tag not in seen:

@@ -43,15 +43,17 @@ def test_ordinary_call_is_not_an_explosion() -> None:
     assert "[panicked]" not in text
 
 
-def test_severe_line_gets_one_breath() -> None:
+def test_severe_line_does_not_gasp_before_the_words() -> None:
     text = apply_fish_prosody("Пожар, я задыхаюсь.", role="victim", emotion="panic", gender="female")
-    assert text.startswith("[breathing heavily] [panicked] ")
+    assert text.startswith("[panicked] ")
+    assert "[breathing heavily]" not in text
 
 
 def test_model_tags_are_replaced_by_delivery() -> None:
     raw = "[serious] [clear speech] Алло, я задыхаюсь."
     text = apply_fish_prosody(raw, role="victim", emotion="angry", gender="male")
-    assert text.startswith("[breathing heavily] [angry]")
+    assert text.startswith("[angry]")
+    assert "[breathing heavily]" not in text
     assert "[serious]" not in text
     assert "задыхаюсь" in text
 
@@ -180,7 +182,8 @@ def test_stream_requests_balanced_s2_and_wraps_pcm(monkeypatch: pytest.MonkeyPat
     assert ws["reference_id"]
     ws_text = captured["ws_text"]
     assert isinstance(ws_text, list)
-    assert ws_text[0].startswith("[breathing heavily] [panicked] ")
+    assert ws_text[0].startswith("[panicked] ")
+    assert "[breathing heavily]" not in ws_text[0]
     assert http_chunk[:4] == b"RIFF"
     assert ws_chunk[:4] == b"RIFF"
 
